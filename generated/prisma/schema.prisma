@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================= Enums =================
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR
+}
+
+enum StatusViagem {
+  PROGRAMADA
+  EM_ANDAMENTO
+  FINALIZADA
+  CANCELADA
+}
+
+enum TipoAtraso {
+  SAIDA_BASE
+  TEMPO_PARADA_EXCEDIDO
+  DESLOCAMENTO_ROTA
+}
+
+// ================= Cadastros Básicos =================
+
+model Base {
+  id     String @id @default(cuid())
+  nome   String @unique // <--- ADICIONE O @unique AQUI
+  cidade String
+
+  // Novos campos para Geocerca
+  latitude   Float?
+  longitude  Float?
+  raioMetros Int    @default(500)
+
+  // Relações
+  usuarios       User[]
+  viagensOrigem  Viagem[]              @relation("BaseOrigem")
+  viagensDestino Viagem[]              @relation("BaseDestino")
+  justificativas JustificativaAtraso[]
+  paradasPadrao  ParadaPadrao[]
+  paradasViagem  ParadaViagem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String? // Mudamos de 'nome' para 'name'
+  email         String    @unique
+  emailVerified DateTime? // Coluna exigida pelo NextAuth
+  image         String? // Coluna exigida pelo NextAuth
+  senhaHash     String
+  role          Role      @default(OPERADOR)
+
+  // Relacionamento opcional: Admin pode não ter base, mas Gerente/Operador sim
+  baseId String?
+  base   Base?   @relation(fields: [baseId], references: [id])
+
+  justificativas JustificativaAtraso[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Veiculo {
+  id        String  @id // ID que vem da Sascar (ex: 2225152)
+  placa     String  @unique
+  descricao String?
+
+  viagens     Viagem[]
+  telemetrias Telemetria[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ================= Operação e Viagens =================
+
+model Viagem {
+  id            String @id // ID/Nº da Viagem vindo do relatório manual (ex: 37627407)
+  motorista     String
+  rotaDescricao String // Ex: CURITIBA-PR X ITAJAI-SC
+
+  veiculoId String
+  veiculo   Veiculo @relation(fields: [veiculoId], references: [id])
+
+  baseOrigemId String
+  baseOrigem   Base   @relation("BaseOrigem", fields: [baseOrigemId], references: [id])
+
+  baseDestinoId String
+  baseDestino   Base   @relation("BaseDestino", fields: [baseDestinoId], references: [id])
+
+  status StatusViagem @default(PROGRAMADA)
+
+  // Datas Planejadas (Vindas do relatório manual)
+  prevInicioReal DateTime
+  prevFimReal    DateTime
+
+  // Datas Reais (Preenchidas dinamicamente pela telemetria/sistema)
+  dataInicioEfetivo DateTime?
+  dataFimEfetivo    DateTime?
+
+  rotaPadraoId  String?
+  rotaPadrao    RotaPadrao?    @relation(fields: [rotaPadraoId], references: [id])
+  paradasViagem ParadaViagem[]
+
+  // >>> REGRA DE NEGÓCIO: Compensação de Horário <<<
+  // Se chegou atrasado na base de transbordo, este campo é atualizado com o novo horário limite de saída
+  novaPrevisaoSaida DateTime?
+
+  justificativas JustificativaAtraso[]
+  telemetrias    Telemetria[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model JustificativaAtraso {
+  id       String @id @default(cuid())
+  viagemId String
+  viagem   Viagem @relation(fields: [viagemId], references: [id])
+
+  tipoAtraso TipoAtraso
+  motivo     String     @db.Text
+
+  usuarioId String
+  usuario   User   @relation(fields: [usuarioId], references: [id])
+
+  // Se o atraso for de saída ou de parada, vincula a qual base ocorreu
+  baseId String?
+  base   Base?   @relation(fields: [baseId], references: [id])
+
+  tempoAtrasoMinutos Int // Quantos minutos de atraso foram justificados
+
+  createdAt DateTime @default(now())
+}
+
+// ================= Integração em Tempo Real =================
+
+model Telemetria {
+  id        String  @id @default(cuid())
+  veiculoId String
+  veiculo   Veiculo @relation(fields: [veiculoId], references: [id])
+
+  viagemId String? // Pode ser nulo se o veículo estiver rodando sem viagem alocada
+  viagem   Viagem? @relation(fields: [viagemId], references: [id])
+
+  latitude   Float
+  longitude  Float
+  ignicao    Boolean
+  velocidade Int?
+
+  // Horários
+  dataHoraUtc   DateTime // Dado bruto da API
+  dataHoraLocal DateTime // Já ajustado para GMT-3 na inserção
+
+  createdAt DateTime @default(now())
+
+  @@index([veiculoId, dataHoraLocal(sort: Desc)]) // Índice crucial para buscar a última posição rápido
+  @@index([viagemId])
+}
+
+// ================= MATRIZ DE ROTAS =================
+
+model RotaPadrao {
+  id      String         @id @default(cuid())
+  nome    String         @unique // Ex: APUCARANA X MARINGÁ X CASCAVEL X TOLEDO
+  paradas ParadaPadrao[]
+  viagens Viagem[]
+}
+
+model ParadaPadrao {
+  id     String     @id @default(cuid())
+  rotaId String
+  rota   RotaPadrao @relation(fields: [rotaId], references: [id], onDelete: Cascade)
+
+  baseId String
+  base   Base   @relation(fields: [baseId], references: [id])
+
+  ordem Int // 0 = Origem, 1 = Primeira Parada, etc.
+
+  // Guardamos como texto "HH:MM:SS" (ex: "22:00:00") para facilitar a clonagem
+  prevChegada String?
+  prevSaida   String?
+}
+
+// ================= HISTÓRICO DA VIAGEM REAL =================
+
+model ParadaViagem {
+  id       String @id @default(cuid())
+  viagemId String
+  viagem   Viagem @relation(fields: [viagemId], references: [id], onDelete: Cascade)
+
+  baseId String
+  base   Base   @relation(fields: [baseId], references: [id])
+
+  ordem Int
+
+  // Datas absolutas calculadas para o dia específico da viagem
+  prevChegada DateTime?
+  prevSaida   DateTime?
+
+  // Preenchido dinamicamente pela telemetria
+  dataChegadaEfetiva DateTime?
+  dataSaidaEfetiva   DateTime?
+}

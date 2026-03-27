@@ -1,0 +1,124 @@
+Documentação do Sistema: Torre de Controlo de Transferências
+1. Visão Geral e Arquitetura (T3 Stack)
+O sistema foi desenhado para gerir atrasos, monitorizar viagens em tempo real e aplicar regras de compensação de horários ("efeito cascata") na operação logística.
+
+Frontend/Backend: Next.js (App Router)
+
+Comunicação API: tRPC para tipagem ponta a ponta.
+
+Base de Dados: PostgreSQL (via Docker localmente) + Integração externa com base de dados Sascar (Leitura).
+
+ORM: Prisma.
+
+Autenticação: NextAuth.js (Auth.js) com JWT.
+
+2. Modelagem de Dados (Prisma Schema)
+A base de dados foi estruturada para separar a "Matriz Teórica" da "Execução Real", permitindo auditorias precisas.
+
+User & Base:
+
+Base: Representa as unidades físicas (com latitude, longitude e raio em metros para a geocerca).
+
+User: Controlado por RBAC (Cargos: ADMIN, GERENTE, OPERADOR). Utilizadores podem estar vinculados a uma Base específica.
+
+Matriz de Rotas (Padrão):
+
+RotaPadrao: Nome da rota (ex: GUARAPUAVA X LONDRINA).
+
+ParadaPadrao: A sequência estática de paragens de uma rota, com os tempos previstos (em formato texto "HH:MM:SS") para cada unidade.
+
+Execução (Viagem e Telemetria):
+
+Veiculo: Identificado pela placa (limpa de traços/espaços) para cruzar com a Sascar.
+
+Viagem: Registo instanciado de uma execução. Possui a regra de negócio novaPrevisaoSaida (para compensação de atrasos).
+
+ParadaViagem: O clone da matriz para a viagem real, contendo os cálculos de Data/Hora absolutos para as chegadas e saídas planeadas, e os campos reais que são preenchidos via GPS.
+
+Telemetria: Ingestão massiva de posições GPS (latitude, longitude, ignição, velocidade, data/hora local ajustada).
+
+JustificativaAtraso: (Preparado na base de dados, mas ainda não implementado na interface). Tabela para registar os motivos de atraso, vinculada à Viagem e ao Utilizador.
+
+3. Autenticação e Segurança
+A segurança foi implementada removendo a dependência de fornecedores externos (OAuth) e focando num sistema interno robusto:
+
+NextAuth.js (Credentials Provider): O login é feito com Email e Palavra-passe. A validação das palavras-passe utiliza a biblioteca bcryptjs.
+
+Sessões JWT: O token JWT armazena informações cruciais (id, role, baseId), permitindo respostas rápidas do frontend sem consultar constantemente a base de dados.
+
+tRPC Middlewares:
+
+publicProcedure: Rotas abertas.
+
+protectedProcedure: Bloqueia o acesso a quem não tiver sessão ativa.
+
+adminProcedure: Restringe a execução apenas a utilizadores com a função ADMIN.
+
+4. Integrações e Processamento Lógico
+4.1. Importação da Matriz de Rotas (importar-rotas.ts)
+O que faz: Script Node/TS que lê o ficheiro CSV (Horário saída de transferências...), extrai os nomes das rotas, cria as bases inexistentes e regista a ordem de paragens com os respetivos horários de previsão (Chegada e Saída).
+
+4.2. Motor de Geocercas (Geofencing)
+Função: calcularDistanciaGeocerca (Fórmula de Haversine).
+
+O que faz: Calcula a distância em metros entre a latitude/longitude do camião e a latitude/longitude de uma Base. Se a distância for inferior ao raioMetros (padrão: 500m), o sistema considera que o camião entrou na unidade.
+
+4.3. Sincronização de Telemetria (/api/sync)
+O que faz: Rota REST (GET) desenhada para atuar como Worker.
+
+Fluxo:
+
+Lê a base de dados externa (veiculos_sascar e rastreamento_sascar).
+
+Remove os traços das placas para garantir o vínculo correto.
+
+Puxa apenas os pontos de GPS posteriores ao último registo guardado localmente (evitando duplicações).
+
+Subtrai 3 horas (-3 GMT) às datas fornecidas pela Sascar para alinhar o fuso horário.
+
+Dispara o serviço processarStatusViagens() no final da inserção.
+
+4.4. Upload de Planilha de Viagens (viagemRouter.uploadPlanilha)
+O que faz: Rota tRPC que recebe os dados limpos do ficheiro de viagens do dia.
+
+Fluxo Lógico (Upsert & Matriz): Procura o nome da rota na Rota Padrão. Se encontrar, instancia as paragens em ParadaViagem, calculando dinamicamente os horários previstos de chegada e saída para aquele dia específico, lidando automaticamente com transições de meia-noite.
+
+5. Frontend e Telas (Ecrãs Implementados)
+5.1. Ecrã de Upload (/viagens/upload)
+Lê o ficheiro Excel no navegador (via xlsx), converte as datas brasileiras para o formato ISO universal, limpa formatações e envia para o backend em blocos, exibindo o estado do processamento.
+
+5.2. Painel de Transferências (/viagens)
+Lista (tabela) com as viagens mais recentes.
+
+Exibe o identificador, camião, motorista, origem, destino e os horários.
+
+Inclui etiquetas (badges) coloridas com base no estado da viagem (PROGRAMADA, EM_ANDAMENTO, FINALIZADA, CANCELADA).
+
+5.3. Detalhes e Timeline Dinâmica (/viagens/[id])
+O que faz: O cérebro visual da operação. Mostra os detalhes gerais da viagem.
+
+Mapa Interativo (react-leaflet): Desenha a rota (linha azul) e marca todas as paragens intermédias. Destaca a posição atual do camião.
+
+Linha do Tempo Calculada: Varre os pontos de telemetria comparando com a geocerca de cada paragem para detetar os momentos exatos de entrada e saída, preenchendo os tempos reais lado a lado com as previsões da Matriz. Exibe o alerta de "Atraso Compensado" (Nova Previsão de Saída) caso a regra tenha sido ativada.
+
+6. Próximos Passos (Melhorias e Funcionalidades a Implementar)
+Apesar de o "motor" do MVP estar funcional, existem módulos e otimizações cruciais a serem desenvolvidos na Fase 5:
+
+6.1. Módulo de Justificativas (Ação Pendente Imediata)
+O que falta: Criar um botão "Justificar Atraso" na Timeline, ao lado de eventos onde o Real seja superior ao Previsto.
+
+Lógica: Abrir um Pop-up (Modal) para que o Operador/Gerente insira o tipo de atraso e o motivo. É necessário implementar a regra tRPC para garantir que apenas utilizadores vinculados à Base onde ocorreu o atraso (ou Administradores) possam justificar falhas de transbordo/paragem.
+
+6.2. Automação do Worker de Telemetria
+O que falta: A rota /api/sync precisa de ser automatizada. Atualmente depende de um acionamento manual (abrir no navegador).
+
+Solução: Configurar um agendador, como o node-cron no servidor Node.js ou o serviço "Cron Jobs" (se for hospedado na Vercel), para acionar o endpoint /api/sync a cada 5 ou 10 minutos.
+
+6.3. Filtros no Painel de Transferências
+O que falta: No ecrã /viagens, é necessário implementar campos de pesquisa (por placa, motorista ou N.º de Viagem) e filtros para que um Operador de Guarapuava, por exemplo, possa ver rapidamente apenas as viagens que passam pela sua unidade.
+
+6.4. Dashboard Analítico (Business Intelligence)
+O que falta: Ecrã dedicado para Gerentes e Administradores com métricas gráficas (ex: Unidades com maior tempo de atraso de libertação, percentagem de viagens em conformidade, tempo médio de atraso por rota).
+
+6.5. Refinação de Erros e Exceções
+O que falta: Melhorar a tolerância do script de upload para lidar graciosamente com rotas ou cidades escritas de forma incorreta nas folhas de cálculo diárias que fogem ao padrão da Matriz.

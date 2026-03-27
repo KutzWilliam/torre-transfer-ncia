@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --color-princesa-green: #00CD15;
+  --color-princesa-dark: #022B18;
+}
+
+@layer base {
+  :root {
+    color-scheme: light !important;
+  }
+  
+  html, body {
+    background-color: #f9fafb !important; /* gray-50 fallback */
+    color: #111827 !important;           /* gray-900 fallback */
+  }
+}
+
+/* Corrige o z-index do Leaflet para ficar abaixo da navbar sticky (z-50 = 50) */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 10 !important;
+}
+.leaflet-control {
+  z-index: 11 !important;
+}
