@@ -14,20 +14,27 @@ const MapaViagem = dynamic(() => import("./MapaViagem"), {
 export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     
-    // Atualiza a viagem inteira e as coordenadas a cada 30 segundos
+    const apiUtils = api.useUtils();
+    const cachedViagem = apiUtils.viagem.obterPorId.getData(id);
+    const isFinalizada = cachedViagem?.status === "FINALIZADA" || cachedViagem?.status === "CANCELADA";
+
+    // Atualiza a viagem inteira e as coordenadas a cada 30 segundos (somente se não concluída)
     const { data: viagem, isLoading } = api.viagem.obterPorId.useQuery(id, {
-        refetchInterval: 30000,
-        refetchOnWindowFocus: true,
+        refetchInterval: isFinalizada ? false : 30000,
+        refetchOnWindowFocus: !isFinalizada,
     });
 
     // Auto-sync invisível em background para garantir que a Sascar envie os novos pontos GPS
     useEffect(() => {
+        // Se já está finalizada, não há motivo para forçar sincronização
+        if (viagem && (viagem.status === "FINALIZADA" || viagem.status === "CANCELADA")) return;
+
         const syncSascar = async () => {
             try { await fetch('/api/sync'); } catch (err) { console.error("Falha no sync do detalhe", err); }
         };
         const interval = setInterval(syncSascar, 60000); // Tira pontos da Sascar a cada 1min
         return () => clearInterval(interval);
-    }, []);
+    }, [viagem?.status]);
 
     // Analisa a telemetria e calcula as chegadas e saídas de TODAS as paradas
     const { timeline, ultimaPosicao } = useMemo(() => {

@@ -31,7 +31,7 @@ export default function Navbar({ session }: { session: Session | null }) {
                             <Link href="/viagens" className="text-gray-300 hover:text-white hover:bg-gray-800 px-3 py-2 rounded-md text-sm font-medium transition-colors">
                                 Lista de Viagens
                             </Link>
-                            <Link href="/analise/origem" className="text-princesa-green hover:text-green-400 hover:bg-gray-800 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                            <Link href="/analise" className="text-princesa-green hover:text-green-400 hover:bg-gray-800 px-3 py-2 rounded-md text-sm font-medium transition-colors">
                                 Análise de Atrasos
                             </Link>
                             {session?.user?.role === "ADMIN" && (

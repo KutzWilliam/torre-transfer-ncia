@@ -107,6 +107,7 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
     const statusCfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG["PROGRAMADA"]!;
 
     const prevFimReal = v.prevFimReal ? new Date(v.prevFimReal) : null;
+    const previsaoBaseRef = v.previsaoBaseRef ? new Date(v.previsaoBaseRef) : null;
     const previsaoChegada = v.previsaoChegadaCalculada ? new Date(v.previsaoChegadaCalculada) : null;
 
     return (
@@ -204,11 +205,13 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
 
                 {/* Previsão preditiva */}
                 <div className="rounded-xl border bg-gray-50 p-3 space-y-1">
-                    <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">🕐 Previsão de Chegada no Destino</p>
+                    <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">
+                        🕐 Chegada em <span className="font-bold text-gray-700">{v.proximaParadaNome}</span>
+                    </p>
                     <div className="flex items-baseline gap-3 flex-wrap">
                         <div>
                             <p className="text-[10px] text-gray-400">Previsto</p>
-                            <p className="text-sm font-semibold text-gray-700">{isMounted ? formatarHorario(prevFimReal) : "--:--"}</p>
+                            <p className="text-sm font-semibold text-gray-700">{isMounted ? formatarHorario(previsaoBaseRef) : "--:--"}</p>
                         </div>
                         {isMounted && previsaoChegada && (
                             <>
@@ -261,10 +264,10 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                         <span className="font-medium">{v.ultimaTelemetria.velocidade ?? 0} km/h</span>
                     )}
                     <Link
-                        href="/viagens"
-                        className="text-xs text-gray-400 hover:text-princesa-dark font-medium transition-colors"
+                        href={`/viagens/${v.id}`}
+                        className="text-xs text-blue-500 hover:text-blue-700 font-bold transition-colors"
                     >
-                        ← Lista
+                        Ver Detalhes →
                     </Link>
                 </div>
             </div>
@@ -340,6 +343,8 @@ type Filtro = "todos" | "em_andamento" | "atrasadas" | "com_alerta";
 export default function DashboardOperacionalPage() {
     const [isMounted, setIsMounted] = useState(false);
     const [filtro, setFiltro] = useState<Filtro>("todos");
+    const [horasFiltro, setHorasFiltro] = useState<"24" | "48">("48");
+    const [baseFiltro, setBaseFiltro] = useState<string>("todas");
     const [agora, setAgora] = useState(new Date());
 
     useEffect(() => {
@@ -353,7 +358,7 @@ export default function DashboardOperacionalPage() {
     }, []);
 
     // Dados com toda a lógica de enriquecimento
-    const { data: viagens, isLoading, dataUpdatedAt, refetch } = api.viagem.obterDashboard.useQuery(undefined, {
+    const { data: viagens, isLoading, dataUpdatedAt, refetch } = api.viagem.obterDashboard.useQuery({ horasFiltro }, {
         refetchInterval: 30000,
         refetchOnWindowFocus: true,
     });
@@ -380,16 +385,40 @@ export default function DashboardOperacionalPage() {
         };
     }, [viagens]);
 
-    // Filtragem
+    // Bases Únicas para o Filtro
+    const basesGerais = useMemo(() => {
+        if (!viagens) return [];
+        const setBases = new Set<string>();
+        viagens.forEach(v => {
+            setBases.add(v.baseOrigem.nome);
+            setBases.add(v.baseDestino.nome);
+            v.paradasViagem.forEach(p => setBases.add(p.base.nome));
+        });
+        return Array.from(setBases).sort();
+    }, [viagens]);
+
+    // Filtragem combinada (Status + Base)
     const viagensFiltradas = useMemo(() => {
         if (!viagens) return [];
-        switch (filtro) {
-            case "em_andamento": return viagens.filter((v) => v.status === "EM_ANDAMENTO");
-            case "atrasadas":    return viagens.filter((v) => v.nivelAlerta !== "PONTUAL" && v.status !== "FINALIZADA" && v.status !== "CANCELADA");
-            case "com_alerta":   return viagens.filter((v) => ["ATRASADO", "CRITICO", "SEM_SINAL"].includes(v.nivelAlerta));
-            default:             return viagens;
+        let r = viagens;
+
+        // 1. Filtro de Base
+        if (baseFiltro !== "todas") {
+            r = r.filter(v => {
+                return v.baseOrigem.nome === baseFiltro || 
+                       v.baseDestino.nome === baseFiltro || 
+                       v.paradasViagem.some(p => p.base.nome === baseFiltro);
+            });
         }
-    }, [viagens, filtro]);
+
+        // 2. Filtro de Status Rapido
+        switch (filtro) {
+            case "em_andamento": return r.filter((v) => v.status === "EM_ANDAMENTO");
+            case "atrasadas":    return r.filter((v) => v.nivelAlerta !== "PONTUAL" && v.status !== "FINALIZADA" && v.status !== "CANCELADA");
+            case "com_alerta":   return r.filter((v) => ["ATRASADO", "CRITICO", "SEM_SINAL"].includes(v.nivelAlerta));
+            default:             return r;
+        }
+    }, [viagens, filtro, baseFiltro]);
 
     const ultimaAtualizacao = dataUpdatedAt
         ? new Date(dataUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -400,12 +429,43 @@ export default function DashboardOperacionalPage() {
             {/* ── Cabeçalho ── */}
             <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-sm shadow-sm">
                 <div className="mx-auto max-w-[1600px] flex items-center justify-between px-6 py-3">
-                    <div>
-                        <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                            🚛 Dashboard Operacional
-                        </h1>
-                        <p className="text-xs text-slate-500">Gestão à Vista — Viagens do dia</p>
+                    <div className="flex gap-6 items-center flex-wrap">
+                        <div>
+                            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                                🚛 Dashboard Operacional
+                            </h1>
+                            <p className="text-xs text-slate-500">Gestão à Vista — Acompanhamento Logístico</p>
+                        </div>
+
+                        {/* Controles de Topo (Período e Unidade) */}
+                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner">
+                            <button
+                                onClick={() => setHorasFiltro("24")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${horasFiltro === "24" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                            >
+                                Últimas 24h
+                            </button>
+                            <button
+                                onClick={() => setHorasFiltro("48")}
+                                className={`px-3 py-1 text-xs font-bold rounded-md transition-colors ${horasFiltro === "48" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                            >
+                                Últimas 48h
+                            </button>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unidade:</label>
+                            <select 
+                                value={baseFiltro} 
+                                onChange={(e) => setBaseFiltro(e.target.value)}
+                                className="text-sm bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                            >
+                                <option value="todas">Todas as Unidades</option>
+                                {basesGerais.map(b => <option key={b} value={b}>{b}</option>)}
+                            </select>
+                        </div>
                     </div>
+                    
                     <div className="flex items-center gap-4">
                         <div className="text-right hidden sm:block">
                             <p className="text-2xl font-mono font-bold text-slate-800 tabular-nums">
@@ -426,12 +486,6 @@ export default function DashboardOperacionalPage() {
                                 Atualizado: {isMounted ? ultimaAtualizacao : "--:--"}
                             </p>
                         </div>
-                        <Link
-                            href="/viagens"
-                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
-                        >
-                            ← Painel
-                        </Link>
                     </div>
                 </div>
             </header>

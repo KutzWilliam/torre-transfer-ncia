@@ -56,6 +56,11 @@ export const viagemRouter = createTRPCRouter({
             let viagensCriadas = 0;
             let viagensAtualizadas = 0;
 
+            // Pré-carrega todas as rotas em memória para busca fuzzy rápida e flexível
+            const rotasCadastradas = await ctx.db.rotaPadrao.findMany({
+                include: { paradas: { orderBy: { ordem: "asc" } } }
+            });
+
             for (const item of input) {
                 // 1. Decidir qual placa usar consultado a base da Sascar (Placa Prog, Placa Mobile ou Reboque)
                 const placaSascar = await getPlacaAtivaSascar(item.placa, item.placaMob, item.reboque);
@@ -76,11 +81,11 @@ export const viagemRouter = createTRPCRouter({
                     where: { placa: placaSascar }, update: {}, create: { id: `temp_${placaSascar}`, placa: placaSascar, descricao: "Importado via Planilha" },
                 });
 
-                // 4. Procurar a Rota Matriz (Ignorando espaços extras no início e no fim)
-                const rotaPadrao = await ctx.db.rotaPadrao.findFirst({
-                    where: { nome: item.rotaDescricao.trim() },
-                    include: { paradas: { orderBy: { ordem: "asc" } } }
-                });
+                // 4. Procurar a Rota Matriz (com tolerância a acentos, maiúsculas e espaços irregulares)
+                const rotaNomeDescartavel = normalizeString(item.rotaDescricao).replace(/\s+/g, ' ').trim();
+                const rotaPadrao = rotasCadastradas.find(r => 
+                    normalizeString(r.nome).replace(/\s+/g, ' ').trim() === rotaNomeDescartavel
+                );
 
                 // 5. Upsert da Viagem
                 const viagem = await ctx.db.viagem.upsert({
@@ -171,12 +176,23 @@ export const viagemRouter = createTRPCRouter({
 
             if (!viagem) throw new Error("Viagem não encontrada");
 
-            // Limites da janela de telemetria:
-            // - Inicio: 6h antes do início previsto (margem para viagens que saíram cedo)
-            // - Fim: 12h após a data de fim efetivo (ou prevFimReal) para evitar capturar viagens de retorno
-            const dataCorteInicio = new Date(viagem.prevInicioReal.getTime() - 6 * 60 * 60 * 1000);
-            const dataFimBase = viagem.dataFimEfetivo ?? viagem.prevFimReal;
-            const dataCorteEfim = new Date(dataFimBase.getTime() + 12 * 60 * 60 * 1000);
+            // Limites da janela de telemetria baseados no status da viagem
+            let dataCorteInicio = new Date(viagem.prevInicioReal.getTime() - 6 * 60 * 60 * 1000);
+            let dataCorteEfim = new Date((viagem.dataFimEfetivo ?? viagem.prevFimReal).getTime() + 12 * 60 * 60 * 1000);
+
+            if (viagem.status === "FINALIZADA" && viagem.dataFimEfetivo) {
+                // Para viagens finalizadas, corta EXATAMENTE (margem gráfica de 5min) no tempo de chegada.
+                // Isso evita puxar a rota que o caminhão fez *depois* da viagem, poluindo o mapa final.
+                dataCorteEfim = new Date(viagem.dataFimEfetivo.getTime() + 5 * 60000);
+                
+                if (viagem.dataInicioEfetivo) {
+                    // Usa a hora real de saída para limpar o lixo de garagem (margem -5min)
+                    dataCorteInicio = new Date(viagem.dataInicioEfetivo.getTime() - 5 * 60000);
+                }
+            } else if (viagem.dataInicioEfetivo) {
+                // Viagens ativas mas que já saíram, tira o lixo pré-viagem usando o tempo de saída real
+                dataCorteInicio = new Date(viagem.dataInicioEfetivo.getTime() - 5 * 60000);
+            }
 
             const telemetrias = await ctx.db.telemetria.findMany({
                 where: {
@@ -254,14 +270,17 @@ export const viagemRouter = createTRPCRouter({
         return result;
     }),
 
-    obterDashboard: protectedProcedure.query(async ({ ctx }) => {
+    obterDashboard: protectedProcedure
+        .input(z.object({ horasFiltro: z.enum(["24", "48"]).default("48").optional() }).optional())
+        .query(async ({ ctx, input }) => {
         const agora = new Date();
-        const inicio48h = new Date(agora.getTime() - 48 * 60 * 60 * 1000);
+        const horasOffset = parseInt(input?.horasFiltro ?? "48");
+        const inicioFiltro = new Date(agora.getTime() - horasOffset * 60 * 60 * 1000);
         const fimJanela = new Date(agora.getTime() + 12 * 60 * 60 * 1000); // +12h para pegar viagens que ainda vão iniciar
 
         const viagens = await ctx.db.viagem.findMany({
             where: {
-                prevInicioReal: { gte: inicio48h, lte: fimJanela },
+                prevInicioReal: { gte: inicioFiltro, lte: fimJanela },
             },
             orderBy: { prevInicioReal: "asc" },
             include: {
@@ -310,22 +329,35 @@ export const viagemRouter = createTRPCRouter({
                     }
                 }
 
-                // 4. Previsão preditiva de chegada no destino
+                // 4. Previsão preditiva para o PRÓXIMO destino (intermediário ou final)
                 let previsaoChegadaCalculada: Date | null = null;
                 let semSinalGPS = false;
+                
+                // Determina o próximo alvo geográfico do caminhão
+                let proximaParadaNome = v.baseDestino.nome;
+                let latDestino = v.baseDestino.latitude;
+                let lngDestino = v.baseDestino.longitude;
+                let previsaoBaseRef = v.prevFimReal;
+
+                if (paradaAtualIndex < paradas.length) {
+                    const proxParada = paradas[paradaAtualIndex]!;
+                    proximaParadaNome = proxParada.base.nome;
+                    latDestino = proxParada.base.latitude;
+                    lngDestino = proxParada.base.longitude;
+                    previsaoBaseRef = proxParada.prevChegada ?? proxParada.prevSaida ?? v.prevFimReal;
+                }
 
                 if (ultimaTelemetria) {
                     const minSemSinal = (agora.getTime() - ultimaTelemetria.dataHoraLocal.getTime()) / 60000;
                     semSinalGPS = minSemSinal > 30;
 
                     if (!semSinalGPS && v.status === "EM_ANDAMENTO") {
-                        const destino = v.baseDestino;
-                        if (destino.latitude && destino.longitude) {
+                        if (latDestino && lngDestino) {
                             const distanciaMetros = calcularDistanciaGeocerca(
                                 ultimaTelemetria.latitude,
                                 ultimaTelemetria.longitude,
-                                destino.latitude,
-                                destino.longitude
+                                latDestino,
+                                lngDestino
                             );
                             const velocidadeKmh = (ultimaTelemetria.velocidade ?? 0) > 10
                                 ? (ultimaTelemetria.velocidade ?? 60)
@@ -336,11 +368,11 @@ export const viagemRouter = createTRPCRouter({
                     }
                 }
 
-                // 5. Atraso na chegada prevista vs calculada
+                // 5. Atraso na chegada prevista vs calculada (baseado no próximo ponto da rota)
                 let atrasoChegadaMinutos: number | null = null;
-                if (previsaoChegadaCalculada) {
+                if (previsaoChegadaCalculada && previsaoBaseRef) {
                     atrasoChegadaMinutos = Math.round(
-                        (previsaoChegadaCalculada.getTime() - v.prevFimReal.getTime()) / 60000
+                        (previsaoChegadaCalculada.getTime() - previsaoBaseRef.getTime()) / 60000
                     );
                 }
 
@@ -383,6 +415,8 @@ export const viagemRouter = createTRPCRouter({
                     paradaAtualIndex,
                     paradasConcluidas,
                     totalParadas: paradas.length,
+                    proximaParadaNome,       // Adicionado para o frontend saber o alvo do ETA
+                    previsaoBaseRef,         // Horário original da próxima parada
                     previsaoChegadaCalculada,
                     atrasoChegadaMinutos,
                     nivelAlerta,
@@ -437,4 +471,138 @@ export const viagemRouter = createTRPCRouter({
         
         return atrasos;
     }),
-});
+
+    // ====================================================================
+    //  ANALYTICS GERENCIAL - Dashboard de Análise Completo
+    // ====================================================================
+    obterAnalytics: protectedProcedure
+        .input(z.object({
+            dataInicio: z.string(), // ISO date string "yyyy-MM-dd"
+            dataFim: z.string(),    // ISO date string "yyyy-MM-dd"
+            baseOrigemNome: z.string().optional(), // undefined = todas
+        }))
+        .query(async ({ ctx, input }) => {
+            const inicio = new Date(input.dataInicio);
+            inicio.setHours(0, 0, 0, 0);
+            const fim = new Date(input.dataFim);
+            fim.setHours(23, 59, 59, 999);
+
+            const whereClause: Record<string, unknown> = {
+                status: "FINALIZADA",
+                dataFimEfetivo: { not: null },
+                prevInicioReal: { gte: inicio, lte: fim },
+            };
+
+            if (input.baseOrigemNome) {
+                whereClause.baseOrigem = { nome: input.baseOrigemNome };
+            }
+
+            const viagens = await ctx.db.viagem.findMany({
+                where: whereClause,
+                include: {
+                    veiculo: true,
+                    baseOrigem: true,
+                    baseDestino: true,
+                    paradasViagem: {
+                        include: { base: true },
+                        orderBy: { ordem: "asc" },
+                    },
+                },
+                orderBy: { prevInicioReal: "desc" },
+            });
+
+            // Buscar todas as bases de origem únicas para o filtro (sem restrição de período)
+            const todasBases = await ctx.db.base.findMany({
+                where: { viagensOrigem: { some: {} } },
+                select: { nome: true, cidade: true },
+                orderBy: { nome: "asc" },
+            });
+
+            // Enriquecer cada viagem com métricas calculadas
+            type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
+            const viagensEnriquecidas = viagens.map((v) => {
+                const atrasoChegadaMin = v.dataFimEfetivo && v.prevFimReal
+                    ? Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000)
+                    : 0;
+
+                const atrasoSaidaMin = v.dataInicioEfetivo && v.prevInicioReal
+                    ? Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000)
+                    : null;
+
+                const duracaoPrevistaMin = Math.round(
+                    (v.prevFimReal.getTime() - v.prevInicioReal.getTime()) / 60000
+                );
+                const duracaoRealMin = v.dataFimEfetivo && v.dataInicioEfetivo
+                    ? Math.round((v.dataFimEfetivo.getTime() - v.dataInicioEfetivo.getTime()) / 60000)
+                    : null;
+
+                let nivelAlerta: NivelAlerta = "PONTUAL";
+                if (atrasoChegadaMin >= 60) nivelAlerta = "CRITICO";
+                else if (atrasoChegadaMin >= 30) nivelAlerta = "ATRASADO";
+                else if (atrasoChegadaMin >= 10) nivelAlerta = "ATENCAO";
+
+                return {
+                    id: v.id,
+                    motorista: v.motorista,
+                    placa: v.veiculo.placa,
+                    rotaDescricao: v.rotaDescricao,
+                    baseOrigemNome: v.baseOrigem.nome,
+                    baseDestinoNome: v.baseDestino.nome,
+                    prevInicio: v.prevInicioReal,
+                    prevFim: v.prevFimReal,
+                    dataInicioEfetivo: v.dataInicioEfetivo,
+                    dataFimEfetivo: v.dataFimEfetivo,
+                    atrasoChegadaMin,
+                    atrasoSaidaMin,
+                    duracaoPrevistaMin,
+                    duracaoRealMin,
+                    nivelAlerta,
+                };
+            });
+
+            // KPIs globais
+            const total = viagensEnriquecidas.length;
+            const atrasadas = viagensEnriquecidas.filter(v => v.atrasoChegadaMin > 0).length;
+            const criticas = viagensEnriquecidas.filter(v => v.nivelAlerta === "CRITICO").length;
+            const pontualidade = total > 0 ? Math.round(((total - atrasadas) / total) * 100) : 100;
+            const somaAtrasos = viagensEnriquecidas.reduce((acc, v) => acc + Math.max(v.atrasoChegadaMin, 0), 0);
+            const mediaAtraso = atrasadas > 0 ? Math.round(somaAtrasos / atrasadas) : 0;
+
+            // Distribuição por nível
+            const distribuicao = {
+                PONTUAL:  viagensEnriquecidas.filter(v => v.nivelAlerta === "PONTUAL").length,
+                ATENCAO:  viagensEnriquecidas.filter(v => v.nivelAlerta === "ATENCAO").length,
+                ATRASADO: viagensEnriquecidas.filter(v => v.nivelAlerta === "ATRASADO").length,
+                CRITICO:  viagensEnriquecidas.filter(v => v.nivelAlerta === "CRITICO").length,
+            };
+
+            // Ranking de atrasos por rota (top 10)
+            const rotaMap = new Map<string, { totalAtraso: number; count: number; atrasadas: number }>();
+            for (const v of viagensEnriquecidas) {
+                const rota = v.rotaDescricao;
+                const existing = rotaMap.get(rota) ?? { totalAtraso: 0, count: 0, atrasadas: 0 };
+                existing.count++;
+                existing.totalAtraso += Math.max(v.atrasoChegadaMin, 0);
+                if (v.atrasoChegadaMin > 0) existing.atrasadas++;
+                rotaMap.set(rota, existing);
+            }
+            const rankingRotas = Array.from(rotaMap.entries())
+                .map(([rota, stats]) => ({
+                    rota,
+                    totalViagens: stats.count,
+                    viagensAtrasadas: stats.atrasadas,
+                    mediaAtrasoMin: stats.atrasadas > 0 ? Math.round(stats.totalAtraso / stats.atrasadas) : 0,
+                    taxaAtraso: Math.round((stats.atrasadas / stats.count) * 100),
+                }))
+                .sort((a, b) => b.mediaAtrasoMin - a.mediaAtrasoMin)
+                .slice(0, 10);
+
+            return {
+                viagens: viagensEnriquecidas,
+                kpis: { total, atrasadas, criticas, pontualidade, mediaAtraso, somaAtrasos },
+                distribuicao,
+                rankingRotas,
+                basesDisponiveis: todasBases,
+            };
+        }),
+});
