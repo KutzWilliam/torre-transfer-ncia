@@ -116,9 +116,11 @@ npm run db:seed
 ### 3. Importar a Matriz de Rotas
 
 ```bash
-# Importa o arquivo Excel de rotas para o banco (execute uma vez)
+# Importa o arquivo Excel de rotas para o banco (execute sempre que o Excel for atualizado)
 npx tsx importar-rotas.ts
 ```
+
+> ⚠️ **Importante:** O arquivo `importar-rotas.ts` na raiz do projeto é um **script permanente de operação**, não um arquivo temporário. Ele deve ser mantido pois é necessário sempre que o Excel de rotas (`Horário saída de transferências.xlsx`) for atualizado.
 
 > O arquivo `Horário saída de transferências.xlsx` deve estar na raiz do projeto.
 
