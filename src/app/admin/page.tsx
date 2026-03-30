@@ -19,10 +19,11 @@ export default function AdminHubPage() {
                 </div>
 
                 {/* KPI Strip */}
-                <div className="grid grid-cols-3 gap-4 mb-10">
+                <div className="grid grid-cols-4 gap-4 mb-10">
                     {[
                         { label: "Usuários", value: stats?.totalUsuarios, color: "text-blue-600" },
                         { label: "Bases",    value: stats?.totalBases,    color: "text-amber-600" },
+                        { label: "Rotas",    value: stats?.totalRotas,    color: "text-purple-600" },
                         { label: "Viagens",  value: stats?.totalViagens,  color: "text-princesa-dark" },
                     ].map(({ label, value, color }) => (
                         <div key={label} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm text-center">
@@ -35,7 +36,7 @@ export default function AdminHubPage() {
                 </div>
 
                 {/* Navigation Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     <Link
                         href="/admin/usuarios"
                         className="group bg-white rounded-xl border border-gray-200 shadow-sm p-8 hover:border-princesa-green hover:shadow-md transition-all"
@@ -69,6 +70,25 @@ export default function AdminHubPage() {
                                 </h2>
                                 <p className="text-sm text-gray-500 mt-1">
                                     Cadastrar e editar bases operacionais com coordenadas GPS para geocerca.
+                                </p>
+                            </div>
+                        </div>
+                    </Link>
+
+                    <Link
+                        href="/admin/rotas"
+                        className="group bg-white rounded-xl border border-gray-200 shadow-sm p-8 hover:border-princesa-green hover:shadow-md transition-all"
+                    >
+                        <div className="flex items-start gap-4">
+                            <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-purple-50 flex items-center justify-center text-2xl">
+                                🗺️
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900 group-hover:text-princesa-dark transition-colors">
+                                    Gerenciar Rotas
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Editar horários previstos e adicionar paradas intermediárias às rotas padrão.
                                 </p>
                             </div>
                         </div>

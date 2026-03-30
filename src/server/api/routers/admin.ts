@@ -134,19 +134,130 @@ const basesRouter = createTRPCRouter({
 });
 
 // ============================
+// Sub-router de Rotas Padrão
+// ============================
+const rotasRouter = createTRPCRouter({
+
+    listar: adminProcedure.query(async ({ ctx }) => {
+        return ctx.db.rotaPadrao.findMany({
+            include: {
+                _count: { select: { paradas: true, viagens: true } },
+            },
+            orderBy: { nome: "asc" },
+        });
+    }),
+
+    obterComParadas: adminProcedure
+        .input(z.object({ id: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const rota = await ctx.db.rotaPadrao.findUnique({
+                where: { id: input.id },
+                include: {
+                    paradas: {
+                        include: { base: true },
+                        orderBy: { ordem: "asc" },
+                    },
+                },
+            });
+            if (!rota) throw new TRPCError({ code: "NOT_FOUND", message: "Rota não encontrada." });
+            return rota;
+        }),
+
+    atualizarParada: adminProcedure
+        .input(z.object({
+            paradaId: z.string(),
+            prevChegada: z.string().nullable(),  // "HH:MM:SS" ou null
+            prevSaida: z.string().nullable(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            return ctx.db.paradaPadrao.update({
+                where: { id: input.paradaId },
+                data: {
+                    prevChegada: input.prevChegada,
+                    prevSaida: input.prevSaida,
+                },
+            });
+        }),
+
+    adicionarParada: adminProcedure
+        .input(z.object({
+            rotaId: z.string(),
+            baseNome: z.string().min(2, "Nome da base obrigatório"),
+            ordem: z.number().int().min(0),
+            prevChegada: z.string().nullable(),
+            prevSaida: z.string().nullable(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            // Busca ou cria a base
+            let base = await ctx.db.base.findUnique({ where: { nome: input.baseNome } });
+            if (!base) {
+                base = await ctx.db.base.create({
+                    data: { nome: input.baseNome, cidade: input.baseNome, raioMetros: 500 },
+                });
+            }
+
+            // Empurra para frente as paradas que estão na posição >= ordem informada
+            await ctx.db.paradaPadrao.updateMany({
+                where: { rotaId: input.rotaId, ordem: { gte: input.ordem } },
+                data: { ordem: { increment: 1 } },
+            });
+
+            return ctx.db.paradaPadrao.create({
+                data: {
+                    rotaId: input.rotaId,
+                    baseId: base.id,
+                    ordem: input.ordem,
+                    prevChegada: input.prevChegada,
+                    prevSaida: input.prevSaida,
+                },
+                include: { base: true },
+            });
+        }),
+
+    removerParada: adminProcedure
+        .input(z.object({ paradaId: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            const parada = await ctx.db.paradaPadrao.findUnique({ where: { id: input.paradaId } });
+            if (!parada) throw new TRPCError({ code: "NOT_FOUND", message: "Parada não encontrada." });
+
+            // Não permite remover origem ou destino (primeira e última)
+            const totalParadas = await ctx.db.paradaPadrao.count({ where: { rotaId: parada.rotaId } });
+            if (parada.ordem === 0 || parada.ordem === totalParadas - 1) {
+                throw new TRPCError({
+                    code: "PRECONDITION_FAILED",
+                    message: "Não é possível remover a Origem ou o Destino da rota. Apenas paradas intermediárias podem ser excluídas.",
+                });
+            }
+
+            await ctx.db.paradaPadrao.delete({ where: { id: input.paradaId } });
+
+            // Renumera as paradas seguintes
+            await ctx.db.$executeRaw`
+                UPDATE "ParadaPadrao"
+                SET ordem = ordem - 1
+                WHERE "rotaId" = ${parada.rotaId} AND ordem > ${parada.ordem}
+            `;
+
+            return { ok: true };
+        }),
+});
+
+// ============================
 // Router principal de Admin
 // ============================
 export const adminRouter = createTRPCRouter({
     usuarios: usuariosRouter,
     bases: basesRouter,
+    rotas: rotasRouter,
 
     // Estatísticas para o Hub
     stats: adminProcedure.query(async ({ ctx }) => {
-        const [totalUsuarios, totalBases, totalViagens] = await Promise.all([
+        const [totalUsuarios, totalBases, totalViagens, totalRotas] = await Promise.all([
             ctx.db.user.count(),
             ctx.db.base.count(),
             ctx.db.viagem.count(),
+            ctx.db.rotaPadrao.count(),
         ]);
-        return { totalUsuarios, totalBases, totalViagens };
+        return { totalUsuarios, totalBases, totalViagens, totalRotas };
     }),
 });
