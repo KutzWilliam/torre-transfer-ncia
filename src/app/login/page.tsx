@@ -22,19 +22,26 @@ function LoginForm() {
         setErro("");
         setLoading(true);
 
-        const result = await signIn("credentials", {
-            email,
-            password: senha,
-            redirect: false,
-        });
+        try {
+            const result = await signIn("credentials", {
+                email,
+                password: senha,
+                redirect: false,
+            });
 
-        setLoading(false);
-
-        if (result?.error) {
-            setErro("E-mail ou senha inválidos. Verifique suas credenciais.");
-        } else {
-            // Usa window.location para garantir o host correto do browser (nunca localhost)
-            window.location.href = safeCallback;
+            if (result?.error) {
+                setErro("E-mail ou senha inválidos. Verifique suas credenciais.");
+            } else if (result?.ok) {
+                // Usa window.location para garantir o host correto do browser (nunca localhost)
+                window.location.href = safeCallback;
+            } else {
+                setErro("Erro desconhecido ao tentar acessar o sistema.");
+            }
+        } catch (error) {
+            console.error("Erro no signIn:", error);
+            setErro("Falha de conexão com o servidor. Tente novamente.");
+        } finally {
+            setLoading(false);
         }
     };
 
