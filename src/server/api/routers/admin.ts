@@ -138,6 +138,36 @@ const basesRouter = createTRPCRouter({
 // ============================
 const rotasRouter = createTRPCRouter({
 
+    criar: adminProcedure
+        .input(z.object({
+            nome: z.string().min(2, "Nome da rota obrigatório"),
+            origem: z.string().min(2, "Origem obrigatória"),
+            destino: z.string().min(2, "Destino obrigatória"),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            const existing = await ctx.db.rotaPadrao.findUnique({ where: { nome: input.nome } });
+            if (existing) throw new TRPCError({ code: "CONFLICT", message: "Já existe uma rota com este nome." });
+
+            // Busca ou cria as bases
+            let baseOrigem = await ctx.db.base.findUnique({ where: { nome: input.origem } });
+            if (!baseOrigem) baseOrigem = await ctx.db.base.create({ data: { nome: input.origem, cidade: input.origem } });
+
+            let baseDestino = await ctx.db.base.findUnique({ where: { nome: input.destino } });
+            if (!baseDestino) baseDestino = await ctx.db.base.create({ data: { nome: input.destino, cidade: input.destino } });
+
+            return ctx.db.rotaPadrao.create({
+                data: {
+                    nome: input.nome.toUpperCase(),
+                    paradas: {
+                        create: [
+                            { baseId: baseOrigem.id, ordem: 0 },
+                            { baseId: baseDestino.id, ordem: 1 },
+                        ],
+                    },
+                },
+            });
+        }),
+
     listar: adminProcedure.query(async ({ ctx }) => {
         return ctx.db.rotaPadrao.findMany({
             include: {

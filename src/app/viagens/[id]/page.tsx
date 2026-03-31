@@ -134,7 +134,7 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
         <div className="min-h-screen bg-gray-50 p-6 md:p-8">
             <div className="mx-auto max-w-6xl">
                 <div className="mb-6 flex justify-between items-center">
-                    <Link href="/viagens" className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2">
+                    <Link href="/dashboard" className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2">
                         &larr; Voltar ao Painel
                     </Link>
                     <div className="text-sm bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200 text-gray-600">
@@ -162,7 +162,7 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                             </div>
                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                                 <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Veículo</p>
-                                <p className="font-medium text-gray-900">{viagem.veiculo.placa}</p>
+                                <p className="font-medium text-gray-900">{viagem.veiculo?.placa}</p>
                             </div>
                         </div>
                     </div>

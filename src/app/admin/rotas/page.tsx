@@ -277,6 +277,91 @@ function ModalAdicionarParada({
     );
 }
 
+// ─── Modal de Criar Nova Rota ──────────────────────────────────────────────────
+function ModalNovaRota({
+    onClose,
+    onSaved,
+}: {
+    onClose: () => void;
+    onSaved: (id: string) => void;
+}) {
+    const [nome, setNome] = useState("");
+    const [origem, setOrigem] = useState("");
+    const [destino, setDestino] = useState("");
+    const [erro, setErro] = useState("");
+
+    const mutacao = api.admin.rotas.criar.useMutation({
+        onSuccess: (data) => { onSaved(data.id); onClose(); },
+        onError: (e) => setErro(e.message),
+    });
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-base font-bold text-gray-900 mb-4">Cadastrar Nova Rota</h3>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Nome da Rota Exato *</label>
+                        <input
+                            type="text"
+                            value={nome}
+                            onChange={(e) => setNome(e.target.value.toUpperCase())}
+                            placeholder="Ex: CASCAVEL X CURITIBA"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Base de Origem *</label>
+                        <input
+                            type="text"
+                            value={origem}
+                            onChange={(e) => setOrigem(e.target.value.toUpperCase())}
+                            placeholder="Ex: CASCAVEL"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Base de Destino *</label>
+                        <input
+                            type="text"
+                            value={destino}
+                            onChange={(e) => setDestino(e.target.value.toUpperCase())}
+                            placeholder="Ex: CURITIBA"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                        <p className="text-[10px] text-gray-400 mt-1">
+                            A origem e o destino serão criados automaticamente nas pontas da rota. Você poderá adicionar paradas intermediárias depois.
+                        </p>
+                    </div>
+                </div>
+
+                {erro && <p className="text-xs text-red-600 mt-3">{erro}</p>}
+
+                <div className="flex gap-2 mt-6">
+                    <button onClick={onClose} className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={() => {
+                            if (!nome.trim() || !origem.trim() || !destino.trim()) return setErro("Preencha todos os campos.");
+                            mutacao.mutate({
+                                nome: nome.trim(),
+                                origem: origem.trim(),
+                                destino: destino.trim(),
+                            });
+                        }}
+                        disabled={mutacao.isPending}
+                        className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    >
+                        {mutacao.isPending ? "Criando..." : "Criar Rota"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Painel lateral de edição de rota ────────────────────────────────────────
 function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }) {
     const [paradaEditando, setParadaEditando] = useState<Parada | null>(null);
@@ -321,7 +406,7 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
             </div>
 
             <div className="space-y-2 overflow-y-auto flex-1">
-                {rota.paradas.map((p) => (
+                {rota.paradas.map((p: any) => (
                     <div
                         key={p.id}
                         className="rounded-xl border border-gray-100 bg-white p-3 hover:border-blue-200 transition-colors group"
@@ -415,8 +500,9 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
 export default function AdminRotasPage() {
     const [busca, setBusca] = useState("");
     const [rotaSelecionadaId, setRotaSelecionadaId] = useState<string | null>(null);
+    const [criandoRota, setCriandoRota] = useState(false);
 
-    const { data: rotas, isLoading } = api.admin.rotas.listar.useQuery(undefined, {
+    const { data: rotas, isLoading, refetch } = api.admin.rotas.listar.useQuery(undefined, {
         refetchOnWindowFocus: false,
     });
 
@@ -425,26 +511,34 @@ export default function AdminRotasPage() {
     );
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div className="min-h-screen bg-slate-50 flex flex-col">
             {/* ── Cabeçalho ── */}
-            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm">
-                <div className="mx-auto max-w-[1400px] px-6 py-4 flex items-center justify-between gap-4">
+            <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm flex-shrink-0">
+                <div className="mx-auto max-w-[1400px] px-4 md:px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h1 className="text-xl font-extrabold text-slate-900">🗺️ Gerenciar Rotas Padrão</h1>
                         <p className="text-xs text-slate-500 mt-0.5">Edite horários e paradas das rotas da Matriz</p>
                     </div>
-                    <Link
-                        href="/admin"
-                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                        ← Painel Admin
-                    </Link>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setCriandoRota(true)}
+                            className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition-colors"
+                        >
+                            + Nova Rota
+                        </button>
+                        <Link
+                            href="/admin"
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+                        >
+                            ← Painel
+                        </Link>
+                    </div>
                 </div>
             </header>
 
-            <div className="mx-auto max-w-[1400px] px-6 py-6 flex gap-6" style={{ height: "calc(100vh - 73px)" }}>
+            <div className="mx-auto w-full max-w-[1400px] px-4 md:px-6 py-6 flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
                 {/* ── Lista de Rotas ── */}
-                <div className={`flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${rotaSelecionadaId ? "w-96 flex-shrink-0" : "flex-1"}`}>
+                <div className={`flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${rotaSelecionadaId ? "w-full lg:w-96 flex-shrink-0" : "flex-1"}`}>
                     {/* Busca */}
                     <div className="p-4 border-b border-slate-100">
                         <input
@@ -477,9 +571,9 @@ export default function AdminRotasPage() {
                                             rotaSelecionadaId === rota.id ? "bg-blue-50 border-r-2 border-blue-600" : ""
                                         }`}
                                     >
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-gray-900 truncate">{rota.nome}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5">
+                                        <div className="min-w-0 pr-2">
+                                            <p className="text-sm font-semibold text-gray-900 break-words whitespace-normal leading-tight">{rota.nome}</p>
+                                            <p className="text-xs text-gray-400 mt-1">
                                                 {rota._count.paradas} parada(s) · {rota._count.viagens} viagem(ns)
                                             </p>
                                         </div>
@@ -495,7 +589,7 @@ export default function AdminRotasPage() {
 
                 {/* ── Painel de Edição ── */}
                 {rotaSelecionadaId && (
-                    <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 overflow-hidden flex flex-col">
+                    <div className="flex-1 min-w-0 lg:min-w-[400px] bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5 overflow-hidden flex flex-col h-[600px] lg:h-auto">
                         <PainelRota
                             key={rotaSelecionadaId}
                             rotaId={rotaSelecionadaId}
@@ -506,11 +600,21 @@ export default function AdminRotasPage() {
 
                 {/* ── Placeholder quando nada selecionado ── */}
                 {!rotaSelecionadaId && (
-                    <div className="flex-1 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 gap-3">
+                    <div className="hidden lg:flex flex-1 rounded-2xl border-2 border-dashed border-slate-200 flex-col items-center justify-center text-slate-400 gap-3">
                         <span className="text-5xl">🗺️</span>
-                        <p className="font-semibold">Selecione uma rota para editar</p>
-                        <p className="text-xs">Clique em qualquer rota da lista para visualizar e editar suas paradas e horários</p>
+                        <p className="font-semibold px-4 text-center">Selecione uma rota para editar</p>
+                        <p className="text-xs px-4 text-center">Clique em qualquer rota da lista para visualizar e editar suas paradas e horários</p>
                     </div>
+                )}
+
+                {criandoRota && (
+                    <ModalNovaRota
+                        onClose={() => setCriandoRota(false)}
+                        onSaved={(novaRotaId) => {
+                            void refetch();
+                            setRotaSelecionadaId(novaRotaId);
+                        }}
+                    />
                 )}
             </div>
         </div>

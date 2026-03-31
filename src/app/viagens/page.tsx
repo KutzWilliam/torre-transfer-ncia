@@ -14,6 +14,7 @@ export default function ListaViagensPage() {
 
     const [busca, setBusca] = useState("");
     const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("TODOS");
+    const [dataFiltro, setDataFiltro] = useState<string>("");
 
     useEffect(() => {
         const syncSascar = async () => {
@@ -31,6 +32,14 @@ export default function ListaViagensPage() {
         return viagens.filter((v) => {
             const passaStatus = statusFiltro === "TODOS" || v.status === statusFiltro;
             if (!passaStatus) return false;
+
+            if (dataFiltro) {
+                // Formata Date para YYYY-MM-DD considerando o fuso horário local
+                const offset = v.prevInicioReal.getTimezoneOffset() * 60000;
+                const localISO = new Date(v.prevInicioReal.getTime() - offset).toISOString().split('T')[0];
+                if (localISO !== dataFiltro) return false;
+            }
+
             if (!termo) return true;
 
             return (
@@ -42,18 +51,26 @@ export default function ListaViagensPage() {
                 v.rotaDescricao.toLowerCase().includes(termo)
             );
         });
-    }, [viagens, busca, statusFiltro]);
+    }, [viagens, busca, statusFiltro, dataFiltro]);
 
     const contagens = useMemo(() => {
         if (!viagens) return { TODOS: 0, PROGRAMADA: 0, EM_ANDAMENTO: 0, FINALIZADA: 0, CANCELADA: 0 };
+        
+        // Aplica apenas o filtro de data (se existir) para contar corretamente o dia
+        const viagensNoDia = dataFiltro ? viagens.filter(v => {
+            const offset = v.prevInicioReal.getTimezoneOffset() * 60000;
+            const localISO = new Date(v.prevInicioReal.getTime() - offset).toISOString().split('T')[0];
+            return localISO === dataFiltro;
+        }) : viagens;
+
         return {
-            TODOS: viagens.length,
-            PROGRAMADA: viagens.filter(v => v.status === "PROGRAMADA").length,
-            EM_ANDAMENTO: viagens.filter(v => v.status === "EM_ANDAMENTO").length,
-            FINALIZADA: viagens.filter(v => v.status === "FINALIZADA").length,
-            CANCELADA: viagens.filter(v => v.status === "CANCELADA").length,
+            TODOS: viagensNoDia.length,
+            PROGRAMADA: viagensNoDia.filter(v => v.status === "PROGRAMADA").length,
+            EM_ANDAMENTO: viagensNoDia.filter(v => v.status === "EM_ANDAMENTO").length,
+            FINALIZADA: viagensNoDia.filter(v => v.status === "FINALIZADA").length,
+            CANCELADA: viagensNoDia.filter(v => v.status === "CANCELADA").length,
         };
-    }, [viagens]);
+    }, [viagens, dataFiltro]);
 
     const STATUS_TABS: { key: StatusFiltro; label: string; color: string }[] = [
         { key: "TODOS", label: "Todas", color: "bg-gray-100 text-gray-700 hover:bg-gray-200" },
@@ -97,19 +114,31 @@ export default function ListaViagensPage() {
                 </div>
 
                 {/* Filtros */}
-                <div className="mb-4 bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col md:flex-row gap-3">
-                    {/* Campo de busca */}
-                    <div className="relative flex-1">
-                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <input
-                            type="text"
-                            placeholder="Buscar por viagem, motorista, placa, cidade..."
-                            value={busca}
-                            onChange={e => setBusca(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-princesa-green focus:border-transparent"
-                        />
+                <div className="mb-4 bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col lg:flex-row gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3 flex-1">
+                        {/* Filtro de Dia */}
+                        <div className="flex-shrink-0">
+                            <input
+                                type="date"
+                                value={dataFiltro}
+                                onChange={e => setDataFiltro(e.target.value)}
+                                className="w-full sm:w-auto px-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-princesa-green focus:border-transparent text-gray-600"
+                            />
+                        </div>
+
+                        {/* Campo de busca */}
+                        <div className="relative flex-1">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                                type="text"
+                                placeholder="Buscar por viagem, motorista, placa, cidade..."
+                                value={busca}
+                                onChange={e => setBusca(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-princesa-green focus:border-transparent"
+                            />
+                        </div>
                     </div>
 
                     {/* Tabs de status */}
