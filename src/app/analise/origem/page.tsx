@@ -159,8 +159,8 @@ export default function AnaliseOrigemPage() {
                             ultrapassando o horário previsto de chegada.
                         </p>
                     </div>
-                    <Link href="/dashboard" className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 flex flex-shrink-0 items-center gap-2">
-                        &larr; Voltar ao Dashboard
+                    <Link href="/analise" className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 flex flex-shrink-0 items-center gap-2">
+                        &larr; Voltar às Análises
                     </Link>
                 </div>
 
