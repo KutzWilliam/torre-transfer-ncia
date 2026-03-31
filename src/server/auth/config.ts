@@ -92,16 +92,19 @@ export const authConfig = {
         },
       };
     },
-    // Garante que os redirects SEMPRE usem apenas o pathname (nunca localhost ou host errado)
+    // Garante que os redirects SEMPRE usem a baseUrl como prefixo para evitar erros do tipo "Invalid URL"
     redirect({ url, baseUrl }) {
-      // Se for um path relativo, retorna direto
-      if (url.startsWith("/")) return url;
-      // Se for a mesma origem, retorna só o pathname
+      // Se for um path relativo (ex: "/dashboard"), converta para absoluto
+      if (url.startsWith("/")) {
+        return `${baseUrl}${url}`;
+      }
+      
       try {
         const parsed = new URL(url);
-        return parsed.pathname + parsed.search;
+        // Garantimos que a URL final retorne usando o baseUrl apropriado, mas com o path correto
+        return `${baseUrl}${parsed.pathname}${parsed.search}`;
       } catch {
-        return "/dashboard";
+        return `${baseUrl}/dashboard`;
       }
     },
   },
