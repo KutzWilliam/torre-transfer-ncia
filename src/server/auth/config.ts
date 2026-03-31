@@ -24,38 +24,43 @@ export const authConfig = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        // Forçando o Prisma a trazer exatamente os campos que a nossa regra de negócio precisa
-        const user = await db.user.findUnique({
-          where: { email: credentials.email as string },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            senhaHash: true,
-            role: true,
-            baseId: true,
+        try {
+          // Forçando o Prisma a trazer exatamente os campos que a nossa regra de negócio precisa
+          const user = await db.user.findUnique({
+            where: { email: credentials.email as string },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              senhaHash: true,
+              role: true,
+              baseId: true,
+            }
+          });
+
+          if (!user || !user.senhaHash) {
+            console.error("Usuário não encontrado ou sem senha registrada no banco.");
+            return null;
           }
-        });
 
-        if (!user || !user.senhaHash) {
-          console.error("Usuário não encontrado ou sem senha registrada no banco.");
-          return null;
+          const isValid = await bcrypt.compare(credentials.password as string, user.senhaHash);
+
+          if (!isValid) {
+            console.error("Senha inválida digitada.");
+            return null;
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            baseId: user.baseId,
+          };
+        } catch (error) {
+          console.error("Erro interno no authorize do NextAuth (Banco de dados fora ar ou outro erro):", error);
+          return null; // Retorna null para sinalizar credenciais inválidas em vez de quebrar a API com erro 500
         }
-
-        const isValid = await bcrypt.compare(credentials.password as string, user.senhaHash);
-
-        if (!isValid) {
-          console.error("Senha inválida digitada.");
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          baseId: user.baseId,
-        };
       },
     }),
   ],

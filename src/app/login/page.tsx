@@ -39,7 +39,8 @@ function LoginForm() {
             }
         } catch (error) {
             console.error("Erro no signIn:", error);
-            setErro("Falha de conexão com o servidor. Tente novamente.");
+            const errDetails = error instanceof Error ? error.message : JSON.stringify(error);
+            setErro(`Falha de conexão com o servidor. Detalhes: ${errDetails}`);
         } finally {
             setLoading(false);
         }
