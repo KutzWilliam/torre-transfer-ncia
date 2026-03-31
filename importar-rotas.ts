@@ -12,7 +12,8 @@
  */
 
 import xlsx from "xlsx";
-import { PrismaClient } from "./generated/prisma/index.js";
+import { PrismaClient } from "@prisma/client";
+
 import { normalizeString, normalizeCityName } from "./src/server/utils/stringUtils.js";
 
 const prisma = new PrismaClient();

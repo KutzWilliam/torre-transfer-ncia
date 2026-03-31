@@ -12,7 +12,8 @@
  * Senhas dos usuários de teste ficam como "senha123" - alterar após primeiro acesso.
  */
 
-import { PrismaClient } from "../generated/prisma/index.js";
+import { PrismaClient } from "@prisma/client";
+
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
