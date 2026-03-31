@@ -87,5 +87,17 @@ export const authConfig = {
         },
       };
     },
+    // Garante que os redirects SEMPRE usem apenas o pathname (nunca localhost ou host errado)
+    redirect({ url, baseUrl }) {
+      // Se for um path relativo, retorna direto
+      if (url.startsWith("/")) return url;
+      // Se for a mesma origem, retorna só o pathname
+      try {
+        const parsed = new URL(url);
+        return parsed.pathname + parsed.search;
+      } catch {
+        return "/dashboard";
+      }
+    },
   },
 } satisfies NextAuthConfig;

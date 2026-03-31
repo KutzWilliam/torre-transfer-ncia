@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 function LoginForm() {
-    const router = useRouter();
     const searchParams = useSearchParams();
-    const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+
+    // Sanitiza o callbackUrl: extrai APENAS o pathname, nunca um host externo/localhost
+    const rawCallback = searchParams.get("callbackUrl") ?? "/dashboard";
+    const safeCallback = rawCallback.startsWith("/") ? rawCallback : "/dashboard";
 
     const [email, setEmail] = useState("");
     const [senha, setSenha] = useState("");
@@ -31,10 +33,11 @@ function LoginForm() {
         if (result?.error) {
             setErro("E-mail ou senha inválidos. Verifique suas credenciais.");
         } else {
-            router.push(callbackUrl);
-            router.refresh();
+            // Usa window.location para garantir o host correto do browser (nunca localhost)
+            window.location.href = safeCallback;
         }
     };
+
 
     return (
         <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-4">
