@@ -4,6 +4,7 @@ import { use, useMemo, useEffect } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { calcularDistanciaGeocerca } from "@/server/utils/geolocalizacao";
 
 const MapaViagem = dynamic(() => import("./MapaViagem"), {
@@ -13,6 +14,7 @@ const MapaViagem = dynamic(() => import("./MapaViagem"), {
 
 export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
+    const router = useRouter();
     
     const apiUtils = api.useUtils();
     const cachedViagem = apiUtils.viagem.obterPorId.getData(id);
@@ -134,9 +136,9 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
         <div className="min-h-screen bg-gray-50 p-6 md:p-8">
             <div className="mx-auto max-w-6xl">
                 <div className="mb-6 flex justify-between items-center">
-                    <Link href="/dashboard" className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2">
-                        &larr; Voltar ao Painel
-                    </Link>
+                    <button onClick={() => router.back()} className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2 border-none bg-transparent cursor-pointer p-0">
+                        &larr; Voltar
+                    </button>
                     <div className="text-sm bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200 text-gray-600">
                         Sinal GPS: <span className={`font-semibold ${ultimaPosicao ? 'text-green-600' : 'text-red-500'}`}>
                             {ultimaPosicao ? ultimaPosicao.dataHoraLocal.toLocaleString("pt-BR") : "Sem comunicação"}
