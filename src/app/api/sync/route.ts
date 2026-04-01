@@ -111,11 +111,25 @@ export async function GET() {
                 };
             });
 
-            await db.telemetria.createMany({
-                data: dadosParaInserir,
-                skipDuplicates: true,
+            // Validate which vehicles actually exist in our db to avoid FK errors
+            const idsParaVerificar = Array.from(new Set(dadosParaInserir.map(d => d.veiculoId)));
+            const veiculosExistentes = await db.veiculo.findMany({
+                where: { id: { in: idsParaVerificar } },
+                select: { id: true }
             });
-            telemetriasInseridas = dadosParaInserir.length;
+            const idsValidos = new Set(veiculosExistentes.map(v => v.id));
+            
+            const dadosFiltrados = dadosParaInserir.filter(d => idsValidos.has(d.veiculoId));
+
+            if (dadosFiltrados.length > 0) {
+                await db.telemetria.createMany({
+                    data: dadosFiltrados,
+                    skipDuplicates: true,
+                });
+                telemetriasInseridas = dadosFiltrados.length;
+            } else {
+                telemetriasInseridas = 0;
+            }
         }
 
         // 4. Processar chegadas nas bases e atualizar status das viagens
