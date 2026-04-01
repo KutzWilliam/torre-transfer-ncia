@@ -368,9 +368,19 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
     const [adicionando, setAdicionando] = useState(false);
     const [confirmRemover, setConfirmRemover] = useState<string | null>(null);
     const [erroRemover, setErroRemover] = useState("");
+    const [confirmExcluirRota, setConfirmExcluirRota] = useState(false);
+    const [erroExcluirRota, setErroExcluirRota] = useState("");
 
     const utils = api.useUtils();
     const { data: rota, isLoading, refetch } = api.admin.rotas.obterComParadas.useQuery({ id: rotaId });
+
+    const mutExcluirRota = api.admin.rotas.excluir.useMutation({
+        onSuccess: () => {
+            void utils.admin.rotas.listar.invalidate();
+            onClose();
+        },
+        onError: (e) => setErroExcluirRota(e.message),
+    });
 
     const mutRemover = api.admin.rotas.removerParada.useMutation({
         onSuccess: () => { void refetch(); setConfirmRemover(null); setErroRemover(""); },
@@ -396,6 +406,12 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <button
+                        onClick={() => setConfirmExcluirRota(true)}
+                        className="rounded-lg bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-200 transition-colors"
+                    >
+                        Excluir
+                    </button>
+                    <button
                         onClick={() => setAdicionando(true)}
                         className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 transition-colors"
                     >
@@ -404,6 +420,33 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
                 </div>
             </div>
+
+            {confirmExcluirRota && (
+                <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200">
+                    <p className="text-sm text-red-800 font-medium mb-1">
+                        Deseja realmente excluir a rota <strong>{rota.nome}</strong>?
+                    </p>
+                    <p className="text-xs text-red-600 mb-3 block">
+                        Esta ação é irreversível.
+                    </p>
+                    {erroExcluirRota && <p className="text-xs text-red-700 mb-2 font-semibold">Erro: {erroExcluirRota}</p>}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => { setConfirmExcluirRota(false); setErroExcluirRota(""); }}
+                            className="flex-1 text-xs border border-gray-300 rounded-md px-3 py-1.5 hover:bg-white transition-colors text-gray-700"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => mutExcluirRota.mutate({ id: rotaId })}
+                            disabled={mutExcluirRota.isPending}
+                            className="flex-1 text-xs bg-red-600 text-white font-bold rounded-md px-3 py-1.5 hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        >
+                            {mutExcluirRota.isPending ? "Excluindo..." : "Excluir Rota"}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="space-y-2 overflow-y-auto flex-1">
                 {rota.paradas.map((p: any) => (

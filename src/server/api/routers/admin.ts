@@ -270,6 +270,25 @@ const rotasRouter = createTRPCRouter({
 
             return { ok: true };
         }),
+
+    excluir: adminProcedure
+        .input(z.object({ id: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            const rota = await ctx.db.rotaPadrao.findUnique({
+                where: { id: input.id },
+                include: { _count: { select: { viagens: true } } },
+            });
+            if (!rota) throw new TRPCError({ code: "NOT_FOUND", message: "Rota não encontrada." });
+            
+            if (rota._count.viagens > 0) {
+                throw new TRPCError({
+                    code: "PRECONDITION_FAILED",
+                    message: `Não é possível excluir: esta rota possui ${rota._count.viagens} viagem(ns) vinculada(s).`,
+                });
+            }
+            
+            return ctx.db.rotaPadrao.delete({ where: { id: input.id } });
+        }),
 });
 
 // ============================
