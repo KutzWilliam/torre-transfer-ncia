@@ -20,11 +20,13 @@ function formatarHorario(date: Date | string | null | undefined): string {
 
 function formatarMinutos(min: number | null): string {
     if (min === null) return "—";
-    if (min <= 0) return "No horário";
-    if (min < 60) return `+${min} min`;
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return `+${h}h${m > 0 ? m + "min" : ""}`;
+    if (min === 0) return "No horário";
+    const abs = Math.abs(min);
+    const sinal = min > 0 ? "+" : "-";
+    if (abs < 60) return `${sinal}${abs}min`;
+    const h = Math.floor(abs / 60);
+    const m = abs % 60;
+    return `${sinal}${h}h${m > 0 ? m + "min" : ""}`;
 }
 
 function tempoDesdeUltimoSinal(date: Date | string | null | undefined, agora: Date): string {
@@ -160,7 +162,7 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                             v.atrasoSaidaMinutos && v.atrasoSaidaMinutos < 0 ? "text-emerald-600" : "text-gray-400"
                         }`}>
                             {v.atrasoSaidaMinutos !== null
-                                ? v.atrasoSaidaMinutos > 0 ? formatarMinutos(v.atrasoSaidaMinutos) : v.atrasoSaidaMinutos < 0 ? `${v.atrasoSaidaMinutos}min` : "Pontual"
+                                ? v.atrasoSaidaMinutos !== 0 ? formatarMinutos(v.atrasoSaidaMinutos) : "Pontual"
                                 : "—"}
                         </p>
                     </div>
@@ -191,7 +193,7 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                                         deltaChegada !== null && deltaChegada < 0 ? "text-emerald-600" : "text-gray-400"
                                     }`}>
                                         {deltaChegada !== null
-                                            ? deltaChegada > 0 ? formatarMinutos(deltaChegada) : deltaChegada < 0 ? `${deltaChegada}min` : "Pontual"
+                                            ? deltaChegada !== 0 ? formatarMinutos(deltaChegada) : "Pontual"
                                             : "—"}
                                     </p>
                                 </div>
