@@ -160,7 +160,7 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                             v.atrasoSaidaMinutos && v.atrasoSaidaMinutos < 0 ? "text-emerald-600" : "text-gray-400"
                         }`}>
                             {v.atrasoSaidaMinutos !== null
-                                ? v.atrasoSaidaMinutos > 0 ? `+${v.atrasoSaidaMinutos}min` : v.atrasoSaidaMinutos < 0 ? `${v.atrasoSaidaMinutos}min` : "Pontual"
+                                ? v.atrasoSaidaMinutos > 0 ? formatarMinutos(v.atrasoSaidaMinutos) : v.atrasoSaidaMinutos < 0 ? `${v.atrasoSaidaMinutos}min` : "Pontual"
                                 : "—"}
                         </p>
                     </div>
@@ -191,7 +191,7 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                                         deltaChegada !== null && deltaChegada < 0 ? "text-emerald-600" : "text-gray-400"
                                     }`}>
                                         {deltaChegada !== null
-                                            ? deltaChegada > 0 ? `+${deltaChegada}min` : deltaChegada < 0 ? `${deltaChegada}min` : "Pontual"
+                                            ? deltaChegada > 0 ? formatarMinutos(deltaChegada) : deltaChegada < 0 ? `${deltaChegada}min` : "Pontual"
                                             : "—"}
                                     </p>
                                 </div>

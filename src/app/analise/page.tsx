@@ -385,7 +385,7 @@ export default function AnalisePage() {
                                                         <td className="px-4 py-3 whitespace-nowrap text-sm font-bold">
                                                             {v.atrasoSaidaMin !== null ? (
                                                                 <span className={v.atrasoSaidaMin > 0 ? "text-red-600" : "text-emerald-600"}>
-                                                                    {v.atrasoSaidaMin > 0 ? `+${v.atrasoSaidaMin}min` : v.atrasoSaidaMin < 0 ? `${v.atrasoSaidaMin}min` : "Pontual"}
+                                                                    {v.atrasoSaidaMin > 0 ? fmtMin(v.atrasoSaidaMin) : v.atrasoSaidaMin < 0 ? fmtMin(v.atrasoSaidaMin) : "Pontual"}
                                                                 </span>
                                                             ) : <span className="text-gray-400">—</span>}
                                                         </td>
