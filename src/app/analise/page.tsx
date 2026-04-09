@@ -9,6 +9,7 @@ import { ptBR } from "date-fns/locale";
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
 type PeriodoFiltro = "HOJE" | "SEMANA" | "MES" | "DIA_CUSTOM" | "MES_CUSTOM";
+type TipoFiltro = "TODAS" | "RECUPERACAO" | "ATRASO_ROTA" | "ATRASO_TOTAL";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmtMin(min: number): string {
@@ -160,15 +161,25 @@ export default function AnalisePage() {
     );
 
     const [ordenacao, setOrdenacao] = useState<"atrasoChegadaMin" | "prevInicio">("prevInicio");
+    const [filtroTipo, setFiltroTipo] = useState<TipoFiltro>("TODAS");
 
     const viagensOrdenadas = useMemo(() => {
         if (!data?.viagens) return [];
-        return [...data.viagens].sort((a, b) =>
+        const filtradas = data.viagens.filter((v) => {
+            if (filtroTipo === "TODAS") return true;
+            const saiuAtrasado  = (v.atrasoSaidaMin ?? 0) > 0;
+            const chegouAtrasado = v.atrasoChegadaMin > 0;
+            if (filtroTipo === "RECUPERACAO")  return saiuAtrasado && !chegouAtrasado;
+            if (filtroTipo === "ATRASO_ROTA")  return !saiuAtrasado && chegouAtrasado;
+            if (filtroTipo === "ATRASO_TOTAL") return saiuAtrasado && chegouAtrasado;
+            return true;
+        });
+        return [...filtradas].sort((a, b) =>
             ordenacao === "atrasoChegadaMin"
                 ? b.atrasoChegadaMin - a.atrasoChegadaMin
                 : new Date(b.prevInicio).getTime() - new Date(a.prevInicio).getTime()
         );
-    }, [data?.viagens, ordenacao]);
+    }, [data?.viagens, ordenacao, filtroTipo]);
 
     const labelPeriodo = {
         HOJE: "Hoje",
@@ -256,6 +267,31 @@ export default function AnalisePage() {
                             ))}
                         </select>
                     </div>
+
+                    {/* Filtro Tipo de Viagem */}
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tipo de Viagem</p>
+                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-0.5">
+                            {([
+                                { key: "TODAS",       label: "Todas",               icon: "📋" },
+                                { key: "RECUPERACAO", label: "Recuperação em Rota", icon: "🔄" },
+                                { key: "ATRASO_ROTA", label: "Atraso em Rota",      icon: "⏩" },
+                                { key: "ATRASO_TOTAL",label: "Atraso Total",        icon: "🔴" },
+                            ] as { key: TipoFiltro; label: string; icon: string }[]).map(({ key, label, icon }) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setFiltroTipo(key)}
+                                    title={label}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
+                                        filtroTipo === key ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                    }`}
+                                >
+                                    <span>{icon}</span>
+                                    <span className="hidden sm:inline">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
                 {isLoading ? (
@@ -332,7 +368,13 @@ export default function AnalisePage() {
                             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
                                 <div>
                                     <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">📋 Viagens Finalizadas no Período</h2>
-                                    <p className="text-xs text-slate-400 mt-0.5">{data.kpis.total} viagem(ns) encontrada(s)</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">{viagensOrdenadas.length} de {data.kpis.total} viagem(ns) exibida(s)
+                                        {filtroTipo !== "TODAS" && (
+                                            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700">
+                                                {{ RECUPERACAO: "🔄 Recuperação em Rota", ATRASO_ROTA: "⏩ Atraso em Rota", ATRASO_TOTAL: "🔴 Atraso Total", TODAS: "" }[filtroTipo]}
+                                            </span>
+                                        )}
+                                    </p>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs text-slate-500">Ordenar por:</span>
@@ -358,7 +400,7 @@ export default function AnalisePage() {
                                     <table className="min-w-full divide-y divide-gray-100">
                                         <thead className="bg-gray-50">
                                             <tr>
-                                                {["Viagem / Rota", "Motorista / Placa", "Saída Prev.", "Saída Real", "Δ Saída", "Chegada Prev.", "Chegada Real", "Δ Chegada", "Duração", "Status"].map((h) => (
+                                                {["Viagem / Rota", "Motorista / Placa", "Saída Prev.", "Saída Real", "Δ Saída", "Chegada Prev.", "Chegada Real", "Δ Chegada", "Duração", "🏎 Pico km/h", "Status"].map((h) => (
                                                     <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                                                 ))}
                                             </tr>
@@ -411,6 +453,19 @@ export default function AnalisePage() {
                                                             {v.duracaoPrevistaMin && (
                                                                 <p className="text-gray-400">Prev: {fmtDuracao(v.duracaoPrevistaMin)}</p>
                                                             )}
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                                                            {(v as typeof v & { picVelocidade?: number | null }).picVelocidade != null ? (
+                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                                                                    ((v as typeof v & { picVelocidade?: number }).picVelocidade ?? 0) >= 110
+                                                                        ? "bg-red-50 text-red-700"
+                                                                        : ((v as typeof v & { picVelocidade?: number }).picVelocidade ?? 0) >= 90
+                                                                        ? "bg-amber-50 text-amber-700"
+                                                                        : "bg-slate-50 text-slate-600"
+                                                                }`}>
+                                                                    🏎 {(v as typeof v & { picVelocidade?: number }).picVelocidade} km/h
+                                                                </span>
+                                                            ) : <span className="text-gray-400 text-xs">—</span>}
                                                         </td>
                                                         <td className="px-4 py-3 whitespace-nowrap">
                                                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.bg} ${cfg.text}`}>

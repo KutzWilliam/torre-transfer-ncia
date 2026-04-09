@@ -520,6 +520,26 @@ export const viagemRouter = createTRPCRouter({
 
             // Enriquecer cada viagem com métricas calculadas
             type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
+
+            // Buscar pico de velocidade por viagem (agregado via telemetria)
+            const picosVelocidade = await Promise.all(
+                viagens.map(async (v) => {
+                    const dataInicio = v.dataInicioEfetivo ?? v.prevInicioReal;
+                    const dataFim    = v.dataFimEfetivo   ?? v.prevFimReal;
+                    const telMax = await ctx.db.telemetria.findFirst({
+                        where: {
+                            veiculoId: v.veiculo.id,
+                            dataHoraLocal: { gte: dataInicio, lte: dataFim },
+                            velocidade: { not: null },
+                        },
+                        orderBy: { velocidade: "desc" },
+                        select: { velocidade: true },
+                    });
+                    return { id: v.id, picVelocidade: telMax?.velocidade ?? null };
+                })
+            );
+            const picMap = new Map(picosVelocidade.map((p) => [p.id, p.picVelocidade]));
+
             const viagensEnriquecidas = viagens.map((v) => {
                 const atrasoChegadaMin = v.dataFimEfetivo && v.prevFimReal
                     ? Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000)
@@ -557,6 +577,7 @@ export const viagemRouter = createTRPCRouter({
                     duracaoPrevistaMin,
                     duracaoRealMin,
                     nivelAlerta,
+                    picVelocidade: picMap.get(v.id) ?? null,
                 };
             });
 
