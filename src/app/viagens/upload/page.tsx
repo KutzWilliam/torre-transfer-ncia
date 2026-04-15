@@ -107,6 +107,7 @@ export default function UploadViagensPage() {
                 const totalBruto = formattedData.length;
                 const dadosValidos = formattedData.filter((v) => {
                     const camposObrigatorios = [
+                        { campo: v.numeroViagem, nome: "Nº Viagem" },
                         { campo: v.motorista, nome: "Motorista/Usuário MOBILE" },
                         { campo: v.placaMob,  nome: "Placa/MOBILE" },
                         { campo: v.placa,     nome: "Placa Programação" },
@@ -137,7 +138,8 @@ export default function UploadViagensPage() {
 
             } catch (error) {
                 console.error(error);
-                setMessage("❌ Erro ao processar o ficheiro. Verifique se o formato está correto.");
+                const msg = error instanceof Error ? error.message : String(error);
+                setMessage(`❌ Erro ao processar: ${msg}`);
                 setIsUploading(false);
             }
         };
