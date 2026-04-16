@@ -29,6 +29,12 @@ enum TipoAtraso {
   DESLOCAMENTO_ROTA
 }
 
+enum StatusOcorrencia {
+  ABERTA
+  EM_ATENDIMENTO
+  RESOLVIDA
+}
+
 // ================= Cadastros Básicos =================
 
 model Base {
@@ -40,6 +46,10 @@ model Base {
   latitude    Float?
   longitude   Float?
   raioMetros  Int      @default(500)
+  
+  // Responsável pela unidade (para contato em ocorrências)
+  responsavelNome     String?
+  responsavelContato  String?
   
   // Relações
   usuarios          User[]
@@ -67,6 +77,9 @@ model User {
   base          Base?     @relation(fields: [baseId], references: [id])
   
   justificativas JustificativaAtraso[]
+  
+  ocorrenciasAbertas    Ocorrencia[] @relation("OcorrenciasAbertas")
+  ocorrenciasResolvidas Ocorrencia[] @relation("OcorrenciasResolvidas")
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -120,6 +133,7 @@ model Viagem {
   
   justificativas      JustificativaAtraso[]
   telemetrias         Telemetria[]
+  ocorrencias         Ocorrencia[]
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -212,4 +226,38 @@ model ParadaViagem {
   // Preenchido dinamicamente pela telemetria
   dataChegadaEfetiva DateTime?
   dataSaidaEfetiva   DateTime?
+}
+
+// ================= OCORRÊNCIAS =================
+
+model Ocorrencia {
+  id              String           @id @default(cuid())
+  
+  viagemId        String
+  viagem          Viagem           @relation(fields: [viagemId], references: [id])
+  
+  tipoOcorrencia  String           // Ex: "Pneu Furado", "Acidente", "Avaria Mecânica", "Atraso de Tráfego", "Outro"
+  descricao       String           @db.Text
+  
+  // Localização no momento da ocorrência (copiada da última telemetria disponível)
+  latOcorrencia   Float?
+  lngOcorrencia   Float?
+  
+  status          StatusOcorrencia @default(ABERTA)
+  
+  resolucao       String?          @db.Text
+  
+  abertaPorId     String
+  abertaPor       User             @relation("OcorrenciasAbertas", fields: [abertaPorId], references: [id])
+  
+  resolvidaPorId  String?
+  resolvidaPor    User?            @relation("OcorrenciasResolvidas", fields: [resolvidaPorId], references: [id])
+  
+  resolvidaEm     DateTime?
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([viagemId])
+  @@index([status])
 }

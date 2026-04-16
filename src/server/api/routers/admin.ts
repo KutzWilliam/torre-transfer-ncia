@@ -94,6 +94,8 @@ const basesRouter = createTRPCRouter({
             latitude: z.number().optional().nullable(),
             longitude: z.number().optional().nullable(),
             raioMetros: z.number().int().min(50).default(500),
+            responsavelNome: z.string().optional().nullable(),
+            responsavelContato: z.string().optional().nullable(),
         }))
         .mutation(async ({ ctx, input }) => {
             const existing = await ctx.db.base.findUnique({ where: { nome: input.nome } });
@@ -109,6 +111,8 @@ const basesRouter = createTRPCRouter({
             latitude: z.number().optional().nullable(),
             longitude: z.number().optional().nullable(),
             raioMetros: z.number().int().min(50),
+            responsavelNome: z.string().optional().nullable(),
+            responsavelContato: z.string().optional().nullable(),
         }))
         .mutation(async ({ ctx, input }) => {
             const { id, ...data } = input;

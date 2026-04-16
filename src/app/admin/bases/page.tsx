@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
 
-const EMPTY_BASE = { nome: "", cidade: "", latitude: "", longitude: "", raioMetros: "500" };
+const EMPTY_BASE = { nome: "", cidade: "", latitude: "", longitude: "", raioMetros: "500", responsavelNome: "", responsavelContato: "" };
 
 export default function AdminBasesPage() {
     const utils = api.useUtils();
@@ -39,6 +39,8 @@ export default function AdminBasesPage() {
             latitude: b.latitude?.toString() ?? "",
             longitude: b.longitude?.toString() ?? "",
             raioMetros: b.raioMetros.toString(),
+            responsavelNome: (b as any).responsavelNome ?? "",
+            responsavelContato: (b as any).responsavelContato ?? "",
         });
         setError("");
         setShowModal("editar");
@@ -55,11 +57,13 @@ export default function AdminBasesPage() {
             latitude: parseNum(form.latitude),
             longitude: parseNum(form.longitude),
             raioMetros: parseInt(form.raioMetros) || 500,
+            responsavelNome: form.responsavelNome.trim() || null,
+            responsavelContato: form.responsavelContato.trim() || null,
         };
         if (showModal === "criar") {
-            criarMutation.mutate(data);
+            criarMutation.mutate(data as any);
         } else if (showModal === "editar" && editId) {
-            editarMutation.mutate({ id: editId, ...data });
+            editarMutation.mutate({ id: editId, ...data } as any);
         }
     };
 
@@ -94,6 +98,7 @@ export default function AdminBasesPage() {
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Nome / Cidade</th>
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Coordenadas GPS</th>
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Raio Geocerca</th>
+                                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Responsável / Contato</th>
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Viagens</th>
                                     <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Ações</th>
                                 </tr>
@@ -115,6 +120,16 @@ export default function AdminBasesPage() {
                                             <span className="text-sm bg-gray-100 px-2.5 py-1 rounded-full text-gray-700 font-medium">
                                                 {b.raioMetros}m
                                             </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {(b as any).responsavelNome ? (
+                                                <div>
+                                                    <div className="text-sm font-medium text-gray-800">{(b as any).responsavelNome}</div>
+                                                    <div className="text-xs text-blue-600">{(b as any).responsavelContato ?? "—"}</div>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">Não cadastrado</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-600">
                                             {b._count.viagensOrigem + b._count.viagensDestino} viagem(ns)
@@ -163,6 +178,18 @@ export default function AdminBasesPage() {
                                         <label className="block text-sm font-semibold text-gray-700 mb-1">Raio da Geocerca (metros)</label>
                                         <input type="number" min="50" value={form.raioMetros} onChange={e => setForm(f => ({ ...f, raioMetros: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-princesa-green" />
                                         <p className="text-xs text-gray-400 mt-1">Distância mínima do GPS para considerar chegada na base. Padrão: 500m.</p>
+                                    </div>
+                                    <div className="col-span-2 border-t border-gray-100 pt-3">
+                                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">📞 Contato para Ocorrências</p>
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Nome do Responsável</label>
+                                        <input value={(form as any).responsavelNome} onChange={e => setForm(f => ({ ...f, responsavelNome: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-princesa-green" placeholder="Ex: João Silva" />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Telefone / WhatsApp</label>
+                                        <input value={(form as any).responsavelContato} onChange={e => setForm(f => ({ ...f, responsavelContato: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-princesa-green" placeholder="Ex: (41) 99999-9999" />
+                                        <p className="text-xs text-gray-400 mt-1">Exibido nos cards de ocorrência para o operador entrar em contato.</p>
                                     </div>
                                 </div>
                                 {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}

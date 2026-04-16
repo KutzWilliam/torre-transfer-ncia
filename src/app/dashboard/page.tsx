@@ -8,6 +8,8 @@ import Link from "next/link";
 // ─── Tipos inferidos do backend ───────────────────────────────────────────────
 type DadosDashboard = RouterOutputs["viagem"]["obterDashboard"][number];
 
+type OcorrenciaStatus = "ABERTA" | "EM_ATENDIMENTO";
+
 type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO" | "SEM_SINAL";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -112,9 +114,26 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
     const previsaoBaseRef = v.previsaoBaseRef ? new Date(v.previsaoBaseRef) : null;
     const previsaoChegada = v.previsaoChegadaCalculada ? new Date(v.previsaoChegadaCalculada) : null;
 
+    // Verifica se há ocorrência aberta nesta viagem
+    const ocorrenciaAtiva = (v as any).ocorrencias?.[0] ?? null;
+    const temOcorrencia = !!ocorrenciaAtiva;
+    const cardBorderClass = temOcorrencia ? "border-l-amber-500" : cfg.cardBorder;
+
     return (
-        <div className={`flex flex-col rounded-2xl border-l-4 border border-gray-100 bg-white shadow-sm overflow-hidden transition-shadow hover:shadow-md ${cfg.cardBorder}`}>
-            {/* Header do card */}
+        <div className={`flex flex-col rounded-2xl border-l-4 border border-gray-100 bg-white shadow-sm overflow-hidden transition-shadow hover:shadow-md ${cardBorderClass}`}>
+            {/* Banner de Ocorrência */}
+            {temOcorrencia && (
+                <div className="flex items-center gap-2 px-5 py-2 bg-amber-50 border-b border-amber-100">
+                    <span className="text-amber-500 animate-pulse text-sm">⚠️</span>
+                    <div className="min-w-0 flex-1">
+                        <span className="text-xs font-bold text-amber-800">Ocorrência em Aberto: </span>
+                        <span className="text-xs text-amber-700">{ocorrenciaAtiva.tipoOcorrencia}</span>
+                    </div>
+                    <a href="/ocorrencias" className="text-xs text-amber-600 hover:text-amber-800 font-bold flex-shrink-0">
+                        Ver →
+                    </a>
+                </div>
+            )}
             <div className="flex items-start justify-between px-5 pt-5 pb-3">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -251,6 +270,18 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                         )}
                     </div>
                 </div>
+
+                {/* Descrição da ocorrência ativa */}
+                {temOcorrencia && (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 space-y-1">
+                        <p className="text-[10px] uppercase font-bold tracking-wider text-amber-600">
+                            ⚠️ Motivo da Ocorrência
+                        </p>
+                        <p className="text-xs text-amber-800 leading-relaxed line-clamp-3">
+                            {ocorrenciaAtiva.descricao}
+                        </p>
+                    </div>
+                )}
 
                 {/* Último sinal GPS */}
                 <div className="flex items-center justify-between text-xs text-gray-400">
@@ -478,12 +509,20 @@ export default function DashboardOperacionalPage() {
                             </p>
                         </div>
                         <div className="flex flex-col items-end gap-1">
-                            <button
-                                onClick={() => refetch()}
-                                className="rounded-lg bg-princesa-green px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-600 transition-colors shadow-sm"
-                            >
-                                ↻ Atualizar
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href="/ocorrencias"
+                                    className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition-colors shadow-sm"
+                                >
+                                    ⚠️ Ocorrências
+                                </Link>
+                                <button
+                                    onClick={() => refetch()}
+                                    className="rounded-lg bg-princesa-green px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-600 transition-colors shadow-sm"
+                                >
+                                    ↻ Atualizar
+                                </button>
+                            </div>
                             <p className="text-[10px] text-slate-400 tabular-nums">
                                 Atualizado: {isMounted ? ultimaAtualizacao : "--:--"}
                             </p>

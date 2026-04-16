@@ -129,6 +129,29 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
         return { timeline: timelineCalculada, ultimaPosicao: ultimaPos };
     }, [viagem]);
 
+    // Formata ocorrências para linha do tempo
+    const ocorrencias = viagem?.ocorrencias ?? [];
+
+    // Combina eventos da viagem (paradas + ocorrências) em ordem cronológica
+    const timelineCompleta = useMemo(() => {
+        const eventos: { tipo: "parada" | "ocorrencia"; timestamp: Date; data: any }[] = [];
+
+        // Adiciona as paradas
+        timeline.forEach((p: any, i: number) => {
+            const ts = p.horaSaida ?? p.horaChegada ?? p.prevSaida ?? p.prevChegada ?? null;
+            eventos.push({ tipo: "parada", timestamp: ts ? new Date(ts) : new Date(0), data: { ...p, index: i } });
+        });
+
+        // Adiciona as ocorrências
+        ocorrencias.forEach((oc: any) => {
+            eventos.push({ tipo: "ocorrencia", timestamp: new Date(oc.createdAt), data: oc });
+        });
+
+        // Ordena por timestamp
+        eventos.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        return eventos;
+    }, [timeline, ocorrencias]);
+
     if (isLoading) return <div className="p-8 text-center text-gray-500">A carregar torre de controlo...</div>;
     if (!viagem) return <div className="p-8 text-center text-red-500">Viagem não encontrada.</div>;
 
@@ -139,10 +162,15 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                     <button onClick={() => router.back()} className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-2 border-none bg-transparent cursor-pointer p-0">
                         &larr; Voltar
                     </button>
-                    <div className="text-sm bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200 text-gray-600">
-                        Sinal GPS: <span className={`font-semibold ${ultimaPosicao ? 'text-green-600' : 'text-red-500'}`}>
-                            {ultimaPosicao ? ultimaPosicao.dataHoraLocal.toLocaleString("pt-BR") : "Sem comunicação"}
-                        </span>
+                    <div className="flex items-center gap-2">
+                        <a href="/ocorrencias" className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 transition-colors">
+                            ⚠️ Ocorrências
+                        </a>
+                        <div className="text-sm bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200 text-gray-600">
+                            Sinal GPS: <span className={`font-semibold ${ultimaPosicao ? 'text-green-600' : 'text-red-500'}`}>
+                                {ultimaPosicao ? ultimaPosicao.dataHoraLocal.toLocaleString("pt-BR") : "Sem comunicação"}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -166,6 +194,43 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                                 <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Veículo</p>
                                 <p className="font-medium text-gray-900">{viagem.veiculo?.placa}</p>
                             </div>
+
+                            {/* Ocorrências da Viagem */}
+                            {ocorrencias.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
+                                        Ocorrências ({ocorrencias.length})
+                                    </p>
+                                    {ocorrencias.map((oc: any) => (
+                                        <div key={oc.id} className={`p-3 rounded-lg border text-xs ${
+                                            oc.status === "RESOLVIDA"
+                                                ? "bg-emerald-50 border-emerald-100"
+                                                : "bg-amber-50 border-amber-100"
+                                        }`}>
+                                            <div className="flex items-center justify-between gap-1 mb-1">
+                                                <span className="font-bold text-gray-800">{oc.tipoOcorrencia}</span>
+                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                                    oc.status === "RESOLVIDA" ? "bg-emerald-100 text-emerald-700" :
+                                                    oc.status === "EM_ATENDIMENTO" ? "bg-amber-100 text-amber-700" :
+                                                    "bg-red-100 text-red-700"
+                                                }`}>
+                                                    {oc.status === "RESOLVIDA" ? "Resolvida" : oc.status === "EM_ATENDIMENTO" ? "Em Atendimento" : "Aberta"}
+                                                </span>
+                                            </div>
+                                            <p className="text-gray-600 leading-relaxed">{oc.descricao}</p>
+                                            {oc.resolucao && (
+                                                <p className="mt-2 text-emerald-700 font-medium border-t border-emerald-100 pt-2">
+                                                    ✔ {oc.resolucao}
+                                                </p>
+                                            )}
+                                            <p className="mt-1 text-gray-400">
+                                                {new Date(oc.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                                {oc.abertaPor && ` — ${oc.abertaPor.name}`}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -174,14 +239,54 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                         <h2 className="text-xl font-bold text-gray-900 mb-8">Evolução da Rota</h2>
 
                         <div className="relative border-l-2 border-gray-200 ml-4 space-y-12">
-                            {timeline.map((parada: any, index: number) => {
+                            {timelineCompleta.map((evento, idx) => {
 
-                                // Define a cor do marcador baseado se ele já passou por lá
+                                // Evento de ocorrência
+                                if (evento.tipo === "ocorrencia") {
+                                    const oc = evento.data;
+                                    return (
+                                        <div key={`oc-${oc.id}`} className="relative pl-8">
+                                            {/* Bolinha âmbar */}
+                                            <div className={`absolute -left-[11px] top-1.5 h-5 w-5 rounded-full border-4 border-white flex items-center justify-center text-[10px] ${
+                                                oc.status === "RESOLVIDA" ? "bg-emerald-500" : "bg-amber-400"
+                                            }`}>
+                                                !
+                                            </div>
+                                            <div className={`rounded-xl border p-4 ${
+                                                oc.status === "RESOLVIDA"
+                                                    ? "bg-emerald-50 border-emerald-100"
+                                                    : "bg-amber-50 border-amber-100"
+                                            }`}>
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <h3 className="text-base font-bold text-gray-900">
+                                                        ⚠️ Ocorrência: {oc.tipoOcorrencia}
+                                                    </h3>
+                                                    <span className="text-xs text-gray-500 flex-shrink-0">
+                                                        {new Date(oc.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                                    </span>
+                                                </div>
+                                                <p className="mt-1 text-sm text-gray-700 leading-relaxed">{oc.descricao}</p>
+                                                {oc.resolucao && (
+                                                    <p className="mt-2 text-sm text-emerald-700 font-medium border-t border-emerald-200 pt-2">
+                                                        ✔ Resolução: {oc.resolucao}
+                                                    </p>
+                                                )}
+                                                {oc.abertaPor && (
+                                                    <p className="mt-1 text-xs text-gray-400">Por: {oc.abertaPor.name}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                // Evento de parada (lógica original)
+                                const parada = evento.data;
+                                const index = parada.index;
                                 const jaPassou = parada.horaChegada || parada.horaSaida;
                                 const markerColor = jaPassou ? 'bg-blue-600 border-white' : 'bg-gray-200 border-white';
 
                                 return (
-                                    <div key={index} className="relative pl-8">
+                                    <div key={`stop-${idx}`} className="relative pl-8">
                                         {/* Bolinha da Timeline */}
                                         <div className={`absolute -left-[11px] top-1.5 h-5 w-5 rounded-full border-4 ${markerColor}`}></div>
 

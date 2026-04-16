@@ -170,7 +170,15 @@ export const viagemRouter = createTRPCRouter({
                     paradasViagem: {
                         include: { base: true },
                         orderBy: { ordem: "asc" }
-                    }
+                    },
+                    // Ocorrências registradas nesta viagem
+                    ocorrencias: {
+                        include: {
+                            abertaPor: { select: { id: true, name: true } },
+                            resolvidaPor: { select: { id: true, name: true } },
+                        },
+                        orderBy: { createdAt: "asc" },
+                    },
                 },
             });
 
@@ -253,6 +261,11 @@ export const viagemRouter = createTRPCRouter({
                     include: { base: true },
                     orderBy: { ordem: "asc" },
                 },
+                ocorrencias: {
+                    where: { status: { in: ["ABERTA", "EM_ATENDIMENTO"] } },
+                    orderBy: { createdAt: "desc" },
+                    take: 1,
+                },
             },
         });
 
@@ -290,6 +303,11 @@ export const viagemRouter = createTRPCRouter({
                 paradasViagem: {
                     include: { base: true },
                     orderBy: { ordem: "asc" },
+                },
+                ocorrencias: {
+                    where: { status: { in: ["ABERTA", "EM_ATENDIMENTO"] } },
+                    orderBy: { createdAt: "desc" },
+                    take: 1,
                 },
             },
         });
