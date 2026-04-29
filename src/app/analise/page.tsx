@@ -127,6 +127,7 @@ export default function AnalisePage() {
     const [diaCustom, setDiaCustom] = useState(format(hoje, "yyyy-MM-dd"));
     const [mesCustom, setMesCustom] = useState(format(hoje, "yyyy-MM"));
     const [baseOrigemNome, setBaseOrigemNome] = useState<string>("");
+    const [searchQuery, setSearchQuery] = useState("");
 
     // Calcula intervalo de datas com base no filtro
     const { dataInicio, dataFim } = useMemo(() => {
@@ -146,7 +147,8 @@ export default function AnalisePage() {
             case "DIA_CUSTOM":
                 return { dataInicio: diaCustom, dataFim: diaCustom };
             case "MES_CUSTOM": {
-                const base = new Date(mesCustom + "-01");
+                // Adicionamos T12:00:00 para garantir que o parse seja local e não mude o mês por fuso
+                const base = new Date(mesCustom + "-01T12:00:00");
                 const s = startOfMonth(base);
                 const e = endOfMonth(base);
                 return { dataInicio: format(s, "yyyy-MM-dd"), dataFim: format(e, "yyyy-MM-dd") };
@@ -166,20 +168,59 @@ export default function AnalisePage() {
     const viagensOrdenadas = useMemo(() => {
         if (!data?.viagens) return [];
         const filtradas = data.viagens.filter((v) => {
-            if (filtroTipo === "TODAS") return true;
+            // Filtro por Tipo
+            let matchTipo = true;
             const saiuAtrasado  = (v.atrasoSaidaMin ?? 0) > 0;
             const chegouAtrasado = v.atrasoChegadaMin > 0;
-            if (filtroTipo === "RECUPERACAO")  return saiuAtrasado && !chegouAtrasado;
-            if (filtroTipo === "ATRASO_ROTA")  return !saiuAtrasado && chegouAtrasado;
-            if (filtroTipo === "ATRASO_TOTAL") return saiuAtrasado && chegouAtrasado;
-            return true;
+            if (filtroTipo === "RECUPERACAO")  matchTipo = saiuAtrasado && !chegouAtrasado;
+            else if (filtroTipo === "ATRASO_ROTA")  matchTipo = !saiuAtrasado && chegouAtrasado;
+            else if (filtroTipo === "ATRASO_TOTAL") matchTipo = saiuAtrasado && chegouAtrasado;
+
+            // Filtro por Busca (Motorista, Placa ou ID)
+            const q = searchQuery.toLowerCase();
+            const matchBusca = !q || 
+                v.motorista.toLowerCase().includes(q) || 
+                v.placa.toLowerCase().includes(q) || 
+                v.id.toLowerCase().includes(q);
+
+            return matchTipo && matchBusca;
         });
         return [...filtradas].sort((a, b) =>
             ordenacao === "atrasoChegadaMin"
                 ? b.atrasoChegadaMin - a.atrasoChegadaMin
                 : new Date(b.prevInicio).getTime() - new Date(a.prevInicio).getTime()
         );
-    }, [data?.viagens, ordenacao, filtroTipo]);
+    }, [data?.viagens, ordenacao, filtroTipo, searchQuery]);
+
+    const handleExportExcel = () => {
+        if (!viagensOrdenadas.length) return;
+        
+        // Importação dinâmica para reduzir o bundle inicial
+        import("xlsx").then((XLSX) => {
+            const exportData = viagensOrdenadas.map((v) => ({
+                "Cód. Viagem": v.id,
+                "Rota": v.rotaDescricao,
+                "Motorista": v.motorista,
+                "Placa": v.placa,
+                "Saída Prevista": fmtDataHora(v.prevInicio),
+                "Saída Real": v.dataInicioEfetivo ? fmtDataHora(v.dataInicioEfetivo) : "—",
+                "Atraso Saída (min)": v.atrasoSaidaMin ?? 0,
+                "Chegada Prevista": fmtDataHora(v.prevFim),
+                "Chegada Real": v.dataFimEfetivo ? fmtDataHora(v.dataFimEfetivo) : "—",
+                "Atraso Chegada (min)": v.atrasoChegadaMin,
+                "Duração Real": fmtDuracao(v.duracaoRealMin),
+                "Pico Velocidade": v.picVelocidade ? `${v.picVelocidade} km/h` : "—",
+                "Status": v.nivelAlerta
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Viagens");
+            
+            const fileName = `Relatorio_Viagens_${format(new Date(), "dd_MM_yyyy_HHmm")}.xlsx`;
+            XLSX.writeFile(workbook, fileName);
+        });
+    };
 
     const labelPeriodo = {
         HOJE: "Hoje",
@@ -292,6 +333,30 @@ export default function AnalisePage() {
                             ))}
                         </div>
                     </div>
+
+                    {/* Busca */}
+                    <div className="space-y-1.5 flex-1 min-w-[250px]">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Buscar Viagem</p>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                            <input
+                                type="text"
+                                placeholder="Motorista, placa ou código..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full text-sm pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Exportar */}
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={!viagensOrdenadas.length}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
+                    >
+                        📥 Exportar Excel
+                    </button>
                 </div>
 
                 {isLoading ? (
