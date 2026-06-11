@@ -5,6 +5,8 @@ import { api } from "@/trpc/react";
 import Link from "next/link";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { keepPreviousData } from "@tanstack/react-query";
+import { TruckLoader } from "@/components/TruckLoader";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
@@ -157,9 +159,16 @@ export default function AnalisePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [periodo, diaCustom, mesCustom]);
 
-    const { data, isLoading } = api.viagem.obterAnalytics.useQuery(
+    const { data, isLoading, isFetching } = api.viagem.obterAnalytics.useQuery(
         { dataInicio, dataFim, baseOrigemNome: baseOrigemNome || undefined },
-        { refetchOnWindowFocus: false }
+        {
+            refetchOnWindowFocus: false,
+            // ⚡ Dados históricos mudam pouco — 5 min de cache evita re-fetch ao trocar de aba
+            staleTime: 5 * 60 * 1000,
+            gcTime: 10 * 60 * 1000,
+            // ⚡ Mantém dados anteriores enquanto carrega novos (sem tela em branco ao mudar filtros)
+            placeholderData: keepPreviousData,
+        }
     );
 
     const [ordenacao, setOrdenacao] = useState<"atrasoChegadaMin" | "prevInicio">("prevInicio");
@@ -360,10 +369,8 @@ export default function AnalisePage() {
                 </div>
 
                 {isLoading ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                            <div key={i} className="h-28 rounded-2xl bg-white animate-pulse shadow-sm border border-gray-100" />
-                        ))}
+                    <div className="flex flex-col items-center justify-center py-20">
+                        <TruckLoader tamanho="lg" mensagem="Analisando viagens do período..." />
                     </div>
                 ) : data ? (
                     <>
@@ -549,6 +556,13 @@ export default function AnalisePage() {
                     </>
                 ) : null}
             </main>
+            {/* ⚡ Indicador sutil de refetch em background (filtro já tem dados mas está atualizando) */}
+            {isFetching && !isLoading && (
+                <div className="fixed bottom-4 right-4 bg-white border border-slate-200 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 text-xs text-slate-600 z-50">
+                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    Atualizando dados...
+                </div>
+            )}
         </div>
     );
 }

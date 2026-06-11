@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { calcularDistanciaGeocerca } from "@/server/utils/geolocalizacao";
+import { TruckLoaderFullscreen } from "@/components/TruckLoader";
 
 const MapaViagem = dynamic(() => import("./MapaViagem"), {
     ssr: false,
@@ -24,6 +25,9 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
     const { data: viagem, isLoading } = api.viagem.obterPorId.useQuery(id, {
         refetchInterval: isFinalizada ? false : 30000,
         refetchOnWindowFocus: !isFinalizada,
+        // ⚡ Viagens finalizadas: cache eterno (não mudam mais) | ativas: 25s de freshness
+        staleTime: isFinalizada ? Infinity : 25_000,
+        gcTime: isFinalizada ? Infinity : 60_000,
     });
 
     // Auto-sync invisível em background para garantir que a Sascar envie os novos pontos GPS
@@ -152,7 +156,7 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
         return eventos;
     }, [timeline, ocorrencias]);
 
-    if (isLoading) return <div className="p-8 text-center text-gray-500">A carregar torre de controlo...</div>;
+    if (isLoading) return <TruckLoaderFullscreen mensagem="Carregando detalhes da viagem..." />;
     if (!viagem) return <div className="p-8 text-center text-red-500">Viagem não encontrada.</div>;
 
     return (

@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { api } from "@/trpc/react";
 import { type RouterOutputs } from "@/trpc/react";
 import Link from "next/link";
+import { TruckLoaderFullscreen } from "@/components/TruckLoader";
 
 // ─── Tipos inferidos do backend ───────────────────────────────────────────────
 type DadosDashboard = RouterOutputs["viagem"]["obterDashboard"][number];
@@ -394,6 +395,8 @@ export default function DashboardOperacionalPage() {
     const { data: viagens, isLoading, dataUpdatedAt, refetch } = api.viagem.obterDashboard.useQuery({ horasFiltro }, {
         refetchInterval: 30000,
         refetchOnWindowFocus: true,
+        // ⚡ staleTime: dados ficam "frescos" por 25s — evita re-fetch duplicado ao montar componentes
+        staleTime: 25_000,
     });
 
     // Auto-sync Sascar em background
@@ -535,11 +538,7 @@ export default function DashboardOperacionalPage() {
 
                 {/* ── KPIs ── */}
                 {isLoading && !viagens ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                            <div key={i} className="h-28 rounded-2xl bg-white animate-pulse shadow-sm border border-gray-100" />
-                        ))}
-                    </div>
+                    <TruckLoaderFullscreen mensagem="Carregando viagens..." />
                 ) : kpis ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                         <KpiCard label="Total do Dia"   value={kpis.total}       color="border-l-4 border-l-blue-400"    sub="viagens programadas" />
@@ -591,10 +590,8 @@ export default function DashboardOperacionalPage() {
 
                         {/* Grid de cards de viagem */}
                         {isLoading && !viagens ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {Array.from({ length: 4 }).map((_, i) => (
-                                    <div key={i} className="h-64 rounded-2xl bg-white animate-pulse shadow-sm border border-gray-100" />
-                                ))}
+                            <div className="flex items-center justify-center py-16">
+                                <TruckLoaderFullscreen mensagem="Buscando viagens em andamento..." />
                             </div>
                         ) : viagensFiltradas.length > 0 ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

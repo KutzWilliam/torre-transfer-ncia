@@ -211,6 +211,18 @@ export const viagemRouter = createTRPCRouter({
                     },
                 },
                 orderBy: { dataHoraLocal: "asc" },
+                // ⚡ Seleciona apenas campos usados no frontend — reduz payload significativamente
+                select: {
+                    id: true,
+                    veiculoId: true,
+                    latitude: true,
+                    longitude: true,
+                    velocidade: true,
+                    ignicao: true,
+                    dataHoraLocal: true,
+                    dataHoraUtc: true,
+                    viagemId: true,
+                },
             });
 
             // Mapear para o formato que o frontend já conhece
@@ -269,16 +281,25 @@ export const viagemRouter = createTRPCRouter({
             },
         });
 
-        // Para cada viagem, pegar a ÚLTIMA telemetria do veículo
-        const result = await Promise.all(
-            viagens.map(async (v) => {
-                const ultimaTelemetria = await ctx.db.telemetria.findFirst({
-                    where: { veiculoId: v.veiculo.id },
+        // ⚡ Otimização: 1 única query para todas as últimas telemetrias (elimina N+1)
+        const veiculoIds = [...new Set(viagens.map((v) => v.veiculo.id))];
+        const ultimasTelemetrias = await Promise.all(
+            veiculoIds.map((vid) =>
+                ctx.db.telemetria.findFirst({
+                    where: { veiculoId: vid },
                     orderBy: { dataHoraLocal: "desc" },
-                });
-                return { ...v, ultimaTelemetria };
-            })
+                    select: { id: true, veiculoId: true, latitude: true, longitude: true, velocidade: true, ignicao: true, dataHoraLocal: true, dataHoraUtc: true, viagemId: true },
+                })
+            )
         );
+        const telemetriaMap = new Map(
+            ultimasTelemetrias.filter(Boolean).map((t) => [t!.veiculoId, t!])
+        );
+
+        const result = viagens.map((v) => ({
+            ...v,
+            ultimaTelemetria: telemetriaMap.get(v.veiculo.id) ?? null,
+        }));
 
         return result;
     }),
@@ -312,20 +333,31 @@ export const viagemRouter = createTRPCRouter({
             },
         });
 
-        const result = await Promise.all(
-            viagens.map(async (v) => {
+        // ⚡ Otimização: busca a última telemetria de TODOS os veículos em paralelo (elimina N+1)
+        const veiculoIdsDashboard = [...new Set(viagens.map((v) => v.veiculo.id))];
+        const ultimasTelemetriasDashboard = await Promise.all(
+            veiculoIdsDashboard.map((vid) =>
+                ctx.db.telemetria.findFirst({
+                    where: { veiculoId: vid },
+                    orderBy: { dataHoraLocal: "desc" },
+                    select: { id: true, veiculoId: true, latitude: true, longitude: true, velocidade: true, ignicao: true, dataHoraLocal: true, dataHoraUtc: true, viagemId: true },
+                })
+            )
+        );
+        const telemetriaMapDashboard = new Map(
+            ultimasTelemetriasDashboard.filter(Boolean).map((t) => [t!.veiculoId, t!])
+        );
 
-                // Auto-correção instantânea para a UI: 
+        const result = viagens.map((v) => {
+
+                // Auto-correção instantânea para a UI:
                 // Se a viagem já possui o horário final, ela está finalizada independentemente do ERP.
                 if (v.dataFimEfetivo && v.status !== "FINALIZADA" && v.status !== "CANCELADA") {
                     v.status = "FINALIZADA";
                 }
 
-                // 1. Última telemetria
-                const ultimaTelemetria = await ctx.db.telemetria.findFirst({
-                    where: { veiculoId: v.veiculo.id },
-                    orderBy: { dataHoraLocal: "desc" },
-                });
+                // 1. Última telemetria (resolvida via Map — sem query extra)
+                const ultimaTelemetria = telemetriaMapDashboard.get(v.veiculo.id) ?? null;
 
                 // 2. Atraso na saída (em minutos)
                 let atrasoSaidaMinutos: number | null = null;
@@ -440,8 +472,7 @@ export const viagemRouter = createTRPCRouter({
                     nivelAlerta,
                     semSinalGPS,
                 };
-            })
-        );
+            });
 
         return result;
     }),

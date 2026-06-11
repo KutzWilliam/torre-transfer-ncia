@@ -137,6 +137,11 @@ model Viagem {
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  // ⚡ Índices para otimizar as queries do dashboard
+  @@index([prevInicioReal])   // filtro de data usado em todo dashboard e analytics
+  @@index([status])           // filtrado frequentemente nos cards e KPIs
+  @@index([veiculoId])        // join com telemetria no obterDashboard
 }
 
 model JustificativaAtraso {
@@ -226,6 +231,9 @@ model ParadaViagem {
   // Preenchido dinamicamente pela telemetria
   dataChegadaEfetiva DateTime?
   dataSaidaEfetiva   DateTime?
+
+  // ⚡ Índice para otimizar joins de paradas por viagem
+  @@index([viagemId])
 }
 
 // ================= OCORRÊNCIAS =================
