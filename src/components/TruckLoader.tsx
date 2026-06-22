@@ -2,7 +2,7 @@
 
 /**
  * TruckLoader — Loader animado de caminhão para o Sistema Torre de Transferência.
- * Substitui os skeletons genéricos com uma identidade visual consistente.
+ * Ícone estilo outline com baú verde Princesa dos Campos.
  */
 
 import { type CSSProperties } from "react";
@@ -12,7 +12,7 @@ interface TruckLoaderProps {
   mensagem?: string;
   /** Tamanho do componente: 'sm' = inline/card, 'md' = padrão, 'lg' = tela cheia */
   tamanho?: "sm" | "md" | "lg";
-  /** Cor do caminhão (hex) — padrão verde Princesa */
+  /** Cor do baú (hex) — padrão verde Princesa */
   cor?: string;
 }
 
@@ -57,7 +57,7 @@ const keyframes = `
   }
   @keyframes truckBounce {
     from { transform: translateY(0px); }
-    to   { transform: translateY(-2px); }
+    to   { transform: translateY(-2.5px); }
   }
   @keyframes truckFade {
     0%   { opacity: 0.4; }
@@ -72,13 +72,10 @@ export function TruckLoader({
   cor = "#16a34a",
 }: TruckLoaderProps) {
   const sizes = {
-    sm: { wrapper: "py-8",    svgW: 100, svgH: 54,  text: "text-xs", gap: "gap-2" },
-    md: { wrapper: "py-14",   svgW: 140, svgH: 76,  text: "text-sm", gap: "gap-3" },
-    lg: { wrapper: "py-24",   svgW: 180, svgH: 98,  text: "text-base", gap: "gap-4" },
+    sm: { wrapper: "py-8",  svgW: 110, svgH: 60,  text: "text-xs",  gap: "gap-2" },
+    md: { wrapper: "py-14", svgW: 160, svgH: 88,  text: "text-sm",  gap: "gap-3" },
+    lg: { wrapper: "py-24", svgW: 210, svgH: 115, text: "text-base", gap: "gap-4" },
   }[tamanho];
-
-  // Escala do SVG base (desenhado em 140×76)
-  const scale = sizes.svgW / 140;
 
   return (
     <>
@@ -88,100 +85,175 @@ export function TruckLoader({
         role="status"
         aria-label={mensagem}
       >
-        {/* ── Caminhão SVG ── */}
+        {/* ── Caminhão SVG — estilo outline com baú verde ── */}
+        {/*
+          ViewBox baseada no ícone de referência (512×512).
+          Usamos apenas a faixa vertical útil do ícone (~80–420px)
+          para eliminar o espaço em branco excessivo.
+        */}
         <svg
           width={sizes.svgW}
           height={sizes.svgH}
-          viewBox="0 0 140 76"
+          viewBox="0 80 512 340"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           overflow="visible"
         >
-          {/* Fumaça do escapamento */}
-          <g transform="translate(10, 18)">
-            <circle cx="0" cy="0" r="5" fill="#94a3b8" style={styles.smoke1} />
-            <circle cx="4" cy="-4" r="4" fill="#cbd5e1" style={styles.smoke2} />
-            <circle cx="-2" cy="-8" r="3" fill="#e2e8f0" style={styles.smoke3} />
+          {/* Fumaça saindo do escapamento (lado direito/frente) */}
+          <g transform="translate(492, 108)">
+            <circle cx="0" cy="0" r="9" fill="#94a3b8" style={styles.smoke1} />
+            <circle cx="6" cy="-7" r="7" fill="#cbd5e1" style={styles.smoke2} />
+            <circle cx="-3" cy="-15" r="5" fill="#e2e8f0" style={styles.smoke3} />
           </g>
 
-          {/* Grupo principal do caminhão com bounce */}
+          {/* Grupo principal com bounce */}
           <g style={styles.bounce}>
-            {/* Carroceria / Baú */}
-            <rect x="14" y="14" width="76" height="34" rx="3" fill={cor} />
-            {/* Detalhes do baú */}
-            <rect x="17" y="17" width="70" height="28" rx="2" fill="white" fillOpacity="0.12" />
-            <line x1="52" y1="17" x2="52" y2="45" stroke="white" strokeOpacity="0.2" strokeWidth="1" />
 
-            {/* Cabine */}
-            <rect x="90" y="22" width="34" height="26" rx="4" fill={cor} />
+            {/* ═══════════════════════════════════
+                BAÚ (cargo box) — verde empresa
+            ═══════════════════════════════════ */}
+            {/* Corpo do baú */}
+            <rect
+              x="14" y="95"
+              width="326" height="170"
+              rx="12" ry="12"
+              fill={cor}
+              stroke="#0f172a"
+              strokeWidth="14"
+              strokeLinejoin="round"
+            />
+            {/* Reflexo interno sutil */}
+            <rect
+              x="30" y="110"
+              width="294" height="140"
+              rx="7" ry="7"
+              fill="white"
+              fillOpacity="0.09"
+            />
+            {/* Linha decorativa central horizontal */}
+            <line
+              x1="30" y1="180"
+              x2="326" y2="180"
+              stroke="white"
+              strokeOpacity="0.18"
+              strokeWidth="4"
+            />
+            {/* Traço de separação lateral do baú */}
+            <line
+              x1="30" y1="240"
+              x2="326" y2="240"
+              stroke="#0f172a"
+              strokeOpacity="0.15"
+              strokeWidth="3"
+            />
+
+            {/* ═══════════════════════════════════
+                CHASSI inferior
+            ═══════════════════════════════════ */}
+            <rect x="14" y="252" width="420" height="20" rx="5" fill="#1e293b" />
+
+            {/* ═══════════════════════════════════
+                CABINE
+            ═══════════════════════════════════ */}
+            {/* Corpo da cabine */}
+            <path
+              d="M340 118 L340 265 L472 265 L500 244 L500 178 L472 118 Z"
+              fill="#f8fafc"
+              stroke="#0f172a"
+              strokeWidth="14"
+              strokeLinejoin="round"
+            />
             {/* Para-brisa */}
-            <rect x="93" y="25" width="18" height="14" rx="2" fill="#bfdbfe" fillOpacity="0.85" />
-            {/* Divisor do para-brisa */}
-            <line x1="102" y1="25" x2="102" y2="39" stroke={cor} strokeWidth="1.5" />
+            <path
+              d="M355 130 L355 240 L448 240 L470 218 L470 152 L448 130 Z"
+              fill="#bfdbfe"
+              fillOpacity="0.72"
+              stroke="#0f172a"
+              strokeWidth="9"
+              strokeLinejoin="round"
+            />
+            {/* Divisor vertical do para-brisa */}
+            <line
+              x1="412" y1="130"
+              x2="412" y2="240"
+              stroke="#0f172a"
+              strokeWidth="7"
+            />
             {/* Espelho lateral */}
-            <rect x="124" y="28" width="6" height="5" rx="1" fill={cor} stroke="white" strokeOpacity="0.3" strokeWidth="0.5" />
+            <rect
+              x="497" y="152"
+              width="18" height="28"
+              rx="4"
+              fill="#e2e8f0"
+              stroke="#0f172a"
+              strokeWidth="7"
+            />
             {/* Farol dianteiro */}
-            <rect x="120" y="41" width="6" height="4" rx="1" fill="#fef08a" />
-            {/* Luz traseira */}
-            <rect x="14" y="38" width="5" height="6" rx="1" fill="#fca5a5" />
+            <rect
+              x="480" y="230"
+              width="26" height="18"
+              rx="5"
+              fill="#fef08a"
+              stroke="#0f172a"
+              strokeWidth="6"
+            />
 
-            {/* Para-choque dianteiro */}
-            <rect x="117" y="44" width="12" height="4" rx="1" fill="#475569" />
-            {/* Para-choque traseiro */}
-            <rect x="11" y="42" width="5" height="5" rx="1" fill="#475569" />
+            {/* ═══════════════════════════════════
+                RODAS
+            ═══════════════════════════════════ */}
 
             {/* Roda traseira esquerda */}
-            <g style={{ ...styles.wheel, transformOrigin: "28px 52px" }}>
-              <circle cx="28" cy="52" r="10" fill="#1e293b" />
-              <circle cx="28" cy="52" r="6" fill="#334155" />
-              <circle cx="28" cy="52" r="2.5" fill="#64748b" />
-              {/* Raios */}
-              <line x1="28" y1="43" x2="28" y2="61" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="19" y1="52" x2="37" y2="52" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="21.4" y1="45.4" x2="34.6" y2="58.6" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="21.4" y1="58.6" x2="34.6" y2="45.4" stroke="#64748b" strokeWidth="1.2" />
+            <g style={{ ...styles.wheel, transformOrigin: "100px 298px" }}>
+              <circle cx="100" cy="298" r="54" fill="#0f172a" stroke="#0f172a" strokeWidth="8" />
+              <circle cx="100" cy="298" r="34" fill="#334155" />
+              <circle cx="100" cy="298" r="14" fill="#64748b" />
+              <line x1="100" y1="246" x2="100" y2="350" stroke="#64748b" strokeWidth="6" />
+              <line x1="48"  y1="298" x2="152" y2="298" stroke="#64748b" strokeWidth="6" />
+              <line x1="63"  y1="261" x2="137" y2="335" stroke="#64748b" strokeWidth="6" />
+              <line x1="63"  y1="335" x2="137" y2="261" stroke="#64748b" strokeWidth="6" />
             </g>
 
             {/* Roda traseira direita (gêmea) */}
-            <g style={{ ...styles.wheel, transformOrigin: "44px 52px" }}>
-              <circle cx="44" cy="52" r="10" fill="#1e293b" />
-              <circle cx="44" cy="52" r="6" fill="#334155" />
-              <circle cx="44" cy="52" r="2.5" fill="#64748b" />
-              <line x1="44" y1="43" x2="44" y2="61" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="35" y1="52" x2="53" y2="52" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="37.4" y1="45.4" x2="50.6" y2="58.6" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="37.4" y1="58.6" x2="50.6" y2="45.4" stroke="#64748b" strokeWidth="1.2" />
+            <g style={{ ...styles.wheel, transformOrigin: "202px 298px" }}>
+              <circle cx="202" cy="298" r="54" fill="#0f172a" stroke="#0f172a" strokeWidth="8" />
+              <circle cx="202" cy="298" r="34" fill="#334155" />
+              <circle cx="202" cy="298" r="14" fill="#64748b" />
+              <line x1="202" y1="246" x2="202" y2="350" stroke="#64748b" strokeWidth="6" />
+              <line x1="150" y1="298" x2="254" y2="298" stroke="#64748b" strokeWidth="6" />
+              <line x1="165" y1="261" x2="239" y2="335" stroke="#64748b" strokeWidth="6" />
+              <line x1="165" y1="335" x2="239" y2="261" stroke="#64748b" strokeWidth="6" />
             </g>
 
             {/* Roda dianteira */}
-            <g style={{ ...styles.wheel, transformOrigin: "108px 52px" }}>
-              <circle cx="108" cy="52" r="10" fill="#1e293b" />
-              <circle cx="108" cy="52" r="6" fill="#334155" />
-              <circle cx="108" cy="52" r="2.5" fill="#64748b" />
-              <line x1="108" y1="43" x2="108" y2="61" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="99" y1="52" x2="117" y2="52" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="101.4" y1="45.4" x2="114.6" y2="58.6" stroke="#64748b" strokeWidth="1.2" />
-              <line x1="101.4" y1="58.6" x2="114.6" y2="45.4" stroke="#64748b" strokeWidth="1.2" />
+            <g style={{ ...styles.wheel, transformOrigin: "430px 298px" }}>
+              <circle cx="430" cy="298" r="54" fill="#0f172a" stroke="#0f172a" strokeWidth="8" />
+              <circle cx="430" cy="298" r="34" fill="#334155" />
+              <circle cx="430" cy="298" r="14" fill="#64748b" />
+              <line x1="430" y1="246" x2="430" y2="350" stroke="#64748b" strokeWidth="6" />
+              <line x1="378" y1="298" x2="482" y2="298" stroke="#64748b" strokeWidth="6" />
+              <line x1="393" y1="261" x2="467" y2="335" stroke="#64748b" strokeWidth="6" />
+              <line x1="393" y1="335" x2="467" y2="261" stroke="#64748b" strokeWidth="6" />
             </g>
+
+            {/* Para-choque dianteiro */}
+            <rect
+              x="474" y="255"
+              width="36" height="16"
+              rx="5"
+              fill="#475569"
+              stroke="#0f172a"
+              strokeWidth="6"
+            />
+
           </g>
 
-          {/* Estrada com traços animados */}
+          {/* ── Estrada com traços animados ── */}
+          <line x1="0" y1="356" x2="512" y2="356" stroke="#cbd5e1" strokeWidth="5" />
           <line
-            x1="0"
-            y1="64"
-            x2="140"
-            y2="64"
-            stroke="#cbd5e1"
-            strokeWidth="2"
-          />
-          <line
-            x1="0"
-            y1="70"
-            x2="140"
-            y2="70"
+            x1="0" y1="368" x2="512" y2="368"
             stroke="#e2e8f0"
-            strokeWidth="1.5"
-            strokeDasharray="20 20"
+            strokeWidth="3.5"
+            strokeDasharray="44 44"
             style={styles.road}
           />
         </svg>
