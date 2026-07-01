@@ -133,7 +133,13 @@ const basesRouter = createTRPCRouter({
                     message: `Não é possível excluir: esta base possui ${base._count.viagensOrigem + base._count.viagensDestino} viagem(ns) vinculada(s).`,
                 });
             }
-            return ctx.db.base.delete({ where: { id: input.id } });
+            // Remove todos os registros dependentes antes de apagar a base
+            return ctx.db.$transaction([
+                ctx.db.paradaPadrao.deleteMany({ where: { baseId: input.id } }),
+                ctx.db.paradaViagem.deleteMany({ where: { baseId: input.id } }),
+                ctx.db.justificativaAtraso.deleteMany({ where: { baseId: input.id } }),
+                ctx.db.base.delete({ where: { id: input.id } }),
+            ]);
         }),
 });
 

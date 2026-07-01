@@ -86,6 +86,7 @@ async function main() {
                 raioMetros: base.raioMetros,
             },
             create: {
+                id: base.id,
                 nome: base.nome,
                 cidade: base.cidade,
                 latitude: base.latitude,
