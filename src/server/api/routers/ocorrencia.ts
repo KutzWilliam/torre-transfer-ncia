@@ -252,4 +252,35 @@ export const ocorrenciaRouter = createTRPCRouter({
     listarTipos: protectedProcedure.query(() => {
         return TIPOS_OCORRENCIA;
     }),
+
+    /**
+     * Lista ocorrências criadas automaticamente via e-mail da AngelLira.
+     * Usado pela página de auditoria /admin/emails.
+     */
+    listarDoEmail: protectedProcedure
+        .input(z.object({
+            limite: z.number().min(1).max(200).default(50),
+        }).optional())
+        .query(async ({ ctx, input }) => {
+            return ctx.db.ocorrencia.findMany({
+                where: { origem: "EMAIL_ANGELLIRA" },
+                orderBy: { createdAt: "desc" },
+                take: input?.limite ?? 50,
+                include: {
+                    viagem: {
+                        select: {
+                            id: true,
+                            motorista: true,
+                            rotaDescricao: true,
+                            veiculo: { select: { placa: true } },
+                            baseOrigem: { select: { nome: true } },
+                            baseDestino: { select: { nome: true } },
+                        },
+                    },
+                    abertaPor: { select: { id: true, name: true } },
+                    resolvidaPor: { select: { id: true, name: true } },
+                },
+            });
+        }),
 });
+
