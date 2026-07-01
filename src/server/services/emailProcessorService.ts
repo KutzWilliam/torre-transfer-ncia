@@ -24,7 +24,12 @@ const IMAP_CONFIG = {
     user: process.env.EMAIL_IMAP_USER ?? "",
     pass: process.env.EMAIL_IMAP_PASS ?? "",
   },
-  logger: false as const, // Desativa logs verbosos do imapflow em produção
+  logger: false as const,
+  // Aceita certificados auto-assinados (comum em servidores de e-mail corporativos)
+  tls: {
+    rejectUnauthorized: false,
+    servername: process.env.EMAIL_IMAP_HOST ?? "mail.princesadoscampos.com.br",
+  },
 };
 
 const REMETENTE_ANGELLIRA = "naoresponda@angellira.com.br";
