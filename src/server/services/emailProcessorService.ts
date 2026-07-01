@@ -16,21 +16,23 @@ import { db } from "@/server/db";
 
 // ─── Configuração IMAP ─────────────────────────────────────────────────────────
 
+const imapPort = Number(process.env.EMAIL_IMAP_PORT ?? 993);
+
 const IMAP_CONFIG = {
   host: process.env.EMAIL_IMAP_HOST ?? "mail.princesadoscampos.com.br",
-  port: Number(process.env.EMAIL_IMAP_PORT ?? 993),
-  secure: true, // TLS/SSL
+  port: imapPort,
+  secure: imapPort === 993, // Só usa TLS implícito se a porta for 993 (143 é plain/STARTTLS)
   auth: {
     user: process.env.EMAIL_IMAP_USER ?? "",
     pass: process.env.EMAIL_IMAP_PASS ?? "",
   },
   logger: false as const,
-  // Aceita certificados auto-assinados (comum em servidores de e-mail corporativos)
+  // Aceita certificados auto-assinados e evita erro de servername com IP
   tls: {
     rejectUnauthorized: false,
-    servername: process.env.EMAIL_IMAP_HOST ?? "mail.princesadoscampos.com.br",
   },
 };
+
 
 const REMETENTE_ANGELLIRA = "naoresponda@angellira.com.br";
 const BOT_USER_ID =
