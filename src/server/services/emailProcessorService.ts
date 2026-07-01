@@ -407,10 +407,21 @@ export async function processarEmailsAngellira(): Promise<ResultadoProcessamento
       lock.release();
     }
   } catch (erroConexao) {
-    const msg = erroConexao instanceof Error ? erroConexao.message : String(erroConexao);
+    // imapflow pode lançar erros com responseCode/response (não apenas .message padrão)
+    let msg: string;
+    if (erroConexao instanceof Error) {
+      const imapErr = erroConexao as Error & { responseCode?: string; response?: string; code?: string };
+      msg = [
+        imapErr.message,
+        imapErr.responseCode,
+        imapErr.response,
+        imapErr.code,
+      ].filter(Boolean).join(" | ") || "Erro desconhecido";
+    } else {
+      msg = JSON.stringify(erroConexao) || String(erroConexao) || "Erro desconhecido";
+    }
     console.error(`❌ Erro de conexão IMAP: ${msg}`);
     resultado.erros++;
-    // Expõe o erro na resposta da API para facilitar diagnóstico sem precisar ver logs do PM2
     resultado.detalhes.push({
       messageId: "IMAP_CONNECTION_ERROR",
       assunto: "Falha na conexão com o servidor de e-mail",
