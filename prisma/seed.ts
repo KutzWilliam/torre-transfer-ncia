@@ -19,7 +19,7 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 // ─── 1. BASES ─────────────────────────────────────────────────────────────────
-const BASES = [
+/*const BASES = [
     { id: "cmmz8tugi000aqsn0gd3g9gyn", nome: "TOLEDO",                    cidade: "TOLEDO",                    latitude: -24.7022195,  longitude: -53.7410334, raioMetros: 500 },
     { id: "cmmz8tufn0004qsn0upk5d2cc", nome: "MARINGA",                   cidade: "MARINGA",                   latitude: -23.4504492,  longitude: -51.9891713, raioMetros: 500 },
     { id: "cmmz8tuhk000hqsn0pl7u1tyh", nome: "LONDRINA",                  cidade: "LONDRINA",                  latitude: -23.2984452,  longitude: -51.2193788, raioMetros: 500 },
@@ -66,7 +66,7 @@ const BASES = [
     { id: "cmmz8tuow002eqsn0xtlbkvzx", nome: "IBEMA",                     cidade: "IBEMA",                     latitude: -25.099,      longitude: -53.0087,    raioMetros: 500 },
     { id: "cmmz8tuoz002hqsn0oq0i2zqd", nome: "ASSIS CHATEAUBRIAND",       cidade: "ASSIS CHATEAUBRIAND",       latitude: -24.4156,     longitude: -53.5134,    raioMetros: 500 },
     { id: "cmmz8tup3002kqsn0nnz7rclu", nome: "CASTRO",                    cidade: "CASTRO",                    latitude: -24.7914,     longitude: -50.0122,    raioMetros: 500 },
-];
+];*/
 
 // ─── 2. USUÁRIOS ──────────────────────────────────────────────────────────────
 // IMPORTANTE: No seed, reiniciamos as senhas para um padrão seguro.
@@ -75,7 +75,7 @@ async function main() {
     console.log("🌱 Iniciando seed da Torre de Transferência...\n");
 
     // ── Bases ──
-    console.log(`📍 Inserindo ${BASES.length} bases...`);
+    /*console.log(`📍 Inserindo ${BASES.length} bases...`);
     for (const base of BASES) {
         await prisma.base.upsert({
             where: { nome: base.nome },
@@ -96,7 +96,7 @@ async function main() {
         });
     }
     console.log(`✅ ${BASES.length} bases inseridas/atualizadas.\n`);
-
+*/
     // ── Usuários ──
     const senhaAdmin = await bcrypt.hash("Princesa@2025", 10);
     const senhaOperador = await bcrypt.hash("operador123", 10);
@@ -104,7 +104,7 @@ async function main() {
 
     const USUARIOS = [
         // ── Usuários Reais do Sistema ──
-        {
+        /*{
             id: "cmmxjtv0k0000qs2k8rd94gcc",
             name: "Administrador do Sistema",
             email: "admin@sistema.local",
@@ -152,7 +152,7 @@ async function main() {
             role: "GERENTE" as const,
             baseId: "cmmz8tx8a00jkqsn0rncm9hdb", // PONTA GROSSA
             senhaHash: senhaGerente,
-        },
+        },*/
         // ── Bot de Integração ──
         // Usuário automático para registrar ocorrências recebidas via e-mail da AngelLira.
         // O ID fixo (BOT_USER_ID) é referenciado pela variável ANGELLIRA_BOT_USER_ID no .env

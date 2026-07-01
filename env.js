@@ -16,6 +16,14 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    // ── Integração E-mail AngelLira ─────────────────────────────
+    EMAIL_IMAP_HOST: z.string().optional(),
+    EMAIL_IMAP_PORT: z.coerce.number().optional(),
+    EMAIL_IMAP_USER: z.string().optional(),
+    EMAIL_IMAP_PASS: z.string().optional(),
+    CRON_SECRET: z.string().optional(),
+    ANGELLIRA_BOT_USER_ID: z.string().optional(),
+    APP_URL: z.string().url().optional(),
   },
 
   client: {
@@ -28,6 +36,14 @@ export const env = createEnv({
     DATABASE_URL: process.env.DATABASE_URL,
     TELEMETRIA_DB_URL: process.env.TELEMETRIA_DB_URL,
     NODE_ENV: process.env.NODE_ENV,
+    // Integração e-mail AngelLira
+    EMAIL_IMAP_HOST: process.env.EMAIL_IMAP_HOST,
+    EMAIL_IMAP_PORT: process.env.EMAIL_IMAP_PORT,
+    EMAIL_IMAP_USER: process.env.EMAIL_IMAP_USER,
+    EMAIL_IMAP_PASS: process.env.EMAIL_IMAP_PASS,
+    CRON_SECRET: process.env.CRON_SECRET,
+    ANGELLIRA_BOT_USER_ID: process.env.ANGELLIRA_BOT_USER_ID,
+    APP_URL: process.env.APP_URL,
   },
 
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
