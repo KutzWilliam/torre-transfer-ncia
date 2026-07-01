@@ -403,9 +403,17 @@ export async function processarEmailsAngellira(): Promise<ResultadoProcessamento
     const msg = erroConexao instanceof Error ? erroConexao.message : String(erroConexao);
     console.error(`❌ Erro de conexão IMAP: ${msg}`);
     resultado.erros++;
+    // Expõe o erro na resposta da API para facilitar diagnóstico sem precisar ver logs do PM2
+    resultado.detalhes.push({
+      messageId: "IMAP_CONNECTION_ERROR",
+      assunto: "Falha na conexão com o servidor de e-mail",
+      status: "ERRO",
+      erro: msg,
+    });
   } finally {
     try { await client.logout(); } catch { /* ignora erros no logout */ }
   }
+
 
   return resultado;
 }
