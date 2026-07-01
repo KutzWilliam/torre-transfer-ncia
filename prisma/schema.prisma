@@ -262,10 +262,19 @@ model Ocorrencia {
   resolvidaPor    User?            @relation("OcorrenciasResolvidas", fields: [resolvidaPorId], references: [id])
   
   resolvidaEm     DateTime?
+
+  // ── Integração E-mail AngelLira ──────────────────────────────────────
+  // Message-ID único do e-mail de origem — garante que nunca duplicamos uma ocorrência
+  emailMessageId  String?          @unique
+  // "MANUAL" = aberta por operador | "EMAIL_ANGELLIRA" = criada automaticamente pelo poller
+  origem          String           @default("MANUAL")
+  // Link do mapa da ocorrência (campo do e-mail da AngelLira)
+  linkMapa        String?
   
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
   @@index([viagemId])
   @@index([status])
+  @@index([origem])
 }

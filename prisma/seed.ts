@@ -152,6 +152,17 @@ async function main() {
             baseId: "cmmz8tx8a00jkqsn0rncm9hdb", // PONTA GROSSA
             senhaHash: senhaGerente,
         },
+        // ── Bot de Integração ──
+        // Usuário automático para registrar ocorrências recebidas via e-mail da AngelLira.
+        // O ID fixo (BOT_USER_ID) é referenciado pela variável ANGELLIRA_BOT_USER_ID no .env
+        {
+            id: "bot0angellira00000000000001",
+            name: "Sistema AngelLira",
+            email: "naoresponda@angellira.com.br",
+            role: "OPERADOR" as const,
+            baseId: null,
+            senhaHash: await bcrypt.hash("bot-inacessível-2025!", 10),
+        },
     ];
 
     console.log(`👤 Inserindo ${USUARIOS.length} usuários...`);
