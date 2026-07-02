@@ -96,10 +96,117 @@ function ModalResolucao({ ocorrenciaId, onClose, onResolvido }: {
     );
 }
 
+// ─── Componente: Modal de Notificação por E-mail ─────────────────────────────
+
+function ModalNotificacao({ ocorrenciaId, onClose }: {
+    ocorrenciaId: string;
+    onClose: () => void;
+}) {
+    const [usuarioId, setUsuarioId] = useState("");
+    const [enviado, setEnviado] = useState<string | null>(null);
+
+    const { data: usuarios, isLoading: loadingUsuarios } = api.ocorrencia.listarUsuariosParaNotificacao.useQuery();
+
+    const notificar = api.ocorrencia.notificar.useMutation({
+        onSuccess: (res) => {
+            setEnviado(res.destinatario ?? res.email ?? "Responsável");
+        },
+    });
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 bg-blue-50 border-b border-blue-100">
+                    <div className="flex items-center gap-2">
+                        <span className="text-blue-600 text-lg">📧</span>
+                        <h3 className="text-base font-bold text-blue-900">Notificar Responsável</h3>
+                    </div>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none transition-colors">✕</button>
+                </div>
+
+                <div className="p-6 space-y-5">
+                    {enviado ? (
+                        /* Estado: sucesso */
+                        <div className="text-center py-4 space-y-3">
+                            <div className="text-5xl">✅</div>
+                            <p className="text-base font-bold text-emerald-700">E-mail enviado com sucesso!</p>
+                            <p className="text-sm text-slate-500">
+                                Notificação enviada para <strong>{enviado}</strong>.
+                            </p>
+                            <button
+                                onClick={onClose}
+                                className="mt-2 px-5 py-2 rounded-xl text-sm font-semibold bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    ) : (
+                        /* Estado: seleção */
+                        <>
+                            <p className="text-sm text-slate-500">
+                                Selecione o usuário para quem deseja enviar o e-mail de notificação desta ocorrência.
+                                O status da ocorrência <strong>não será alterado</strong>.
+                            </p>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                    Responsável a notificar
+                                </label>
+                                {loadingUsuarios ? (
+                                    <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
+                                ) : (
+                                    <select
+                                        id="select-usuario-notificacao"
+                                        value={usuarioId}
+                                        onChange={e => setUsuarioId(e.target.value)}
+                                        className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                                    >
+                                        <option value="">Selecione o usuário...</option>
+                                        {usuarios?.map(u => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.name} — {u.email}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
+                            {notificar.error && (
+                                <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 border border-red-100">
+                                    ⚠️ {notificar.error.message}
+                                </p>
+                            )}
+
+                            <div className="flex gap-2 justify-end pt-1">
+                                <button
+                                    onClick={onClose}
+                                    className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    id="btn-enviar-notificacao"
+                                    onClick={() => notificar.mutate({ ocorrenciaId, usuarioDestinatarioId: usuarioId })}
+                                    disabled={!usuarioId || notificar.isPending}
+                                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {notificar.isPending ? "Enviando..." : "📧 Enviar Notificação"}
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Componente: Card de Ocorrência ──────────────────────────────────────────
 
 function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
     const [mostrarResolucao, setMostrarResolucao] = useState(false);
+    const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
     const statusCfg = STATUS_CONFIG[oc.status as keyof typeof STATUS_CONFIG];
     const atualizarStatus = api.ocorrencia.atualizarStatus.useMutation({ onSuccess: onRefresh });
 
@@ -118,6 +225,12 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                     ocorrenciaId={oc.id}
                     onClose={() => setMostrarResolucao(false)}
                     onResolvido={onRefresh}
+                />
+            )}
+            {mostrarNotificacao && (
+                <ModalNotificacao
+                    ocorrenciaId={oc.id}
+                    onClose={() => setMostrarNotificacao(false)}
                 />
             )}
 
@@ -184,6 +297,15 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                         Aberto por {oc.abertaPor?.name ?? "Sistema"} às {formatarHora(oc.createdAt)}
                     </span>
                     <div className="ml-auto flex gap-2">
+                        {/* Botão: Notificar Responsável */}
+                        <button
+                            id={`btn-notificar-${oc.id}`}
+                            onClick={() => setMostrarNotificacao(true)}
+                            title="Enviar e-mail de notificação"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors flex items-center gap-1"
+                        >
+                            📧 Notificar
+                        </button>
                         <Link
                             href={`/viagens/${oc.viagemId}`}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors"

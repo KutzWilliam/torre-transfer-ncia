@@ -4,6 +4,7 @@ import {
     protectedProcedure,
 } from "@/server/api/trpc";
 import { TRPCError } from "@trpc/server";
+import { enviarNotificacaoOcorrencia } from "@/server/services/emailNotificacaoService";
 
 const TIPOS_OCORRENCIA = [
     "Pneu Furado",
@@ -281,6 +282,91 @@ export const ocorrenciaRouter = createTRPCRouter({
                     resolvidaPor: { select: { id: true, name: true } },
                 },
             });
+        }),
+
+    /**
+     * Lista todos os usuários ativos do sistema para o modal de notificação.
+     * Exclui o bot da AngelLira e retorna apenas quem tem e-mail cadastrado.
+     */
+    listarUsuariosParaNotificacao: protectedProcedure
+        .query(async ({ ctx }) => {
+            const usuarios = await ctx.db.user.findMany({
+                where: {
+                    id: { not: "bot0angellira00000000000001" },
+                },
+                select: { id: true, name: true, email: true },
+                orderBy: { name: "asc" },
+            });
+            // Filtra client-side quem tem email para evitar problemas de tipos com Prisma nullable
+            return usuarios.filter(u => u.email !== null && u.email !== "");
+        }),
+
+    /**
+     * Envia um e-mail de notificação de ocorrência para o usuário selecionado.
+     * Não altera o status da ocorrência.
+     */
+    notificar: protectedProcedure
+        .input(z.object({
+            ocorrenciaId: z.string(),
+            usuarioDestinatarioId: z.string(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            // 1. Busca os dados completos da ocorrência
+            const ocorrencia = await ctx.db.ocorrencia.findUnique({
+                where: { id: input.ocorrenciaId },
+                include: {
+                    abertaPor: { select: { name: true } },
+                    viagem: {
+                        include: {
+                            veiculo: { select: { placa: true } },
+                            baseOrigem: { select: { cidade: true } },
+                            baseDestino: { select: { cidade: true } },
+                        },
+                    },
+                },
+            });
+
+            if (!ocorrencia) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
+            }
+
+            // 2. Busca o usuário destinatário
+            const destinatario = await ctx.db.user.findUnique({
+                where: { id: input.usuarioDestinatarioId },
+                select: { name: true, email: true },
+            });
+
+            if (!destinatario?.email) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "Usuário selecionado não possui e-mail cadastrado.",
+                });
+            }
+
+            // 3. Envia o e-mail (sem alterar status da ocorrência)
+            try {
+                await enviarNotificacaoOcorrencia({
+                    destinatarioEmail: destinatario.email,
+                    destinatarioNome: destinatario.name ?? "Responsável",
+                    tipoOcorrencia: ocorrencia.tipoOcorrencia,
+                    placa: ocorrencia.viagem.veiculo.placa,
+                    motorista: ocorrencia.viagem.motorista ?? "Não informado",
+                    origem: ocorrencia.viagem.baseOrigem.cidade,
+                    destino: ocorrencia.viagem.baseDestino.cidade,
+                    descricao: ocorrencia.descricao,
+                    dataAbertura: ocorrencia.createdAt,
+                    abertaPor: ocorrencia.abertaPor?.name ?? "Sistema",
+                    ocorrenciaId: ocorrencia.id,
+                });
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : "Erro desconhecido";
+                throw new TRPCError({
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: `Falha ao enviar e-mail: ${msg}`,
+                });
+            }
+
+            return { sucesso: true, destinatario: destinatario.name, email: destinatario.email };
         }),
 });
 

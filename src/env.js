@@ -24,6 +24,12 @@ export const env = createEnv({
     CRON_SECRET: z.string().optional(),
     ANGELLIRA_BOT_USER_ID: z.string().optional(),
     APP_URL: z.string().url().optional(),
+    // ── SMTP Notificações ──────────────────────────────────────
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().optional(),
+    SMTP_SECURE: z.string().optional(),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
   },
 
   client: {
@@ -44,6 +50,12 @@ export const env = createEnv({
     CRON_SECRET: process.env.CRON_SECRET,
     ANGELLIRA_BOT_USER_ID: process.env.ANGELLIRA_BOT_USER_ID,
     APP_URL: process.env.APP_URL,
+    // SMTP
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_SECURE: process.env.SMTP_SECURE,
+    SMTP_USER: process.env.SMTP_USER,
+    SMTP_PASS: process.env.SMTP_PASS,
   },
 
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
