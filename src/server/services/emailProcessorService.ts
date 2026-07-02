@@ -34,7 +34,44 @@ const IMAP_CONFIG = {
 };
 
 
-const REMETENTE_ANGELLIRA = "naoresponda@angellira.com.br";
+// Possíveis remetentes: direto da AngelLira OU encaminhado pelo Outlook corporativo
+const REMETENTES_ANGELLIRA = [
+  "naoresponda@angellira.com.br",
+  "angellira.com.br",
+];
+// Palavras-chave que identificam um e-mail de alarme da AngelLira no assunto
+const PALAVRAS_CHAVE_ASSUNTO = [
+  "CONTROLE DE", "VIOLACAO", "VIOLAÇÃO", "PARADA", "DESVIO", "PERDA DE SINAL",
+  "REINICIO", "VELOCIDADE", "GEOCERCA", "CERCA", "JORNADA", "FADIGA", "BLOQUEIO",
+];
+
+/**
+ * Determina se um e-mail (já parseado) é um alarme da AngelLira.
+ * Funciona mesmo com e-mails encaminhados (forwarded), onde o From muda.
+ */
+function ehEmailAngellira(parsed: ParsedMail): boolean {
+  // Verifica remetente original (quando chega diretamente da AngelLira)
+  const fromAddress = parsed.from?.value?.[0]?.address ?? "";
+  if (REMETENTES_ANGELLIRA.some(r => fromAddress.toLowerCase().includes(r))) {
+    return true;
+  }
+  // Verifica no cabeçalho Reply-To (preservado em alguns encaminhamentos)
+  const replyTo = parsed.replyTo?.value?.[0]?.address ?? "";
+  if (REMETENTES_ANGELLIRA.some(r => replyTo.toLowerCase().includes(r))) {
+    return true;
+  }
+  // Verifica palavras-chave no assunto (funciona mesmo após encaminhamento)
+  const assuntoUpper = (parsed.subject ?? "").toUpperCase();
+  if (PALAVRAS_CHAVE_ASSUNTO.some(kw => assuntoUpper.includes(kw))) {
+    return true;
+  }
+  // Verifica se o corpo contém a assinatura da AngelLira
+  const corpo = parsed.text ?? "";
+  if (corpo.includes("angellira") || corpo.includes("AngelLira") || corpo.includes("ANGELLIRA")) {
+    return true;
+  }
+  return false;
+}
 const BOT_USER_ID =
   process.env.ANGELLIRA_BOT_USER_ID ?? "bot0angellira00000000000001";
 
@@ -291,19 +328,18 @@ export async function processarEmailsAngellira(): Promise<ResultadoProcessamento
 
     const lock = await client.getMailboxLock("INBOX");
     try {
-      // Busca e-mails NÃO lidos do remetente AngelLira
-      // imapflow usa `not: { seen: true }` para buscar mensagens não lidas
-      const mensagens = await client.search({
-        seen: false,
-        from: REMETENTE_ANGELLIRA,
-      });
+      // Busca TODOS os e-mails não lidos da caixa.
+      // O filtro por remetente foi removido pois o e-mail chega via encaminhamento
+      // do Outlook corporativo (torre.notificacoes → Gmail), perdendo o From original.
+      // A identificação de alarmes AngelLira é feita por conteúdo após o parse.
+      const mensagens = await client.search({ seen: false });
 
       if (!mensagens || mensagens.length === 0) {
-        console.log("📭 Nenhum e-mail novo da AngelLira.");
+        console.log("📭 Nenhum e-mail não lido na caixa.");
         return resultado;
       }
 
-      console.log(`📨 ${mensagens.length} e-mail(s) novo(s) encontrado(s).`);
+      console.log(`📨 ${mensagens.length} e-mail(s) não lido(s) encontrado(s) — filtrando por conteúdo AngelLira...`);
 
       for (const uid of mensagens) {
         resultado.processados++;
@@ -327,9 +363,22 @@ export async function processarEmailsAngellira(): Promise<ResultadoProcessamento
           const htmlConteudo = typeof parsed.html === "string" ? parsed.html : "";
           const textoPlano = parsed.text ?? htmlConteudo;
 
-          console.log(`\n📧 Processando: "${assunto}" (${messageId})`);
+          console.log(`\n📧 Analisando: "${assunto}" (${messageId})`);
+
+          // ── Filtro de conteúdo: verifica se é e-mail da AngelLira ──
+          // Necessário porque buscamos todos os não-lidos (não filtramos por remetente),
+          // pois o e-mail chega via encaminhamento e o From original pode ser alterado.
+          if (!ehEmailAngellira(parsed)) {
+            console.log(`  ↷ Não é da AngelLira. Marcando como lido e ignorando.`);
+            await client.messageFlagsAdd([uid], ["\\Seen"]);
+            resultado.ignorados++;
+            continue;
+          }
+
+          console.log(`  ✅ Identificado como alarme AngelLira. Processando...`);
 
           // ── Verificar duplicata ──
+
           const jaExiste = await db.ocorrencia.findUnique({
             where: { emailMessageId: messageId },
             select: { id: true },
