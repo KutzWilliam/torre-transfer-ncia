@@ -368,5 +368,71 @@ export const ocorrenciaRouter = createTRPCRouter({
 
             return { sucesso: true, destinatario: destinatario.name, email: destinatario.email };
         }),
-});
 
+    /**
+     * Lista o histórico completo de ocorrências (todas, incluindo resolvidas).
+     * Suporta filtros opcionais e paginação.
+     */
+    listarHistorico: protectedProcedure
+        .input(z.object({
+            pagina: z.number().min(1).default(1),
+            porPagina: z.number().min(1).max(100).default(20),
+            status: z.enum(["TODAS", "ABERTA", "EM_ATENDIMENTO", "RESOLVIDA"]).default("TODAS"),
+            placa: z.string().optional(),
+            dataInicio: z.string().optional(),
+            dataFim: z.string().optional(),
+        }).optional())
+        .query(async ({ ctx, input }) => {
+            const pagina = input?.pagina ?? 1;
+            const porPagina = input?.porPagina ?? 20;
+            const skip = (pagina - 1) * porPagina;
+
+            const where: any = {};
+
+            if (input?.status && input.status !== "TODAS") {
+                where.status = input.status;
+            }
+            if (input?.placa) {
+                where.viagem = {
+                    veiculo: { placa: { contains: input.placa.toUpperCase() } },
+                };
+            }
+            if (input?.dataInicio || input?.dataFim) {
+                where.createdAt = {};
+                if (input?.dataInicio) where.createdAt.gte = new Date(input.dataInicio);
+                if (input?.dataFim) {
+                    const fim = new Date(input.dataFim);
+                    fim.setHours(23, 59, 59, 999);
+                    where.createdAt.lte = fim;
+                }
+            }
+
+            const [total, ocorrencias] = await Promise.all([
+                ctx.db.ocorrencia.count({ where }),
+                ctx.db.ocorrencia.findMany({
+                    where,
+                    skip,
+                    take: porPagina,
+                    orderBy: { createdAt: "desc" },
+                    include: {
+                        viagem: {
+                            include: {
+                                veiculo: { select: { placa: true } },
+                                baseOrigem: { select: { cidade: true, nome: true } },
+                                baseDestino: { select: { cidade: true, nome: true } },
+                            },
+                        },
+                        abertaPor: { select: { id: true, name: true, email: true } },
+                        resolvidaPor: { select: { id: true, name: true, email: true } },
+                    },
+                }),
+            ]);
+
+            return {
+                ocorrencias,
+                total,
+                paginas: Math.ceil(total / porPagina),
+                paginaAtual: pagina,
+            };
+        }),
+});

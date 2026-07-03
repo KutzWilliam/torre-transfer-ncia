@@ -592,6 +592,9 @@ export default function OcorrenciasPage() {
                         <Link href="/viagens" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
                             📋 Viagens
                         </Link>
+                        <Link href="/ocorrencias/historico" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                            📂 Histórico
+                        </Link>
                         <button onClick={() => refetch()} className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors">
                             ↻ Atualizar
                         </button>
