@@ -3,6 +3,10 @@
 import { useState, useMemo } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { LOGO_BASE64 } from "@/lib/logoBase64";
+
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -211,12 +215,17 @@ function CardOcorrenciaHistorico({ oc }: { oc: any }) {
 // ─── Página Principal ─────────────────────────────────────────────────────────
 
 export default function HistoricoOcorrenciasPage() {
+    const utils = api.useUtils();
     const [pagina, setPagina] = useState(1);
     const [filtroStatus, setFiltroStatus] = useState<"TODAS" | "ABERTA" | "EM_ATENDIMENTO" | "RESOLVIDA">("TODAS");
     const [filtroPlaca, setFiltroPlaca] = useState("");
     const [placaBusca, setPlacaBusca] = useState("");
     const [dataInicio, setDataInicio] = useState("");
     const [dataFim, setDataFim] = useState("");
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [tipoRelatorio, setTipoRelatorio] = useState<"DIA" | "SEMANA" | "MES" | "TODAS">("DIA");
+    const [isGerando, setIsGerando] = useState(false);
 
     const { data, isLoading, refetch } = api.ocorrencia.listarHistorico.useQuery({
         pagina,
@@ -246,6 +255,138 @@ export default function HistoricoOcorrenciasPage() {
 
     const temFiltrosAtivos = filtroStatus !== "TODAS" || placaBusca || dataInicio || dataFim;
 
+    async function gerarRelatorio() {
+        setIsGerando(true);
+        try {
+            const hoje = new Date();
+            let inicio = new Date();
+            let fim = new Date();
+            let tituloPeriodo = "";
+
+            if (tipoRelatorio === "DIA") {
+                inicio.setHours(0, 0, 0, 0);
+                tituloPeriodo = `Data: ${hoje.toLocaleDateString("pt-BR")}`;
+            } else if (tipoRelatorio === "SEMANA") {
+                inicio.setDate(hoje.getDate() - hoje.getDay()); // Domingo
+                inicio.setHours(0, 0, 0, 0);
+                tituloPeriodo = `Período: ${inicio.toLocaleDateString("pt-BR")} a ${fim.toLocaleDateString("pt-BR")}`;
+            } else if (tipoRelatorio === "MES") {
+                inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+                tituloPeriodo = `Mês: ${hoje.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}`;
+            } else {
+                inicio = new Date(2000, 0, 1);
+                tituloPeriodo = "Período: Histórico Completo";
+            }
+
+            const dados = await utils.ocorrencia.listarParaRelatorio.fetch({
+                dataInicio: inicio.toISOString(),
+                dataFim: fim.toISOString(),
+            });
+
+            const doc = new jsPDF("landscape");
+            const pageWidth = doc.internal.pageSize.getWidth();
+
+            // ─── Header ──────────────────────────────────────────────────
+            doc.addImage(LOGO_BASE64, "PNG", 14, 10, 24, 24);
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(16);
+            doc.setTextColor(34, 197, 94); // Verde Princesa
+            doc.text("Torre de Controle - Relatório de Ocorrências", 42, 20);
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text("Princesa dos Campos Transportes", 42, 26);
+            doc.text(tituloPeriodo, 42, 32);
+
+            // ─── KPIs (Resumo) ───────────────────────────────────────────
+            const total = dados.length;
+            const abertas = dados.filter(o => o.status === "ABERTA").length;
+            const emAtendimento = dados.filter(o => o.status === "EM_ATENDIMENTO").length;
+            const resolvidas = dados.filter(o => o.status === "RESOLVIDA").length;
+            
+            let tempoTotal = 0;
+            let qtdResolvidasTempo = 0;
+            dados.forEach(o => {
+                if (o.status === "RESOLVIDA" && o.resolvidaEm) {
+                    tempoTotal += new Date(o.resolvidaEm).getTime() - new Date(o.createdAt).getTime();
+                    qtdResolvidasTempo++;
+                }
+            });
+            let tempoMedioStr = "—";
+            if (qtdResolvidasTempo > 0) {
+                const ms = tempoTotal / qtdResolvidasTempo;
+                const h = Math.floor(ms / 3600000);
+                const m = Math.floor((ms % 3600000) / 60000);
+                tempoMedioStr = `${h}h ${m}min`;
+            }
+
+            doc.setDrawColor(220, 220, 220);
+            doc.setFillColor(250, 250, 250);
+            doc.roundedRect(14, 40, pageWidth - 28, 20, 3, 3, "FD");
+
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(50, 50, 50);
+            doc.text(`Total: ${total}`, 20, 51);
+            doc.setTextColor(220, 38, 38);
+            doc.text(`Abertas: ${abertas}`, 60, 51);
+            doc.setTextColor(217, 119, 6);
+            doc.text(`Em Atend.: ${emAtendimento}`, 100, 51);
+            doc.setTextColor(5, 150, 105);
+            doc.text(`Resolvidas: ${resolvidas}`, 140, 51);
+            
+            doc.setTextColor(50, 50, 50);
+            doc.text(`Tempo Médio (Resolução): ${tempoMedioStr}`, 190, 51);
+
+            // ─── Tabela ──────────────────────────────────────────────────
+            const rows = dados.map(oc => {
+                let statusLabel: string = oc.status;
+                if (statusLabel === "EM_ATENDIMENTO") statusLabel = "EM ATEND.";
+                
+                const tempoRes = oc.resolvidaEm ? formatarDuracao(oc.createdAt, oc.resolvidaEm) : "—";
+                
+                return [
+                    new Date(oc.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+                    oc.viagem.veiculo.placa,
+                    oc.tipoOcorrencia,
+                    `${oc.viagem.baseOrigem.cidade} > ${oc.viagem.baseDestino.cidade}`,
+                    statusLabel,
+                    tempoRes,
+                    oc.abertaPor?.name ?? "Sistema",
+                    oc.resolvidaPor?.name ?? "—",
+                ];
+            });
+
+            autoTable(doc, {
+                startY: 65,
+                head: [["Abertura", "Placa", "Tipo", "Rota", "Status", "Tempo", "Aberta Por", "Resolvida Por"]],
+                body: rows,
+                theme: "grid",
+                styles: { fontSize: 8, cellPadding: 3 },
+                headStyles: { fillColor: [30, 41, 59], textColor: 255 }, // slate-800
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                didParseCell: (data) => {
+                    if (data.section === 'body' && data.column.index === 4) { // Status column
+                        const status = data.cell.raw;
+                        if (status === "ABERTA") data.cell.styles.textColor = [220, 38, 38];
+                        else if (status === "EM ATEND.") data.cell.styles.textColor = [217, 119, 6];
+                        else if (status === "RESOLVIDA") data.cell.styles.textColor = [5, 150, 105];
+                    }
+                }
+            });
+
+            doc.save(`Relatorio_Ocorrencias_${hoje.toISOString().split("T")[0]}.pdf`);
+        } catch (error) {
+            console.error("Erro ao gerar PDF:", error);
+            alert("Não foi possível gerar o relatório. Tente novamente.");
+        } finally {
+            setIsGerando(false);
+            setIsModalOpen(false);
+        }
+    }
+
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Header */}
@@ -260,6 +401,12 @@ export default function HistoricoOcorrenciasPage() {
                         </p>
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        >
+                            📄 Gerar Relatório
+                        </button>
                         <Link
                             href="/ocorrencias"
                             className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors"
@@ -460,6 +607,68 @@ export default function HistoricoOcorrenciasPage() {
                     </div>
                 )}
             </main>
+
+            {/* Modal de Relatório */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <h2 className="font-bold text-slate-800 text-lg">Gerar Relatório PDF</h2>
+                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                        </div>
+                        
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-slate-600">
+                                Selecione o período para gerar o relatório com KPIs e detalhamento de ocorrências:
+                            </p>
+                            
+                            <div className="space-y-2">
+                                {[
+                                    { id: "DIA", label: "Do Dia (Hoje)" },
+                                    { id: "SEMANA", label: "Da Semana (Desde Domingo)" },
+                                    { id: "MES", label: "Do Mês Atual" },
+                                    { id: "TODAS", label: "Histórico Completo" },
+                                ].map(opt => (
+                                    <label
+                                        key={opt.id}
+                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                                            tipoRelatorio === opt.id 
+                                                ? "border-blue-500 bg-blue-50" 
+                                                : "border-slate-200 hover:bg-slate-50"
+                                        }`}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="tipoRelatorio"
+                                            value={opt.id}
+                                            checked={tipoRelatorio === opt.id}
+                                            onChange={() => setTipoRelatorio(opt.id as any)}
+                                            className="w-4 h-4 text-blue-600"
+                                        />
+                                        <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={gerarRelatorio}
+                                disabled={isGerando}
+                                className="px-6 py-2 rounded-xl text-sm font-bold bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                            >
+                                {isGerando ? "Gerando..." : "Baixar PDF"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

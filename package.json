@@ -36,6 +36,8 @@
     "csv-parser": "^3.2.0",
     "date-fns": "^4.1.0",
     "imapflow": "^1.4.3",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "leaflet": "^1.9.4",
     "mailparser": "^3.9.12",
     "next": "^15.2.3",

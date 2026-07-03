@@ -435,4 +435,39 @@ export const ocorrenciaRouter = createTRPCRouter({
                 paginaAtual: pagina,
             };
         }),
+
+    /**
+     * Busca TODAS as ocorrências de um período para geração de relatório PDF.
+     * Sem paginação — retorna no máximo 500 registros.
+     */
+    listarParaRelatorio: protectedProcedure
+        .input(z.object({
+            dataInicio: z.string(),
+            dataFim: z.string(),
+        }))
+        .query(async ({ ctx, input }) => {
+            const inicio = new Date(input.dataInicio);
+            const fim = new Date(input.dataFim);
+            fim.setHours(23, 59, 59, 999);
+
+            return ctx.db.ocorrencia.findMany({
+                where: {
+                    createdAt: { gte: inicio, lte: fim },
+                },
+                orderBy: { createdAt: "desc" },
+                take: 500,
+                include: {
+                    viagem: {
+                        include: {
+                            veiculo: { select: { placa: true } },
+                            baseOrigem: { select: { cidade: true } },
+                            baseDestino: { select: { cidade: true } },
+                        },
+                    },
+                    abertaPor: { select: { name: true } },
+                    resolvidaPor: { select: { name: true } },
+                },
+            });
+        }),
 });
+
