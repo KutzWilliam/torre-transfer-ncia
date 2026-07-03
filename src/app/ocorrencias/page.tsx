@@ -540,10 +540,22 @@ export default function OcorrenciasPage() {
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => { setIsMounted(true); }, []);
 
+    const [filtroPlaca, setFiltroPlaca] = useState("");
+
     const { data: ocorrencias, isLoading, refetch } = api.ocorrencia.listarAbertas.useQuery(undefined, {
         refetchInterval: 30000,
         refetchOnWindowFocus: true,
     });
+
+    // Filtra por placa (client-side)
+    const ocorrenciasFiltradas = useMemo(() => {
+        if (!ocorrencias) return [];
+        const termo = filtroPlaca.trim().toUpperCase();
+        if (!termo) return ocorrencias;
+        return ocorrencias.filter(oc =>
+            oc.viagem.veiculo.placa.toUpperCase().includes(termo)
+        );
+    }, [ocorrencias, filtroPlaca]);
 
     // Filtra só as que têm localização para o mapa
     const ocorrenciasComPosicao = useMemo(() => {
@@ -637,13 +649,44 @@ export default function OcorrenciasPage() {
 
                     {/* Coluna Direita: Lista de Ocorrências */}
                     <div className="xl:col-span-3 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h2 className="font-bold text-slate-700 uppercase tracking-wider text-sm">
-                                Ocorrências em Aberto
-                            </h2>
-                            <span className="text-xs text-slate-400">
-                                {ocorrencias ? `${ocorrencias.length} ocorrência(s)` : "—"}
-                            </span>
+                        {/* Cabeçalho + Barra de Busca */}
+                        <div className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                                <h2 className="font-bold text-slate-700 uppercase tracking-wider text-sm">
+                                    Ocorrências em Aberto
+                                </h2>
+                                <span className="text-xs text-slate-400">
+                                    {ocorrenciasFiltradas.length !== ocorrencias?.length
+                                        ? `${ocorrenciasFiltradas.length} de ${ocorrencias?.length ?? 0} ocorrência(s)`
+                                        : `${ocorrencias?.length ?? 0} ocorrência(s)`
+                                    }
+                                </span>
+                            </div>
+
+                            {/* Barra de busca por placa */}
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">
+                                    🔍
+                                </span>
+                                <input
+                                    id="filtro-placa"
+                                    type="text"
+                                    value={filtroPlaca}
+                                    onChange={e => setFiltroPlaca(e.target.value.toUpperCase())}
+                                    placeholder="Filtrar por placa do veículo..."
+                                    maxLength={8}
+                                    className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-mono font-bold tracking-widest text-slate-800 placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow shadow-sm"
+                                />
+                                {filtroPlaca && (
+                                    <button
+                                        onClick={() => setFiltroPlaca("")}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-lg leading-none transition-colors"
+                                        title="Limpar filtro"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {isLoading && !ocorrencias && (
@@ -662,9 +705,24 @@ export default function OcorrenciasPage() {
                             </div>
                         )}
 
-                        {ocorrencias && ocorrencias.length > 0 && (
+                        {/* Sem resultados para o filtro */}
+                        {!isLoading && ocorrencias && ocorrencias.length > 0 && ocorrenciasFiltradas.length === 0 && (
+                            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center">
+                                <p className="text-3xl mb-3">🔍</p>
+                                <p className="text-base font-semibold text-slate-600">Nenhuma ocorrência encontrada</p>
+                                <p className="mt-1 text-sm text-slate-400">Nenhum veículo com a placa <strong className="text-slate-700">{filtroPlaca}</strong> possui ocorrências abertas.</p>
+                                <button
+                                    onClick={() => setFiltroPlaca("")}
+                                    className="mt-4 px-4 py-2 rounded-xl text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors"
+                                >
+                                    Limpar filtro
+                                </button>
+                            </div>
+                        )}
+
+                        {ocorrenciasFiltradas.length > 0 && (
                             <div className="space-y-4">
-                                {ocorrencias.map(oc => (
+                                {ocorrenciasFiltradas.map(oc => (
                                     <CardOcorrencia key={oc.id} oc={oc} onRefresh={refetch} />
                                 ))}
                             </div>
