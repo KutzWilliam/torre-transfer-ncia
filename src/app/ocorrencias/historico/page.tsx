@@ -224,7 +224,8 @@ export default function HistoricoOcorrenciasPage() {
     const [dataFim, setDataFim] = useState("");
 
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [tipoRelatorio, setTipoRelatorio] = useState<"DIA" | "SEMANA" | "MES" | "TODAS">("DIA");
+    const [tipoRelatorio, setTipoRelatorio] = useState<"DIA" | "SEMANA" | "MES" | "TODAS" | "PERSONALIZADO">("DIA");
+    const [dataRelatorioPersonalizada, setDataRelatorioPersonalizada] = useState(() => new Date().toISOString().split("T")[0]);
     const [isGerando, setIsGerando] = useState(false);
 
     const { data, isLoading, refetch } = api.ocorrencia.listarHistorico.useQuery({
@@ -273,6 +274,14 @@ export default function HistoricoOcorrenciasPage() {
             } else if (tipoRelatorio === "MES") {
                 inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
                 tituloPeriodo = `Mês: ${hoje.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}`;
+            } else if (tipoRelatorio === "PERSONALIZADO") {
+                const partes = (dataRelatorioPersonalizada || "").split("-").map(Number);
+                const ano = partes[0] ?? hoje.getFullYear();
+                const mes = partes[1] ?? hoje.getMonth() + 1;
+                const dia = partes[2] ?? hoje.getDate();
+                inicio = new Date(ano, mes - 1, dia, 0, 0, 0, 0);
+                fim = new Date(ano, mes - 1, dia, 23, 59, 59, 999);
+                tituloPeriodo = `Data: ${inicio.toLocaleDateString("pt-BR")}`;
             } else {
                 inicio = new Date(2000, 0, 1);
                 tituloPeriodo = "Período: Histórico Completo";
@@ -628,25 +637,40 @@ export default function HistoricoOcorrenciasPage() {
                                     { id: "SEMANA", label: "Da Semana (Desde Domingo)" },
                                     { id: "MES", label: "Do Mês Atual" },
                                     { id: "TODAS", label: "Histórico Completo" },
+                                    { id: "PERSONALIZADO", label: "Dia Específico" },
                                 ].map(opt => (
-                                    <label
-                                        key={opt.id}
-                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                                            tipoRelatorio === opt.id 
-                                                ? "border-blue-500 bg-blue-50" 
-                                                : "border-slate-200 hover:bg-slate-50"
-                                        }`}
-                                    >
-                                        <input
-                                            type="radio"
-                                            name="tipoRelatorio"
-                                            value={opt.id}
-                                            checked={tipoRelatorio === opt.id}
-                                            onChange={() => setTipoRelatorio(opt.id as any)}
-                                            className="w-4 h-4 text-blue-600"
-                                        />
-                                        <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
-                                    </label>
+                                    <div key={opt.id} className="flex flex-col gap-2">
+                                        <label
+                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                                                tipoRelatorio === opt.id 
+                                                    ? "border-blue-500 bg-blue-50" 
+                                                    : "border-slate-200 hover:bg-slate-50"
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="tipoRelatorio"
+                                                value={opt.id}
+                                                checked={tipoRelatorio === opt.id}
+                                                onChange={() => setTipoRelatorio(opt.id as any)}
+                                                className="w-4 h-4 text-blue-600"
+                                            />
+                                            <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
+                                        </label>
+                                        
+                                        {/* Date input for specific day */}
+                                        {opt.id === "PERSONALIZADO" && tipoRelatorio === "PERSONALIZADO" && (
+                                            <div className="pl-11 pr-3 pb-2">
+                                                <input
+                                                    type="date"
+                                                    value={dataRelatorioPersonalizada}
+                                                    onChange={e => setDataRelatorioPersonalizada(e.target.value)}
+                                                    max={new Date().toISOString().split("T")[0]}
+                                                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 ))}
                             </div>
                         </div>
