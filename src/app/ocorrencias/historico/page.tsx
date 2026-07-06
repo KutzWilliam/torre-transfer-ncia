@@ -365,12 +365,13 @@ export default function HistoricoOcorrenciasPage() {
                     tempoRes,
                     oc.abertaPor?.name ?? "Sistema",
                     oc.resolvidaPor?.name ?? "—",
+                    oc.resolucao ?? "—",
                 ];
             });
 
             autoTable(doc, {
                 startY: 65,
-                head: [["Abertura", "Placa", "Tipo", "Rota", "Status", "Tempo", "Aberta Por", "Resolvida Por"]],
+                head: [["Abertura", "Placa", "Tipo", "Rota", "Status", "Tempo", "Aberta Por", "Resolvida Por", "Solução"]],
                 body: rows,
                 theme: "grid",
                 styles: { fontSize: 8, cellPadding: 3 },
