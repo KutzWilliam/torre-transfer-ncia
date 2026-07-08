@@ -58,6 +58,7 @@ model Base {
   justificativas    JustificativaAtraso[]
   paradasPadrao ParadaPadrao[]
   paradasViagem ParadaViagem[]
+  ocorrenciasResponsavel Ocorrencia[] @relation("OcorrenciasUnidade")
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -80,6 +81,7 @@ model User {
   
   ocorrenciasAbertas    Ocorrencia[] @relation("OcorrenciasAbertas")
   ocorrenciasResolvidas Ocorrencia[] @relation("OcorrenciasResolvidas")
+  ocorrenciasAcionadas  Ocorrencia[] @relation("OcorrenciasAcionadas")
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -253,14 +255,26 @@ model Ocorrencia {
   
   status          StatusOcorrencia @default(ABERTA)
   
-  resolucao       String?          @db.Text
-  
+  // ── Fase 1: Abertura ─────────────────────────────────────────────────
   abertaPorId     String
   abertaPor       User             @relation("OcorrenciasAbertas", fields: [abertaPorId], references: [id])
   
+  // ── Fase 2: Atendimento pela Torre ───────────────────────────────────
+  // Nota do operador da torre após ligar para o motorista
+  notaTorre              String?   @db.Text
+  // Quando o operador da torre assumiu o atendimento
+  acionadoEm             DateTime?
+  // Quem da torre assumiu o atendimento
+  acionadoPorId          String?
+  acionadoPor            User?     @relation("OcorrenciasAcionadas", fields: [acionadoPorId], references: [id])
+  // Qual unidade ficará responsável por resolver
+  unidadeResponsavelId   String?
+  unidadeResponsavel     Base?     @relation("OcorrenciasUnidade", fields: [unidadeResponsavelId], references: [id])
+  
+  // ── Fase 3: Resolução pela Unidade ───────────────────────────────────
+  resolucao       String?          @db.Text
   resolvidaPorId  String?
   resolvidaPor    User?            @relation("OcorrenciasResolvidas", fields: [resolvidaPorId], references: [id])
-  
   resolvidaEm     DateTime?
 
   // ── Integração E-mail AngelLira ──────────────────────────────────────

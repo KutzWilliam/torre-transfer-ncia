@@ -49,6 +49,85 @@ const STATUS_CONFIG = {
     RESOLVIDA:      { label: "Resolvida",      bg: "bg-emerald-100",text: "text-emerald-700",dot: "bg-emerald-500" },
 };
 
+// ─── Componente: Modal de Atendimento (Torre) ────────────────────────────────
+
+function ModalAtendimento({ ocorrenciaId, onClose, onIniciado }: {
+    ocorrenciaId: string;
+    onClose: () => void;
+    onIniciado: () => void;
+}) {
+    const [notaTorre, setNotaTorre] = useState("");
+    const [unidadeResponsavelId, setUnidadeResponsavelId] = useState("");
+
+    const { data: bases, isLoading: isLoadingBases } = api.ocorrencia.listarBases.useQuery();
+    const iniciar = api.ocorrencia.iniciarAtendimento.useMutation({
+        onSuccess: () => { onIniciado(); onClose(); }
+    });
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-900">Iniciar Atendimento</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+                </div>
+                <p className="text-sm text-slate-500">Descreva o que foi conversado com o motorista e selecione a unidade que tratará a ocorrência.</p>
+                
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        Nota de Atendimento
+                    </label>
+                    <textarea
+                        value={notaTorre}
+                        onChange={e => setNotaTorre(e.target.value)}
+                        rows={3}
+                        placeholder="Ex: Motorista informou que o pneu furou e precisa de guincho..."
+                        className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        Unidade Responsável
+                    </label>
+                    {isLoadingBases ? (
+                        <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
+                    ) : (
+                        <select
+                            value={unidadeResponsavelId}
+                            onChange={e => setUnidadeResponsavelId(e.target.value)}
+                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                        >
+                            <option value="">Selecione a unidade...</option>
+                            {bases?.map(base => (
+                                <option key={base.id} value={base.id}>
+                                    {base.nome} {base.cidade ? `(${base.cidade})` : ""}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
+
+                <div className="flex gap-2 justify-end pt-2">
+                    <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={() => iniciar.mutate({ id: ocorrenciaId, notaTorre, unidadeResponsavelId })}
+                        disabled={notaTorre.trim().length < 10 || !unidadeResponsavelId || iniciar.isPending}
+                        className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {iniciar.isPending ? "Iniciando..." : "Iniciar Atendimento"}
+                    </button>
+                </div>
+                {iniciar.error && (
+                    <p className="text-xs text-red-600">{iniciar.error.message}</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── Componente: Modal de Resolução ──────────────────────────────────────────
 
 function ModalResolucao({ ocorrenciaId, onClose, onResolvido }: {
@@ -207,8 +286,8 @@ function ModalNotificacao({ ocorrenciaId, onClose }: {
 function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
     const [mostrarResolucao, setMostrarResolucao] = useState(false);
     const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
+    const [mostrarAtendimento, setMostrarAtendimento] = useState(false);
     const statusCfg = STATUS_CONFIG[oc.status as keyof typeof STATUS_CONFIG];
-    const atualizarStatus = api.ocorrencia.atualizarStatus.useMutation({ onSuccess: onRefresh });
 
     // Contatos das bases da rota (sem a origem)
     const basesComContato = useMemo(() => {
@@ -225,6 +304,13 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                     ocorrenciaId={oc.id}
                     onClose={() => setMostrarResolucao(false)}
                     onResolvido={onRefresh}
+                />
+            )}
+            {mostrarAtendimento && (
+                <ModalAtendimento
+                    ocorrenciaId={oc.id}
+                    onClose={() => setMostrarAtendimento(false)}
+                    onIniciado={onRefresh}
                 />
             )}
             {mostrarNotificacao && (
@@ -268,6 +354,20 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                 {/* Descrição */}
                 <div className="px-5 py-3">
                     <p className="text-sm text-slate-600 leading-relaxed">{oc.descricao}</p>
+                    
+                    {oc.status === "EM_ATENDIMENTO" && oc.notaTorre && (
+                        <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 mb-1">
+                                Atendimento em andamento
+                            </p>
+                            <p className="text-sm text-amber-800 leading-relaxed mb-2">
+                                <strong>Torre ({oc.acionadoPor?.name}):</strong> {oc.notaTorre}
+                            </p>
+                            <p className="text-xs text-amber-700">
+                                <strong>Unidade Responsável:</strong> {oc.unidadeResponsavel?.nome}
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Contatos das bases */}
@@ -314,11 +414,10 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                         </Link>
                         {oc.status === "ABERTA" && (
                             <button
-                                onClick={() => atualizarStatus.mutate({ id: oc.id, status: "EM_ATENDIMENTO" })}
-                                disabled={atualizarStatus.isPending}
-                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors disabled:opacity-50"
+                                onClick={() => setMostrarAtendimento(true)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors"
                             >
-                                Em Atendimento
+                                Iniciar Atendimento
                             </button>
                         )}
                         <button

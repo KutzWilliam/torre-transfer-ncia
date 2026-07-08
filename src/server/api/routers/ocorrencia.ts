@@ -167,6 +167,8 @@ export const ocorrenciaRouter = createTRPCRouter({
                 },
                 abertaPor: { select: { id: true, name: true } },
                 resolvidaPor: { select: { id: true, name: true } },
+                acionadoPor: { select: { id: true, name: true } },
+                unidadeResponsavel: { select: { id: true, nome: true, cidade: true } },
             },
         });
 
@@ -185,7 +187,46 @@ export const ocorrenciaRouter = createTRPCRouter({
     }),
 
     /**
-     * Atualiza o status de uma ocorrência (ABERTA → EM_ATENDIMENTO).
+     * Lista todas as bases (unidades) disponíveis para selecionar como responsável.
+     */
+    listarBases: protectedProcedure.query(async ({ ctx }) => {
+        return ctx.db.base.findMany({
+            orderBy: { nome: "asc" },
+            select: { id: true, nome: true, cidade: true },
+        });
+    }),
+
+    /**
+     * Fase 2: Operador da torre assume o atendimento.
+     * Registra a nota do que foi conversado com o motorista e define a unidade responsável.
+     */
+    iniciarAtendimento: protectedProcedure
+        .input(z.object({
+            id: z.string(),
+            notaTorre: z.string().min(10, "Descreva o que foi conversado com o motorista (mínimo 10 caracteres)."),
+            unidadeResponsavelId: z.string({ required_error: "Selecione a unidade responsável." }),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            const oc = await ctx.db.ocorrencia.findUnique({ where: { id: input.id } });
+            if (!oc) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
+            if (oc.status === "RESOLVIDA") {
+                throw new TRPCError({ code: "BAD_REQUEST", message: "Esta ocorrência já foi resolvida." });
+            }
+
+            return ctx.db.ocorrencia.update({
+                where: { id: input.id },
+                data: {
+                    status: "EM_ATENDIMENTO",
+                    notaTorre: input.notaTorre,
+                    acionadoEm: new Date(),
+                    acionadoPorId: ctx.session.user.id,
+                    unidadeResponsavelId: input.unidadeResponsavelId,
+                },
+            });
+        }),
+
+    /**
+     * Atualiza o status de uma ocorrência (mantido para compatibilidade, mas o fluxo principal usa iniciarAtendimento).
      */
     atualizarStatus: protectedProcedure
         .input(z.object({
@@ -206,7 +247,7 @@ export const ocorrenciaRouter = createTRPCRouter({
         }),
 
     /**
-     * Resolve (fecha) uma ocorrência com um texto de resolução.
+     * Fase 3: Operador da unidade responsável registra a resolução.
      */
     resolver: protectedProcedure
         .input(z.object({
@@ -242,6 +283,8 @@ export const ocorrenciaRouter = createTRPCRouter({
                 orderBy: { createdAt: "asc" },
                 include: {
                     abertaPor: { select: { id: true, name: true } },
+                    acionadoPor: { select: { id: true, name: true } },
+                    unidadeResponsavel: { select: { id: true, nome: true, cidade: true } },
                     resolvidaPor: { select: { id: true, name: true } },
                 },
             });
@@ -279,6 +322,8 @@ export const ocorrenciaRouter = createTRPCRouter({
                         },
                     },
                     abertaPor: { select: { id: true, name: true } },
+                    acionadoPor: { select: { id: true, name: true } },
+                    unidadeResponsavel: { select: { id: true, nome: true, cidade: true } },
                     resolvidaPor: { select: { id: true, name: true } },
                 },
             });
@@ -423,6 +468,8 @@ export const ocorrenciaRouter = createTRPCRouter({
                             },
                         },
                         abertaPor: { select: { id: true, name: true, email: true } },
+                        acionadoPor: { select: { id: true, name: true } },
+                        unidadeResponsavel: { select: { id: true, nome: true, cidade: true } },
                         resolvidaPor: { select: { id: true, name: true, email: true } },
                     },
                 }),
@@ -465,9 +512,10 @@ export const ocorrenciaRouter = createTRPCRouter({
                         },
                     },
                     abertaPor: { select: { name: true } },
+                    acionadoPor: { select: { name: true } },
+                    unidadeResponsavel: { select: { nome: true, cidade: true } },
                     resolvidaPor: { select: { name: true } },
                 },
             });
         }),
 });
-

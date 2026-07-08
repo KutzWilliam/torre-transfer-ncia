@@ -85,7 +85,21 @@ function Timeline({ oc }: { oc: any }) {
                         <div className={`w-0.5 flex-1 my-1 ${isResolvida ? "bg-amber-200" : "bg-slate-100"}`} style={{ minHeight: "24px" }} />
                     </div>
                     <div className="pb-3 min-w-0">
-                        {isAtendimento ? (
+                        {isAtendimento && oc.acionadoEm ? (
+                            <>
+                                <p className="text-xs font-bold text-amber-600">🟡 Torre assumiu atendimento</p>
+                                <p className="text-xs text-slate-500">{formatarDataHora(oc.acionadoEm)}</p>
+                                <p className="text-[11px] text-slate-400">por {oc.acionadoPor?.name ?? "—"}</p>
+                                {oc.notaTorre && (
+                                    <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                                        <p className="text-xs text-amber-800 italic">"{oc.notaTorre}"</p>
+                                        <p className="text-[10px] text-amber-700 font-semibold mt-1">
+                                            Repassado para: {oc.unidadeResponsavel?.nome ?? "—"}
+                                        </p>
+                                    </div>
+                                )}
+                            </>
+                        ) : isAtendimento ? (
                             <>
                                 <p className="text-xs font-bold text-amber-600">🟡 Em Atendimento</p>
                                 <p className="text-[11px] text-slate-400">status atualizado para atendimento</p>
@@ -364,6 +378,7 @@ export default function HistoricoOcorrenciasPage() {
                     statusLabel,
                     tempoRes,
                     oc.abertaPor?.name ?? "Sistema",
+                    oc.unidadeResponsavel?.nome ?? "—",
                     oc.resolvidaPor?.name ?? "—",
                     oc.resolucao ?? "—",
                 ];
@@ -371,7 +386,7 @@ export default function HistoricoOcorrenciasPage() {
 
             autoTable(doc, {
                 startY: 65,
-                head: [["Abertura", "Placa", "Tipo", "Rota", "Status", "Tempo", "Aberta Por", "Resolvida Por", "Solução"]],
+                head: [["Abertura", "Placa", "Tipo", "Rota", "Status", "Tempo", "Aberta Por", "Unidade Resp.", "Resolvida Por", "Solução"]],
                 body: rows,
                 theme: "grid",
                 styles: { fontSize: 8, cellPadding: 3 },
