@@ -33,6 +33,7 @@ function gerarHtmlNotificacao(params: {
     origem: string;
     destino: string;
     descricao: string;
+    notaTorre?: string | null;
     dataAbertura: string;
     abertaPor: string;
     urlSistema: string;
@@ -99,6 +100,13 @@ function gerarHtmlNotificacao(params: {
       <p style="font-size:13px;color:#64748b;margin:0 0 8px;font-weight:600;">📝 Descrição da Ocorrência:</p>
       <div class="descricao-box">${params.descricao.replace(/\n/g, "<br/>")}</div>
 
+      ${params.notaTorre ? `
+      <p style="font-size:13px;color:#64748b;margin:0 0 8px;font-weight:600;">⚠️ Nota da Torre (Atendimento):</p>
+      <div class="descricao-box" style="background:#fef3c7; border-color:#fde68a; color:#92400e;">
+        ${params.notaTorre.replace(/\n/g, "<br/>")}
+      </div>
+      ` : ""}
+
       <div class="cta">
         <a href="${params.urlSistema}">🔍 Ver Ocorrência no Sistema</a>
       </div>
@@ -124,6 +132,7 @@ export interface DadosNotificacaoOcorrencia {
     origem: string;
     destino: string;
     descricao: string;
+    notaTorre?: string | null;
     dataAbertura: Date;
     abertaPor: string;
     ocorrenciaId: string;
@@ -165,6 +174,7 @@ export async function enviarNotificacaoOcorrencia(
             origem: dados.origem,
             destino: dados.destino,
             descricao: dados.descricao,
+            notaTorre: dados.notaTorre,
             dataAbertura: dataFormatada,
             abertaPor: dados.abertaPor,
             urlSistema,

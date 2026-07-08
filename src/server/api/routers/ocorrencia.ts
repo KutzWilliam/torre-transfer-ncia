@@ -148,10 +148,23 @@ export const ocorrenciaRouter = createTRPCRouter({
      * Lista todas as ocorrências abertas ou em atendimento, com dados completos da viagem e telemetria atual.
      */
     listarAbertas: protectedProcedure.query(async ({ ctx }) => {
+        const usuario = await ctx.db.user.findUnique({
+            where: { id: ctx.session.user.id },
+            select: { baseId: true },
+        });
+
+        const where: any = {};
+        if (usuario?.baseId) {
+            // Se o usuário tem unidade atrelada, vê apenas as que estão em atendimento pela sua unidade
+            where.status = "EM_ATENDIMENTO";
+            where.unidadeResponsavelId = usuario.baseId;
+        } else {
+            // Se não tem unidade (Torre), vê todas abertas e em atendimento
+            where.status = { in: ["ABERTA", "EM_ATENDIMENTO"] };
+        }
+
         const ocorrencias = await ctx.db.ocorrencia.findMany({
-            where: {
-                status: { in: ["ABERTA", "EM_ATENDIMENTO"] },
-            },
+            where,
             orderBy: { createdAt: "desc" },
             include: {
                 viagem: {
@@ -207,13 +220,25 @@ export const ocorrenciaRouter = createTRPCRouter({
             unidadeResponsavelId: z.string({ required_error: "Selecione a unidade responsável." }),
         }))
         .mutation(async ({ ctx, input }) => {
-            const oc = await ctx.db.ocorrencia.findUnique({ where: { id: input.id } });
+            const oc = await ctx.db.ocorrencia.findUnique({ 
+                where: { id: input.id },
+                include: {
+                    viagem: {
+                        include: {
+                            veiculo: true,
+                            baseOrigem: true,
+                            baseDestino: true,
+                        }
+                    },
+                    abertaPor: true,
+                }
+            });
             if (!oc) throw new TRPCError({ code: "NOT_FOUND", message: "Ocorrência não encontrada." });
             if (oc.status === "RESOLVIDA") {
                 throw new TRPCError({ code: "BAD_REQUEST", message: "Esta ocorrência já foi resolvida." });
             }
 
-            return ctx.db.ocorrencia.update({
+            const atualizada = await ctx.db.ocorrencia.update({
                 where: { id: input.id },
                 data: {
                     status: "EM_ATENDIMENTO",
@@ -223,6 +248,39 @@ export const ocorrenciaRouter = createTRPCRouter({
                     unidadeResponsavelId: input.unidadeResponsavelId,
                 },
             });
+
+            // Busca os usuários da unidade destino para notificar
+            const usuariosDestino = await ctx.db.user.findMany({
+                where: { 
+                    baseId: input.unidadeResponsavelId, 
+                    email: { not: "" } 
+                },
+                select: { email: true, name: true }
+            });
+
+            if (usuariosDestino.length > 0) {
+                // Dispara os e-mails em background (fire and forget)
+                Promise.allSettled(
+                    usuariosDestino.map(u => 
+                        enviarNotificacaoOcorrencia({
+                            destinatarioEmail: u.email!,
+                            destinatarioNome: u.name ?? "Equipe da Unidade",
+                            tipoOcorrencia: oc.tipoOcorrencia,
+                            placa: oc.viagem.veiculo.placa,
+                            motorista: oc.viagem.motorista ?? "Não informado",
+                            origem: oc.viagem.baseOrigem.cidade,
+                            destino: oc.viagem.baseDestino.cidade,
+                            descricao: oc.descricao,
+                            notaTorre: input.notaTorre,
+                            dataAbertura: oc.createdAt,
+                            abertaPor: oc.abertaPor?.name ?? "Sistema",
+                            ocorrenciaId: oc.id,
+                        })
+                    )
+                ).catch(err => console.error("Erro ao enviar e-mail para unidade:", err));
+            }
+
+            return atualizada;
         }),
 
     /**
