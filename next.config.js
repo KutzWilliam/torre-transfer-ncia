@@ -12,6 +12,8 @@ const config = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Pacotes com binários nativos (.node) não devem ser empacotados pelo webpack
+  serverExternalPackages: ["@napi-rs/canvas"],
 };
 
 export default config;
