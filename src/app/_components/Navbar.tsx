@@ -16,9 +16,10 @@ export default function Navbar({ session }: { session: Session | null }) {
     const isAdmin = session?.user?.role === "ADMIN";
 
     const links = [
-        { href: "/dashboard",    label: "Dashboard Operacional" },
-        { href: "/viagens",      label: "Lista de Viagens" },
-        { href: "/analise",      label: "Análise de Atrasos",  highlight: true },
+        { href: "/dashboard",             label: "Dashboard Operacional" },
+        { href: "/viagens",               label: "Lista de Viagens" },
+        { href: "/analise",               label: "Análise de Atrasos",    highlight: true },
+        { href: "/auditoria-manifesto",   label: "🛡 Auditoria Manifestos", highlight: true },
         ...(isAdmin ? [
             { href: "/viagens/upload", label: "Upload de Planilha" },
             { href: "/admin",          label: "⚙ Administração",  admin: true },
