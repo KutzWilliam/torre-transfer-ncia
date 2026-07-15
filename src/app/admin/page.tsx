@@ -93,6 +93,25 @@ export default function AdminHubPage() {
                             </div>
                         </div>
                     </Link>
+
+                    <Link
+                        href="/admin/regionais"
+                        className="group bg-white rounded-xl border border-gray-200 shadow-sm p-8 hover:border-emerald-500 hover:shadow-md transition-all"
+                    >
+                        <div className="flex items-start gap-4">
+                            <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-2xl">
+                                📊
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900 group-hover:text-emerald-700 transition-colors">
+                                    Regionais — Rel. Semanal
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Gerenciar veículos por regional e destinatários do relatório enviado toda sexta às 8h.
+                                </p>
+                            </div>
+                        </div>
+                    </Link>
                 </div>
 
                 <div className="mt-8 text-center">

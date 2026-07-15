@@ -35,6 +35,15 @@ export default function AdminUsuariosPage() {
 
     const invalidate = () => void utils.admin.usuarios.listar.invalidate();
 
+    const toggleRelatorio = api.regional.toggleRelatorioSemanal.useMutation({
+        onSuccess: () => void utils.admin.usuarios.listar.invalidate(),
+    });
+
+    // Toggle inline
+    const handleToggleRelatorio = (userId: string, recebe: boolean) => {
+        toggleRelatorio.mutate({ userId, recebe });
+    };
+
     const criarMutation = api.admin.usuarios.criar.useMutation({
         onSuccess: () => { invalidate(); setShowModal(null); setForm(EMPTY_USER); setError(""); },
         onError: (e) => setError(e.message),
@@ -100,6 +109,7 @@ export default function AdminUsuariosPage() {
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Nome / Email</th>
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Papel</th>
                                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Base Vinculada</th>
+                                    <th className="px-6 py-4 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">📊 Rel. Semanal</th>
                                     <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Ações</th>
                                 </tr>
                             </thead>
@@ -116,6 +126,22 @@ export default function AdminUsuariosPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-600">{u.base?.nome ?? <span className="text-gray-400 italic">Nenhuma</span>}</td>
+                                        {/* Toggle Relatório Semanal */}
+                                        <td className="px-6 py-4 text-center">
+                                            <button
+                                                onClick={() => handleToggleRelatorio(u.id, !u.recebeRelatorioSemanal)}
+                                                disabled={toggleRelatorio.isPending}
+                                                title={u.recebeRelatorioSemanal ? "Clique para remover da lista" : "Clique para adicionar à lista"}
+                                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                                                    u.recebeRelatorioSemanal
+                                                        ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                                }`}
+                                            >
+                                                <span>{u.recebeRelatorioSemanal ? "✅" : "○"}</span>
+                                                <span>{u.recebeRelatorioSemanal ? "Ativo" : "Inativo"}</span>
+                                            </button>
+                                        </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
                                                 <button onClick={() => abrirEditar(u)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-md hover:bg-blue-50 transition">Editar</button>

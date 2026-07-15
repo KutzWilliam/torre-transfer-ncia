@@ -85,6 +85,9 @@ model User {
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  // Relatório semanal: se true, recebe o e-mail de relatório toda sexta
+  recebeRelatorioSemanal Boolean @default(false)
 }
 
 model Veiculo {
@@ -291,4 +294,33 @@ model Ocorrencia {
   @@index([viagemId])
   @@index([status])
   @@index([origem])
+}
+
+// ================= GERENTES / RELATÓRIO SEMANAL =================
+// Regional.nome = nome do GERENTE (ex: "Joel Schemuda")
+
+model Regional {
+  id        String            @id @default(cuid())
+  nome      String            @unique  // Nome do gerente responsável
+  veiculos  VeiculoRegional[]
+
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model VeiculoRegional {
+  id           String   @id @default(cuid())
+  placa        String   @unique
+  unidade      String?  // Ex: "PRI PONTA GROSSA GARAGEM"
+  proprietario String?
+  responsavel  String?  // Responsável direto (campo RESPONSAVEL do CSV)
+  gerente      String?  // Gerente (campo GERENTE do CSV)
+
+  regionalId   String
+  regional     Regional @relation(fields: [regionalId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([regionalId])
 }

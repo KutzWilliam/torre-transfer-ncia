@@ -20,7 +20,7 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 const usuariosRouter = createTRPCRouter({
     listar: adminProcedure.query(async ({ ctx }) => {
         return ctx.db.user.findMany({
-            select: { id: true, name: true, email: true, role: true, baseId: true, base: { select: { nome: true } }, createdAt: true },
+            select: { id: true, name: true, email: true, role: true, baseId: true, base: { select: { nome: true } }, createdAt: true, recebeRelatorioSemanal: true },
             orderBy: { name: "asc" },
         });
     }),
