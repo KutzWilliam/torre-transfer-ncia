@@ -6,7 +6,7 @@ const PUBLIC_ROUTES = ["/login"];
 // Prefixos de rotas técnicas que sempre devem passar
 // /api/process-emails → autenticado por Bearer token próprio (CRON_SECRET), não por sessão
 // /api/sync           → chamado internamente pelo cliente
-const PUBLIC_PREFIXES = ["/api/auth", "/api/process-emails", "/api/sync", "/_next", "/favicon", "/logo", "/cropped"];
+const PUBLIC_PREFIXES = ["/api/auth", "/api/process-emails", "/api/sync", "/api/relatorio-semanal", "/_next", "/favicon", "/logo", "/cropped"];
 
 export default auth((req) => {
     const { pathname } = req.nextUrl;
