@@ -96,6 +96,7 @@ interface OcorrenciaResumo {
     rota:           string;
     resolucao:      string | null;
     notaTorre:      string | null;
+    unidadeResponsavelNome: string | null;
 }
 
 interface RegionalResumo {
@@ -148,6 +149,7 @@ export async function coletarDadosRelatorio(): Promise<{
                 },
             },
             include: {
+                unidadeResponsavel: { select: { nome: true } },
                 viagem: {
                     include: {
                         veiculo: true,
@@ -167,6 +169,7 @@ export async function coletarDadosRelatorio(): Promise<{
             rota:         `${o.viagem.baseOrigem?.nome ?? "?"} -> ${o.viagem.baseDestino?.nome ?? "?"}`,
             resolucao:    o.resolucao,
             notaTorre:    o.notaTorre,
+            unidadeResponsavelNome: o.unidadeResponsavel?.nome ?? null,
         }));
 
         resultado.push({
@@ -235,10 +238,15 @@ export async function gerarImagemRelatorio(
             for (const oc of r.ocorrencias) {
                 const isResolvida = oc.status === "RESOLVIDA";
                 let descText = "";
+                
+                const torreStr = oc.notaTorre ? `Torre: ${oc.notaTorre}` : "";
+                const unidStr = oc.unidadeResponsavelNome ? `(Resp: ${oc.unidadeResponsavelNome})` : "";
+                const tratativaStr = [torreStr, unidStr].filter(Boolean).join(" ");
+
                 if (isResolvida && oc.resolucao) {
-                    descText = oc.resolucao;
-                } else if (oc.status === "EM_ATENDIMENTO" && oc.notaTorre) {
-                    descText = `(Tratativa iniciada) ${oc.notaTorre}`;
+                    descText = tratativaStr ? `${tratativaStr}\nResolução: ${oc.resolucao}` : oc.resolucao;
+                } else if (oc.status === "EM_ATENDIMENTO") {
+                    descText = tratativaStr || "Tratativa iniciada...";
                 } else {
                     descText = "Aguardando tratativa da unidade...";
                 }
