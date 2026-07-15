@@ -26,5 +26,19 @@ module.exports = {
         NODE_ENV: "production",
       },
     },
+    // ── Cron: Relatório Semanal de Ocorrências ───────────────────────────────
+    // Envia o consolidado por gerente toda sexta-feira às 8h
+    {
+      name: "relatorio-semanal",
+      script: "scripts/relatorio-semanal-cron.mjs",
+      interpreter: "node",
+      cron_restart: "0 8 * * 5",
+      autorestart: false,
+      env: {
+        APP_URL: "http://localhost:3001",
+        CRON_SECRET: "torre-cron-secret-angellira-2025",
+        NODE_ENV: "production",
+      },
+    },
   ],
 };
