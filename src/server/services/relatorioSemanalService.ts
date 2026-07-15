@@ -27,7 +27,7 @@ function roundRect(ctx: SKRSContext2D, x: number, y: number, w: number, h: numbe
 }
 
 function truncate(text: string, max: number): string {
-    return text.length > max ? text.slice(0, max - 1) + "…" : text;
+    return text.length > max ? text.slice(0, max - 1) + "..." : text;
 }
 
 function wrapText(ctx: SKRSContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number {
@@ -164,7 +164,7 @@ export async function coletarDadosRelatorio(): Promise<{
             tipo:         o.tipoOcorrencia,
             status:       o.status,
             dataAbertura: o.createdAt,
-            rota:         `${o.viagem.baseOrigem?.nome ?? "?"} → ${o.viagem.baseDestino?.nome ?? "?"}`,
+            rota:         `${o.viagem.baseOrigem?.nome ?? "?"} -> ${o.viagem.baseDestino?.nome ?? "?"}`,
             resolucao:    o.resolucao,
             notaTorre:    o.notaTorre,
         }));
@@ -188,6 +188,7 @@ export async function gerarImagemRelatorio(
     inicio: Date,
     fim: Date,
 ): Promise<Buffer> {
+    const SCALE = 2; // Qualidade Retina
     const W   = 900;
     const PAD = 40;
     const INNER = W - PAD * 2;
@@ -195,11 +196,11 @@ export async function gerarImagemRelatorio(
     const fmtData = (d: Date) =>
         d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
 
-    // Instancia um canvas temporário só para medir textos dinâmicos
+    // Instancia um canvas temporário só para medir textos dinâmicos (não precisa de scale para medir)
     const dummyCanvas = createCanvas(W, 100);
     const dCtx = dummyCanvas.getContext("2d");
 
-    // Constantes e cálculos de layout
+    // Constantes e cálculos de layout (medidas lógicas)
     const HEADER_H   = 160;
     const PERIOD_H   = 50;
     const REGIONAL_HEADER_H = 80;
@@ -253,8 +254,10 @@ export async function gerarImagemRelatorio(
     }
     totalH += FOOTER_H;
 
-    const canvas = createCanvas(W, totalH);
+    // Aplica o scale ao criar o canvas oficial
+    const canvas = createCanvas(W * SCALE, totalH * SCALE);
     const ctx = canvas.getContext("2d");
+    ctx.scale(SCALE, SCALE);
 
     // ── BG ─────────────────────────────────────────────────────────────────────
     ctx.fillStyle = "#0f172a";
@@ -296,7 +299,7 @@ export async function gerarImagemRelatorio(
     ctx.fill();
     ctx.font = "bold 9px Arial";
     ctx.fillStyle = "#fff";
-    ctx.fillText("📊  RELATÓRIO SEMANAL DE OCORRÊNCIAS", PAD + 12, Y + 108);
+    ctx.fillText("RELATÓRIO SEMANAL DE OCORRÊNCIAS", PAD + 12, Y + 108);
 
     // Title
     ctx.font = "bold 26px Arial";
@@ -308,7 +311,7 @@ export async function gerarImagemRelatorio(
 
     ctx.font = "11px Arial";
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText("Princesa dos Campos Transportes — Consolidado por Gerente", PAD, Y + 155);
+    ctx.fillText("Princesa dos Campos Transportes - Consolidado por Gerente", PAD, Y + 155);
 
     Y += HEADER_H;
 
@@ -392,7 +395,7 @@ export async function gerarImagemRelatorio(
         // Nome gerente
         ctx.font = "bold 18px Arial";
         ctx.fillStyle = "#f8fafc";
-        ctx.fillText(`👤 ${truncate(r.nome, 40)}`, PAD + 24, Y + 32);
+        ctx.fillText(`${truncate(r.nome, 40)}`, PAD + 24, Y + 32);
 
         // KPIs inline
         const stats = [
@@ -425,7 +428,7 @@ export async function gerarImagemRelatorio(
             ctx.font = "12px Arial";
             ctx.fillStyle = "#64748b";
             ctx.textAlign = "center";
-            ctx.fillText("✅  Nenhuma ocorrência registrada nesta semana.", W / 2, Y + 29);
+            ctx.fillText("Nenhuma ocorrência registrada nesta semana.", W / 2, Y + 29);
             ctx.textAlign = "left";
             Y += EMPTY_H;
         } else {
@@ -463,7 +466,7 @@ export async function gerarImagemRelatorio(
 
                 const textY = Y + 22;
                 const statusColor = oc.status === "RESOLVIDA" ? "#10b981" : oc.status === "EM_ATENDIMENTO" ? "#f59e0b" : "#f43f5e";
-                const statusLabel = oc.status === "RESOLVIDA" ? "✅ Resolvida" : oc.status === "EM_ATENDIMENTO" ? "🟡 Em Atend." : "🔴 Aberta";
+                const statusLabel = oc.status === "RESOLVIDA" ? "Resolvida" : oc.status === "EM_ATENDIMENTO" ? "Em Atend." : "Aberta";
 
                 // Placa e Data
                 ctx.font = "bold 13px Courier New";
@@ -508,7 +511,7 @@ export async function gerarImagemRelatorio(
     ctx.fillText("Princesa dos Campos Transportes", W / 2, Y + 25);
     ctx.font = "11px Arial";
     ctx.fillStyle = "#475569";
-    ctx.fillText("Torre de Controle — Relatório Semanal de Ocorrências", W / 2, Y + 43);
+    ctx.fillText("Torre de Controle - Relatório Semanal de Ocorrências", W / 2, Y + 43);
     ctx.fillStyle = "#334155";
     ctx.fillText("E-mail gerado automaticamente. Não responda.", W / 2, Y + 58);
     ctx.textAlign = "left";
@@ -519,7 +522,7 @@ export async function gerarImagemRelatorio(
 // ─── Envio do e-mail ─────────────────────────────────────────────────────────
 
 export async function enviarRelatorioSemanal(): Promise<{ enviados: number; erros: number }> {
-    console.log("📊 Iniciando geração do relatório semanal...");
+    console.log("Iniciando geração do relatório semanal...");
 
     // Coleta dados
     const { regionais, inicio, fim } = await coletarDadosRelatorio();
@@ -532,7 +535,7 @@ export async function enviarRelatorioSemanal(): Promise<{ enviados: number; erro
     });
 
     if (destinatarios.length === 0) {
-        console.log("⚠️  Nenhum destinatário configurado para o relatório semanal.");
+        console.log("Nenhum destinatário configurado para o relatório semanal.");
         return { enviados: 0, erros: 0 };
     }
 
@@ -550,8 +553,8 @@ export async function enviarRelatorioSemanal(): Promise<{ enviados: number; erro
     const totalOcorrencias = regionais.reduce((a, r) => a + r.total, 0);
     const totalEmAberto    = regionais.reduce((a, r) => a + r.emAberto, 0);
     const assunto = totalEmAberto > 0
-        ? `🚨 Relatório Semanal — ${totalEmAberto} ocorrências aguardando tratativa | ${fmtData(inicio)} – ${fmtData(fim)}`
-        : `✅ Relatório Semanal — ${totalOcorrencias} ocorrências | ${fmtData(inicio)} – ${fmtData(fim)}`;
+        ? `Relatório Semanal - ${totalEmAberto} ocorrências aguardando tratativa | ${fmtData(inicio)} - ${fmtData(fim)}`
+        : `Relatório Semanal - ${totalOcorrencias} ocorrências | ${fmtData(inicio)} - ${fmtData(fim)}`;
 
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -586,13 +589,13 @@ export async function enviarRelatorioSemanal(): Promise<{ enviados: number; erro
                 }],
             });
             enviados++;
-            console.log(`📧 Relatório enviado para ${dest.email}`);
+            console.log(`Relatório enviado para ${dest.email}`);
         } catch (err) {
             erros++;
-            console.error(`❌ Erro ao enviar para ${dest.email}:`, err);
+            console.error(`Erro ao enviar para ${dest.email}:`, err);
         }
     }
 
-    console.log(`✅ Relatório semanal concluído: ${enviados} enviados, ${erros} erros`);
+    console.log(`Relatório semanal concluído: ${enviados} enviados, ${erros} erros`);
     return { enviados, erros };
 }
