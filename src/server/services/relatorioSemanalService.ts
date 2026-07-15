@@ -1,9 +1,8 @@
 /**
- * Serviço de Relatório Semanal por Regional.
+ * Serviço de Relatório Semanal por Gerente/Regional.
  * 
- * Gera uma imagem PNG consolidada com todas as regionais e suas ocorrências
- * da semana (segunda → domingo anterior), e envia por e-mail para os
- * usuários com recebeRelatorioSemanal = true.
+ * Gera uma imagem PNG consolidada, agora com design premium,
+ * incluindo a descrição das resoluções.
  */
 import nodemailer from "nodemailer";
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
@@ -31,6 +30,62 @@ function truncate(text: string, max: number): string {
     return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
+function wrapText(ctx: SKRSContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number {
+    const words = text.replace(/\n/g, " \n ").split(' ');
+    let line = '';
+    let currentY = y;
+
+    for (let n = 0; n < words.length; n++) {
+        if (words[n] === '\n') {
+            ctx.fillText(line.trim(), x, currentY);
+            line = '';
+            currentY += lineHeight;
+            continue;
+        }
+
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+        if (testWidth > maxWidth && n > 0) {
+            ctx.fillText(line.trim(), x, currentY);
+            line = words[n] + ' ';
+            currentY += lineHeight;
+        } else {
+            line = testLine;
+        }
+    }
+    if (line.trim().length > 0) {
+        ctx.fillText(line.trim(), x, currentY);
+        currentY += lineHeight;
+    }
+    return currentY;
+}
+
+function measureWrapHeight(ctx: SKRSContext2D, text: string, maxWidth: number, lineHeight: number): number {
+    const words = text.replace(/\n/g, " \n ").split(' ');
+    let line = '';
+    let lines = 0;
+
+    for (let n = 0; n < words.length; n++) {
+        if (words[n] === '\n') {
+            lines++;
+            line = '';
+            continue;
+        }
+
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+            lines++;
+            line = words[n] + ' ';
+        } else {
+            line = testLine;
+        }
+    }
+    if (line.trim().length > 0) lines++;
+    return Math.max(1, lines) * lineHeight;
+}
+
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 interface OcorrenciaResumo {
@@ -39,6 +94,8 @@ interface OcorrenciaResumo {
     status:         string;
     dataAbertura:   Date;
     rota:           string;
+    resolucao:      string | null;
+    notaTorre:      string | null;
 }
 
 interface RegionalResumo {
@@ -56,11 +113,8 @@ export async function coletarDadosRelatorio(): Promise<{
     inicio:     Date;
     fim:        Date;
 }> {
-    // Período: segunda-feira anterior até domingo anterior (semana cheia)
     const agora  = new Date();
-    const diaSemana = agora.getDay(); // 0=dom, 5=sex
-    // Calculamos em relação à sexta (dia 5) — 7 dias atrás = sexta passada
-    // Mas usamos sempre segunda→domingo da semana passada
+    const diaSemana = agora.getDay();
     const diasAteDomingo = diaSemana === 0 ? 0 : diaSemana;
     const domingoPassado = new Date(agora);
     domingoPassado.setDate(agora.getDate() - diasAteDomingo);
@@ -70,7 +124,6 @@ export async function coletarDadosRelatorio(): Promise<{
     segundaPassada.setDate(domingoPassado.getDate() - 6);
     segundaPassada.setHours(0, 0, 0, 0);
 
-    // Busca todas as regionais com seus veículos
     const regionais = await db.regional.findMany({
         orderBy: { nome: "asc" },
         include: { veiculos: true },
@@ -82,7 +135,6 @@ export async function coletarDadosRelatorio(): Promise<{
         const placas = regional.veiculos.map(v => v.placa.replace(/-/g, "").toUpperCase());
         if (placas.length === 0) continue;
 
-        // Busca ocorrências onde a viagem tem veículo com placa na lista da regional
         const ocorrencias = await db.ocorrencia.findMany({
             where: {
                 createdAt: { gte: segundaPassada, lte: domingoPassado },
@@ -113,6 +165,8 @@ export async function coletarDadosRelatorio(): Promise<{
             status:       o.status,
             dataAbertura: o.createdAt,
             rota:         `${o.viagem.baseOrigem?.nome ?? "?"} → ${o.viagem.baseDestino?.nome ?? "?"}`,
+            resolucao:    o.resolucao,
+            notaTorre:    o.notaTorre,
         }));
 
         resultado.push({
@@ -134,26 +188,67 @@ export async function gerarImagemRelatorio(
     inicio: Date,
     fim: Date,
 ): Promise<Buffer> {
-    const W   = 780;
-    const PAD = 32;
+    const W   = 900;
+    const PAD = 40;
     const INNER = W - PAD * 2;
 
     const fmtData = (d: Date) =>
         d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
 
-    // Calcula altura total
+    // Instancia um canvas temporário só para medir textos dinâmicos
+    const dummyCanvas = createCanvas(W, 100);
+    const dCtx = dummyCanvas.getContext("2d");
+
+    // Constantes e cálculos de layout
     const HEADER_H   = 160;
     const PERIOD_H   = 50;
     const REGIONAL_HEADER_H = 80;
-    const ROW_H      = 36;
-    const EMPTY_H    = 48;
-    const GAP        = 16;
-    const FOOTER_H   = 60;
+    const EMPTY_H    = 50;
+    const GAP        = 24;
+    const FOOTER_H   = 70;
+    const COLS = {
+        placa: { x: PAD + 16, w: 90 },
+        info:  { x: PAD + 116, w: 260 },
+        desc:  { x: PAD + 386, w: 320 },
+        status: { x: PAD + 726, w: 100 }
+    };
 
     let totalH = HEADER_H + PERIOD_H + GAP;
+    
+    // Calcula as alturas dinâmicas para cada regional e ocorrência
+    const regionalLayouts: Array<{
+        r: RegionalResumo;
+        rowLayouts: Array<{ oc: OcorrenciaResumo; h: number; descText: string }>;
+    }> = [];
+
     for (const r of regionais) {
-        totalH += REGIONAL_HEADER_H + GAP;
-        totalH += r.ocorrencias.length > 0 ? r.ocorrencias.length * ROW_H + 40 : EMPTY_H;
+        totalH += REGIONAL_HEADER_H + 10;
+        const rowLayouts = [];
+        
+        if (r.ocorrencias.length === 0) {
+            totalH += EMPTY_H;
+        } else {
+            totalH += 35; // Header da tabela
+            
+            dCtx.font = "12px Arial"; // Fonte da descrição
+            for (const oc of r.ocorrencias) {
+                const isResolvida = oc.status === "RESOLVIDA";
+                let descText = "";
+                if (isResolvida && oc.resolucao) {
+                    descText = oc.resolucao;
+                } else if (oc.status === "EM_ATENDIMENTO" && oc.notaTorre) {
+                    descText = `(Tratativa iniciada) ${oc.notaTorre}`;
+                } else {
+                    descText = "Aguardando tratativa da unidade...";
+                }
+                
+                const textHeight = measureWrapHeight(dCtx, descText, COLS.desc.w - 10, 16);
+                const rowH = Math.max(50, textHeight + 24); // Mínimo 50px de altura
+                rowLayouts.push({ oc, h: rowH, descText });
+                totalH += rowH;
+            }
+        }
+        regionalLayouts.push({ r, rowLayouts });
         totalH += GAP;
     }
     totalH += FOOTER_H;
@@ -165,63 +260,63 @@ export async function gerarImagemRelatorio(
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, W, totalH);
 
-    // ── HEADER ─────────────────────────────────────────────────────────────────
+    // ── HEADER PREMIUM ─────────────────────────────────────────────────────────
     let Y = 0;
     const hGrad = ctx.createLinearGradient(0, 0, W, HEADER_H);
-    hGrad.addColorStop(0, "#111827");
-    hGrad.addColorStop(0.6, "#1a2744");
-    hGrad.addColorStop(1, "#0f2027");
+    hGrad.addColorStop(0, "#020617");
+    hGrad.addColorStop(0.5, "#0f172a");
+    hGrad.addColorStop(1, "#1e293b");
     ctx.fillStyle = hGrad;
     ctx.fillRect(0, 0, W, HEADER_H);
 
-    // Glow
-    const glow = ctx.createRadialGradient(W, 0, 0, W, 0, 280);
-    glow.addColorStop(0, "rgba(34,197,94,0.15)");
+    // Glow verde esmeralda no topo
+    const glow = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, 400);
+    glow.addColorStop(0, "rgba(16, 185, 129, 0.15)");
     glow.addColorStop(1, "transparent");
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, W, HEADER_H);
 
-    // Logo
+    // Logo Princesa
     const logoPath = path.join(process.cwd(), "public", "cropped-icon.png");
     if (fs.existsSync(logoPath)) {
         try {
             const { loadImage } = await import("@napi-rs/canvas");
             const logo = await loadImage(logoPath);
-            const lH = Math.round((logo.height / logo.width) * 48);
-            ctx.drawImage(logo, PAD, Y + 20, 48, lH);
+            const lH = Math.round((logo.height / logo.width) * 50);
+            ctx.drawImage(logo, PAD, Y + 25, 50, lH);
         } catch { /* ignore */ }
     }
 
     // Badge "RELATÓRIO SEMANAL"
-    const bdGrad = ctx.createLinearGradient(PAD, Y + 90, PAD + 200, Y + 114);
-    bdGrad.addColorStop(0, "#16a34a");
-    bdGrad.addColorStop(1, "#15803d");
+    const bdGrad = ctx.createLinearGradient(PAD, Y + 92, PAD + 210, Y + 116);
+    bdGrad.addColorStop(0, "#059669");
+    bdGrad.addColorStop(1, "#047857");
     ctx.fillStyle = bdGrad;
-    roundRect(ctx, PAD, Y + 90, 200, 24, 12);
+    roundRect(ctx, PAD, Y + 92, 210, 24, 12);
     ctx.fill();
     ctx.font = "bold 9px Arial";
     ctx.fillStyle = "#fff";
-    ctx.fillText("📊  RELATÓRIO SEMANAL DE OCORRÊNCIAS", PAD + 10, Y + 106);
+    ctx.fillText("📊  RELATÓRIO SEMANAL DE OCORRÊNCIAS", PAD + 12, Y + 108);
 
     // Title
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = "#fff";
+    ctx.font = "bold 26px Arial";
+    ctx.fillStyle = "#f8fafc";
     const t1 = "Torre de ";
-    ctx.fillText(t1, PAD, Y + 136);
-    ctx.fillStyle = "#22c55e";
-    ctx.fillText("Controle", PAD + ctx.measureText(t1).width, Y + 136);
+    ctx.fillText(t1, PAD, Y + 140);
+    ctx.fillStyle = "#10b981"; // Emerald 500
+    ctx.fillText("Controle", PAD + ctx.measureText(t1).width, Y + 140);
 
-    ctx.font = "10px Arial";
+    ctx.font = "11px Arial";
     ctx.fillStyle = "#94a3b8";
-    ctx.fillText("Princesa dos Campos Transportes — Consolidado por Regional", PAD, Y + 152);
+    ctx.fillText("Princesa dos Campos Transportes — Consolidado por Gerente", PAD, Y + 155);
 
     Y += HEADER_H;
 
     // ── PERÍODO ─────────────────────────────────────────────────────────────────
     const stripe = ctx.createLinearGradient(0, Y, W, Y);
-    stripe.addColorStop(0, "#22c55e");
-    stripe.addColorStop(0.4, "#16a34a");
-    stripe.addColorStop(1, "#0ea5e9");
+    stripe.addColorStop(0, "#10b981"); // Emerald
+    stripe.addColorStop(0.5, "#3b82f6"); // Blue
+    stripe.addColorStop(1, "#8b5cf6"); // Violet
     ctx.fillStyle = stripe;
     ctx.fillRect(0, Y, W, 4);
     Y += 4;
@@ -229,11 +324,11 @@ export async function gerarImagemRelatorio(
     ctx.fillStyle = "#1e293b";
     ctx.fillRect(0, Y, W, PERIOD_H - 4);
     ctx.font = "13px Arial";
-    ctx.fillStyle = "#94a3b8";
+    ctx.fillStyle = "#cbd5e1";
     ctx.textAlign = "center";
     ctx.fillText(
         `Período: ${fmtData(inicio)} (segunda-feira) até ${fmtData(fim)} (domingo)`,
-        W / 2, Y + 30,
+        W / 2, Y + 28,
     );
     ctx.textAlign = "left";
     Y += PERIOD_H - 4 + GAP;
@@ -244,11 +339,11 @@ export async function gerarImagemRelatorio(
     const totalEmAberto     = regionais.reduce((a, r) => a + r.emAberto, 0);
 
     const kpiW = (INNER - 2 * GAP) / 3;
-    const kpiH = 70;
+    const kpiH = 76;
     const kpis = [
-        { label: "Total de Ocorrências", value: totalOcorrencias.toString(), color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe" },
-        { label: "Resolvidas", value: totalResolvidas.toString(), color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
-        { label: "Em Aberto", value: totalEmAberto.toString(), color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+        { label: "Total de Ocorrências", value: totalOcorrencias.toString(), color: "#3b82f6", bg: "#1e293b", border: "#334155" },
+        { label: "Resolvidas na Semana", value: totalResolvidas.toString(), color: "#10b981", bg: "#1e293b", border: "#334155" },
+        { label: "Aguardando Tratativa", value: totalEmAberto.toString(), color: "#f43f5e", bg: "#1e293b", border: "#334155" },
     ];
 
     for (let i = 0; i < kpis.length; i++) {
@@ -258,140 +353,147 @@ export async function gerarImagemRelatorio(
         roundRect(ctx, kx, Y, kpiW, kpiH, 12);
         ctx.fill();
         ctx.strokeStyle = kpi.border;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1;
         roundRect(ctx, kx, Y, kpiW, kpiH, 12);
         ctx.stroke();
-        ctx.font = "bold 28px Arial";
+        
+        ctx.font = "bold 32px Arial";
         ctx.fillStyle = kpi.color;
         ctx.textAlign = "center";
-        ctx.fillText(kpi.value, kx + kpiW / 2, Y + 40);
-        ctx.font = "10px Arial";
-        ctx.fillStyle = "#475569";
-        ctx.fillText(kpi.label, kx + kpiW / 2, Y + 58);
+        ctx.fillText(kpi.value, kx + kpiW / 2, Y + 45);
+        ctx.font = "bold 11px Arial";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(kpi.label.toUpperCase(), kx + kpiW / 2, Y + 65);
         ctx.textAlign = "left";
     }
-    Y += kpiH + GAP * 2;
+    Y += kpiH + GAP * 1.5;
 
-    // ── POR REGIONAL ────────────────────────────────────────────────────────────
-    for (const regional of regionais) {
-        // Cabeçalho da regional
-        const colorAlerta = regional.emAberto > 0 ? "#dc2626" : "#16a34a";
-        const bgAlerta    = regional.emAberto > 0 ? "#fef2f2" : "#f0fdf4";
+    // ── POR REGIONAL / GERENTE ──────────────────────────────────────────────────
+    for (const { r, rowLayouts } of regionalLayouts) {
+        
+        const hasAberto = r.emAberto > 0;
+        const colorAlerta = hasAberto ? "#f43f5e" : "#10b981"; // Rose / Emerald
+        const bgAlerta    = hasAberto ? "rgba(244, 63, 94, 0.05)" : "rgba(16, 185, 129, 0.05)";
 
+        // Card da Regional
         ctx.fillStyle = bgAlerta;
-        roundRect(ctx, PAD, Y, INNER, REGIONAL_HEADER_H, 14);
+        roundRect(ctx, PAD, Y, INNER, REGIONAL_HEADER_H, 16);
         ctx.fill();
-        ctx.strokeStyle = regional.emAberto > 0 ? "#fca5a5" : "#86efac";
-        ctx.lineWidth = 2;
-        roundRect(ctx, PAD, Y, INNER, REGIONAL_HEADER_H, 14);
+        ctx.strokeStyle = hasAberto ? "rgba(244, 63, 94, 0.2)" : "rgba(16, 185, 129, 0.2)";
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, PAD, Y, INNER, REGIONAL_HEADER_H, 16);
         ctx.stroke();
 
-        // Barra lateral colorida
+        // Barra lateral colorida de status
         ctx.fillStyle = colorAlerta;
-        roundRect(ctx, PAD, Y, 6, REGIONAL_HEADER_H, 6);
+        roundRect(ctx, PAD, Y, 8, REGIONAL_HEADER_H, 16);
         ctx.fill();
 
-        // Nome regional
-        ctx.font = "bold 15px Arial";
-        ctx.fillStyle = "#0f172a";
-        ctx.fillText(truncate(regional.nome, 40), PAD + 20, Y + 26);
+        // Nome gerente
+        ctx.font = "bold 18px Arial";
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillText(`👤 ${truncate(r.nome, 40)}`, PAD + 24, Y + 32);
 
         // KPIs inline
         const stats = [
-            { v: regional.total, l: "Total", c: "#3b82f6" },
-            { v: regional.resolvidas, l: "Resolvidas", c: "#16a34a" },
-            { v: regional.emAberto, l: "Em Aberto", c: "#dc2626" },
+            { v: r.total, l: "Total", c: "#60a5fa" },
+            { v: r.resolvidas, l: "Resolvidas", c: "#34d399" },
+            { v: r.emAberto, l: "Em Aberto", c: "#fb7185" },
         ];
-        let statsX = PAD + 20;
-        const statsY = Y + 46;
+        let statsX = PAD + 24;
+        const statsY = Y + 60;
         for (const s of stats) {
             ctx.font = "bold 20px Arial";
             ctx.fillStyle = s.c;
             ctx.fillText(s.v.toString(), statsX, statsY);
             const numW = ctx.measureText(s.v.toString()).width;
-            ctx.font = "10px Arial";
-            ctx.fillStyle = "#64748b";
-            ctx.fillText(s.l, statsX + numW + 4, statsY);
-            statsX += numW + ctx.measureText(s.l).width + 24;
+            ctx.font = "11px Arial";
+            ctx.fillStyle = "#94a3b8";
+            ctx.fillText(s.l, statsX + numW + 6, statsY - 2);
+            statsX += numW + ctx.measureText(s.l).width + 30;
         }
 
-        Y += REGIONAL_HEADER_H + 8;
+        Y += REGIONAL_HEADER_H + 10;
 
         // Tabela de ocorrências
-        if (regional.ocorrencias.length === 0) {
-            ctx.fillStyle = "#f8fafc";
-            roundRect(ctx, PAD, Y, INNER, EMPTY_H, 10);
+        if (rowLayouts.length === 0) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
+            roundRect(ctx, PAD, Y, INNER, EMPTY_H, 12);
             ctx.fill();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+            ctx.stroke();
             ctx.font = "12px Arial";
-            ctx.fillStyle = "#94a3b8";
+            ctx.fillStyle = "#64748b";
             ctx.textAlign = "center";
-            ctx.fillText("✅  Nenhuma ocorrência registrada neste período para esta regional", W / 2, Y + 28);
+            ctx.fillText("✅  Nenhuma ocorrência registrada nesta semana.", W / 2, Y + 29);
             ctx.textAlign = "left";
             Y += EMPTY_H;
         } else {
             // Cabeçalho da tabela
-            ctx.fillStyle = "#f1f5f9";
-            roundRect(ctx, PAD, Y, INNER, 30, 8);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+            roundRect(ctx, PAD, Y, INNER, 35, 10);
             ctx.fill();
-            ctx.font = "bold 9px Arial";
-            ctx.fillStyle = "#64748b";
-            const cols = [
-                { label: "PLACA",   x: PAD + 10, w: 80 },
-                { label: "TIPO",    x: PAD + 100, w: 180 },
-                { label: "ROTA",    x: PAD + 290, w: 240 },
-                { label: "STATUS",  x: PAD + 540, w: 90 },
-                { label: "DATA",    x: PAD + 640, w: 76 },
-            ];
-            for (const col of cols) {
-                ctx.fillText(col.label, col.x, Y + 20);
-            }
-            Y += 30;
+            ctx.font = "bold 10px Arial";
+            ctx.fillStyle = "#94a3b8";
+            
+            ctx.fillText("PLACA & DATA", COLS.placa.x, Y + 22);
+            ctx.fillText("TIPO E ROTA", COLS.info.x, Y + 22);
+            ctx.fillText("DESCRIÇÃO DA RESOLUÇÃO / TRATATIVA", COLS.desc.x, Y + 22);
+            ctx.fillText("STATUS", COLS.status.x, Y + 22);
+            Y += 35;
 
-            for (let i = 0; i < regional.ocorrencias.length; i++) {
-                const oc = regional.ocorrencias[i]!;
-                const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+            // Linhas
+            for (let i = 0; i < rowLayouts.length; i++) {
+                const { oc, h, descText } = rowLayouts[i]!;
+                
+                // Background da linha
+                const rowBg = i % 2 === 0 ? "rgba(255, 255, 255, 0.02)" : "rgba(255, 255, 255, 0)";
                 ctx.fillStyle = rowBg;
-                ctx.fillRect(PAD, Y, INNER, ROW_H);
+                ctx.fillRect(PAD, Y, INNER, h);
 
-                // Borda inferior
-                ctx.strokeStyle = "#e2e8f0";
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(PAD, Y + ROW_H);
-                ctx.lineTo(PAD + INNER, Y + ROW_H);
-                ctx.stroke();
+                // Borda inferior (exceto na última)
+                if (i < rowLayouts.length - 1) {
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(PAD + 10, Y + h);
+                    ctx.lineTo(PAD + INNER - 10, Y + h);
+                    ctx.stroke();
+                }
 
-                const textY = Y + 23;
-                const statusColor = oc.status === "RESOLVIDA" ? "#16a34a" : oc.status === "EM_ATENDIMENTO" ? "#d97706" : "#dc2626";
+                const textY = Y + 22;
+                const statusColor = oc.status === "RESOLVIDA" ? "#10b981" : oc.status === "EM_ATENDIMENTO" ? "#f59e0b" : "#f43f5e";
                 const statusLabel = oc.status === "RESOLVIDA" ? "✅ Resolvida" : oc.status === "EM_ATENDIMENTO" ? "🟡 Em Atend." : "🔴 Aberta";
 
-                ctx.font = "bold 11px Courier New";
-                ctx.fillStyle = "#1d4ed8";
-                ctx.fillText(oc.placa, PAD + 10, textY);
+                // Placa e Data
+                ctx.font = "bold 13px Courier New";
+                ctx.fillStyle = "#60a5fa";
+                ctx.fillText(oc.placa, COLS.placa.x, textY);
+                ctx.font = "10px Arial";
+                ctx.fillStyle = "#64748b";
+                ctx.fillText(oc.dataAbertura.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }), COLS.placa.x, textY + 16);
 
+                // Tipo e Rota
+                ctx.font = "bold 12px Arial";
+                ctx.fillStyle = "#e2e8f0";
+                ctx.fillText(truncate(oc.tipo, 35), COLS.info.x, textY);
                 ctx.font = "11px Arial";
-                ctx.fillStyle = "#374151";
-                ctx.fillText(truncate(oc.tipo, 26), PAD + 100, textY);
-
-                ctx.font = "10px Arial";
-                ctx.fillStyle = "#6b7280";
-                ctx.fillText(truncate(oc.rota, 34), PAD + 290, textY);
-
-                ctx.font = "bold 10px Arial";
-                ctx.fillStyle = statusColor;
-                ctx.fillText(statusLabel, PAD + 540, textY);
-
-                ctx.font = "10px Arial";
                 ctx.fillStyle = "#94a3b8";
-                ctx.fillText(
-                    oc.dataAbertura.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }),
-                    PAD + 640, textY,
-                );
+                ctx.fillText(truncate(oc.rota, 40), COLS.info.x, textY + 16);
 
-                Y += ROW_H;
+                // Descrição Tratativa (Wrapped)
+                ctx.font = "12px Arial";
+                ctx.fillStyle = oc.status === "RESOLVIDA" ? "#cbd5e1" : (oc.status === "EM_ATENDIMENTO" ? "#fdba74" : "#fca5a5");
+                wrapText(ctx, descText, COLS.desc.x, textY, COLS.desc.w, 16);
+
+                // Status
+                ctx.font = "bold 11px Arial";
+                ctx.fillStyle = statusColor;
+                ctx.fillText(statusLabel, COLS.status.x, textY);
+
+                Y += h;
             }
         }
-
         Y += GAP;
     }
 
@@ -400,15 +502,15 @@ export async function gerarImagemRelatorio(
     ctx.fillRect(0, Y, W, FOOTER_H);
     ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.fillRect(0, Y, W, 1);
-    ctx.font = "bold 11px Arial";
-    ctx.fillStyle = "#22c55e";
+    ctx.font = "bold 12px Arial";
+    ctx.fillStyle = "#10b981";
     ctx.textAlign = "center";
-    ctx.fillText("Princesa dos Campos Transportes", W / 2, Y + 20);
-    ctx.font = "10px Arial";
+    ctx.fillText("Princesa dos Campos Transportes", W / 2, Y + 25);
+    ctx.font = "11px Arial";
     ctx.fillStyle = "#475569";
-    ctx.fillText("Torre de Controle — Relatório Semanal por Regional", W / 2, Y + 36);
+    ctx.fillText("Torre de Controle — Relatório Semanal de Ocorrências", W / 2, Y + 43);
     ctx.fillStyle = "#334155";
-    ctx.fillText("E-mail gerado automaticamente. Não responda.", W / 2, Y + 52);
+    ctx.fillText("E-mail gerado automaticamente. Não responda.", W / 2, Y + 58);
     ctx.textAlign = "left";
 
     return canvas.toBuffer("image/png") as unknown as Buffer;
@@ -448,7 +550,7 @@ export async function enviarRelatorioSemanal(): Promise<{ enviados: number; erro
     const totalOcorrencias = regionais.reduce((a, r) => a + r.total, 0);
     const totalEmAberto    = regionais.reduce((a, r) => a + r.emAberto, 0);
     const assunto = totalEmAberto > 0
-        ? `🚨 Relatório Semanal — ${totalEmAberto} ocorrências em aberto | ${fmtData(inicio)} – ${fmtData(fim)}`
+        ? `🚨 Relatório Semanal — ${totalEmAberto} ocorrências aguardando tratativa | ${fmtData(inicio)} – ${fmtData(fim)}`
         : `✅ Relatório Semanal — ${totalOcorrencias} ocorrências | ${fmtData(inicio)} – ${fmtData(fim)}`;
 
     const html = `<!DOCTYPE html>
@@ -458,7 +560,7 @@ export async function enviarRelatorioSemanal(): Promise<{ enviados: number; erro
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:32px 0;">
     <tr><td align="center">
       <img src="cid:relatorio-semanal" alt="Relatório Semanal de Ocorrências"
-           width="780" style="display:block;border-radius:16px;max-width:100%;" />
+           width="900" style="display:block;border-radius:16px;max-width:100%;" />
     </td></tr>
     <tr><td align="center" style="padding:12px;font-family:Arial,sans-serif;font-size:10px;color:#475569;">
       Este e-mail foi gerado automaticamente. Não responda esta mensagem.
