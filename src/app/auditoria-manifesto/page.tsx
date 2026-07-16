@@ -34,6 +34,7 @@ interface AuditoriaItem {
     temViagem: boolean;
     viagemId: string | null;
     status: StatusItem;
+    tipoManifesto: string;
 }
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
@@ -78,6 +79,7 @@ export default function AuditoriaManifestoPage() {
     const [buscaPlaca, setBuscaPlaca] = useState("");
     const [buscaUnidade, setBuscaUnidade] = useState("");
     const [filtroStatus, setFiltroStatus] = useState<"TODOS" | "ALERTA" | "OK">("TODOS");
+    const [filtroTipo, setFiltroTipo] = useState<string>("TODOS");
 
     // Datas disponíveis (últimas com manifesto)
     const { data: datasDisp } = api.manifesto.datasDisponiveis.useQuery(undefined, {
@@ -101,9 +103,16 @@ export default function AuditoriaManifestoPage() {
             const matchPlaca = !buscaPlaca || item.placa.toLowerCase().includes(buscaPlaca.toLowerCase());
             const matchUnidade = !buscaUnidade || item.unidade.toLowerCase().includes(buscaUnidade.toLowerCase());
             const matchStatus = filtroStatus === "TODOS" || item.status === filtroStatus;
-            return matchPlaca && matchUnidade && matchStatus;
+            const matchTipo = filtroTipo === "TODOS" || item.tipoManifesto === filtroTipo;
+            return matchPlaca && matchUnidade && matchStatus && matchTipo;
         });
-    }, [data?.itens, buscaPlaca, buscaUnidade, filtroStatus]);
+    }, [data?.itens, buscaPlaca, buscaUnidade, filtroStatus, filtroTipo]);
+
+    const tiposDisponiveis = useMemo(() => {
+        if (!data?.itens) return [];
+        const tipos = (data.itens as AuditoriaItem[]).map(i => i.tipoManifesto).filter(Boolean);
+        return Array.from(new Set(tipos)).sort();
+    }, [data?.itens]);
 
     const labelData = dataSelecionada
         ? format(new Date(dataSelecionada + "T12:00:00"), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })
@@ -175,7 +184,7 @@ export default function AuditoriaManifestoPage() {
                         <div className="space-y-1.5">
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Datas Recentes</p>
                             <div className="flex gap-1 flex-wrap max-w-xs">
-                                {datasDisp.slice(0, 7).map(d => (
+                                {datasDisp.slice(0, 6).map(d => (
                                     <button
                                         key={d}
                                         onClick={() => setDataSelecionada(d)}
@@ -248,6 +257,24 @@ export default function AuditoriaManifestoPage() {
                             />
                         </div>
                     </div>
+
+                    {/* Filtro Tipo de Manifesto */}
+                    {tiposDisponiveis.length > 0 && (
+                        <div className="space-y-1.5 min-w-[140px]">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tipo</p>
+                            <select
+                                value={filtroTipo}
+                                onChange={(e) => setFiltroTipo(e.target.value)}
+                                className="w-full text-sm px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all cursor-pointer"
+                                id="filtro-tipo-manifesto"
+                            >
+                                <option value="TODOS">Todos</option>
+                                {tiposDisponiveis.map(tipo => (
+                                    <option key={tipo} value={tipo}>{tipo}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     {/* Atualizar */}
                     <button
@@ -362,6 +389,7 @@ export default function AuditoriaManifestoPage() {
                                             <tr>
                                                 {[
                                                     "Nº Manifesto",
+                                                    "Tipo",
                                                     "Data / Hora Saída",
                                                     "Unidade de Origem",
                                                     "Origem → Destino",
@@ -394,6 +422,13 @@ export default function AuditoriaManifestoPage() {
                                                     <td className="px-4 py-3 whitespace-nowrap">
                                                         <span className="font-bold text-slate-800 text-sm font-mono">
                                                             #{item.idManifesto}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Tipo */}
+                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                                            {item.tipoManifesto}
                                                         </span>
                                                     </td>
 

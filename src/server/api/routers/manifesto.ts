@@ -13,6 +13,7 @@ interface ManifestoComValorRow {
     valor_total: string; // NUMERIC vem como string no node-postgres
     origem: string | null;
     destino: string | null;
+    tipo_manifesto: string | null;
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -46,7 +47,8 @@ export const manifestoRouter = createTRPCRouter({
                     COALESCE(v.placa,     m.veiculo::text)                    AS placa,
                     COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0)      AS valor_total,
                     ao.aeroporto                                              AS origem,
-                    ad.aeroporto                                              AS destino
+                    ad.aeroporto                                              AS destino,
+                    mt.tipo                                                   AS tipo_manifesto
                 FROM manifesto m
                 LEFT JOIN unidades      u  ON u.id_unidade::text   = m.base::text
                 LEFT JOIN veiculos      v  ON v.id_veiculo::text   = m.veiculo::text
@@ -54,13 +56,14 @@ export const manifestoRouter = createTRPCRouter({
                 LEFT JOIN minuta        mn ON mn.id_minuta::text   = ml.minuta::text
                 LEFT JOIN aero          ao ON ao.id_aero::text      = m.transf_origem::text
                 LEFT JOIN aero          ad ON ad.id_aero::text      = m.transf_destino::text
+                LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text     = m.tipo::text
                 WHERE m.prev_saida_data::text NOT LIKE '0000%'
                   AND LEFT(m.prev_saida_data::text, 10) = $1
                   AND m.veiculo IS NOT NULL
                 GROUP BY
                     m.id_manifesto, m.prev_saida_data, m.prev_saida_hora,
                     u.fantasia, m.base, v.placa, m.veiculo,
-                    ao.aeroporto, ad.aeroporto
+                    ao.aeroporto, ad.aeroporto, mt.tipo
                 HAVING COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0) > 140000
                 ORDER BY valor_total DESC
             `, [input.data]);
@@ -113,6 +116,7 @@ export const manifestoRouter = createTRPCRouter({
                     placa:     m.placa   ?? "—",
                     origem:    m.origem  ?? null,
                     destino:   m.destino ?? null,
+                    tipoManifesto: m.tipo_manifesto ?? "—",
                     valorTotal,
                     temViagem: !!viagem,
                     viagemId:  viagem?.id ?? null,
@@ -152,7 +156,7 @@ export const manifestoRouter = createTRPCRouter({
             WHERE prev_saida_data::text NOT LIKE '0000%'
               AND LEFT(prev_saida_data::text, 10) >= $1
             ORDER BY data DESC
-            LIMIT 60
+            LIMIT 6
         `, [dataLimite]);
 
         return result.rows
