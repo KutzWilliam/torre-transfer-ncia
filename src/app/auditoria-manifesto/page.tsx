@@ -118,6 +118,10 @@ export default function AuditoriaManifestoPage() {
         ? format(new Date(dataSelecionada + "T12:00:00"), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })
         : "—";
 
+    const kpiTotal = itensFiltrados.length;
+    const kpiComAlerta = itensFiltrados.filter(i => i.status === "ALERTA").length;
+    const kpiSemAlerta = itensFiltrados.filter(i => i.status === "OK").length;
+
     return (
         <div className="min-h-screen bg-slate-50">
             {/* ── Cabeçalho ── */}
@@ -311,33 +315,33 @@ export default function AuditoriaManifestoPage() {
                             <KpiCard
                                 icon="📋"
                                 label="Manifestos Auditados"
-                                value={data.totalManifestos}
+                                value={kpiTotal}
                                 sub="com valor acima de R$ 140.000"
                                 colorClass="border-l-amber-400"
                             />
                             <KpiCard
                                 icon="✅"
                                 label="Com Viagem Registrada"
-                                value={data.semAlerta}
+                                value={kpiSemAlerta}
                                 sub="monitoramento confirmado"
                                 colorClass="border-l-emerald-500"
                             />
                             <KpiCard
                                 icon="🚨"
                                 label="Sem Viagem no Sistema"
-                                value={data.comAlerta}
-                                sub={data.comAlerta > 0 ? "⚠ requer atenção imediata" : "nenhum pendente"}
-                                colorClass={data.comAlerta > 0 ? "border-l-red-600" : "border-l-slate-200"}
+                                value={kpiComAlerta}
+                                sub={kpiComAlerta > 0 ? "⚠ requer atenção imediata" : "nenhum pendente"}
+                                colorClass={kpiComAlerta > 0 ? "border-l-red-600" : "border-l-slate-200"}
                             />
                         </div>
 
                         {/* ── Banner de alerta ── */}
-                        {data.comAlerta > 0 && (
+                        {kpiComAlerta > 0 && (
                             <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 flex gap-3 items-center">
                                 <span className="text-3xl flex-shrink-0">🚨</span>
                                 <div>
                                     <p className="text-sm font-extrabold text-red-800">
-                                        {data.comAlerta} manifesto{data.comAlerta > 1 ? "s" : ""} sem viagem cadastrada!
+                                        {kpiComAlerta} manifesto{kpiComAlerta > 1 ? "s" : ""} sem viagem cadastrada!
                                     </p>
                                     <p className="text-xs text-red-600 mt-0.5">
                                         Estes veículos estão realizando transferências de alto valor sem monitoramento registrado no sistema.
