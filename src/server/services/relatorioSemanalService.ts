@@ -114,16 +114,16 @@ export async function coletarDadosRelatorio(): Promise<{
     inicio:     Date;
     fim:        Date;
 }> {
-    const agora  = new Date();
-    const diaSemana = agora.getDay();
-    const diasAteDomingo = diaSemana === 0 ? 0 : diaSemana;
-    const domingoPassado = new Date(agora);
-    domingoPassado.setDate(agora.getDate() - diasAteDomingo);
-    domingoPassado.setHours(23, 59, 59, 999);
+    const agora = new Date();
+    
+    // Fim = Hoje até 23:59:59
+    const dataFim = new Date(agora);
+    dataFim.setHours(23, 59, 59, 999);
 
-    const segundaPassada = new Date(domingoPassado);
-    segundaPassada.setDate(domingoPassado.getDate() - 6);
-    segundaPassada.setHours(0, 0, 0, 0);
+    // Início = 6 dias antes (ex: de Sábado a Sexta são 7 dias corridos)
+    const dataInicio = new Date(dataFim);
+    dataInicio.setDate(dataFim.getDate() - 6);
+    dataInicio.setHours(0, 0, 0, 0);
 
     const regionais = await db.regional.findMany({
         orderBy: { nome: "asc" },
@@ -138,7 +138,7 @@ export async function coletarDadosRelatorio(): Promise<{
 
         const ocorrencias = await db.ocorrencia.findMany({
             where: {
-                createdAt: { gte: segundaPassada, lte: domingoPassado },
+                createdAt: { gte: dataInicio, lte: dataFim },
                 viagem: {
                     veiculo: {
                         OR: [
@@ -181,7 +181,7 @@ export async function coletarDadosRelatorio(): Promise<{
         });
     }
 
-    return { regionais: resultado, inicio: segundaPassada, fim: domingoPassado };
+    return { regionais: resultado, inicio: dataInicio, fim: dataFim };
 }
 
 // ─── Geração da imagem ───────────────────────────────────────────────────────
@@ -337,8 +337,9 @@ export async function gerarImagemRelatorio(
     ctx.font = "13px Arial";
     ctx.fillStyle = "#cbd5e1";
     ctx.textAlign = "center";
+    const diasSemana = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
     ctx.fillText(
-        `Período: ${fmtData(inicio)} (segunda-feira) até ${fmtData(fim)} (domingo)`,
+        `Período: ${fmtData(inicio)} (${diasSemana[inicio.getDay()]}) até ${fmtData(fim)} (${diasSemana[fim.getDay()]})`,
         W / 2, Y + 28,
     );
     ctx.textAlign = "left";
