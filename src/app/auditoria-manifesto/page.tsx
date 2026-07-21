@@ -6,6 +6,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { TruckLoader } from "@/components/TruckLoader";
+import * as XLSX from "xlsx";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,12 @@ export default function AuditoriaManifestoPage() {
     const [filtroStatus, setFiltroStatus] = useState<"TODOS" | "ALERTA" | "OK">("TODOS");
     const [filtroTipo, setFiltroTipo] = useState<string>("TODOS");
 
+    // ── Estados do Modal de Relatório Excel ──────────────────────────────────
+    const [isModalExcelOpen, setIsModalExcelOpen] = useState(false);
+    const [tipoRelatorioExcel, setTipoRelatorioExcel] = useState<"DIA" | "SEMANA" | "MES" | "TODAS" | "PERSONALIZADO">("DIA");
+    const [dataExcelPersonalizada, setDataExcelPersonalizada] = useState(() => new Date().toISOString().split("T")[0]);
+    const [isGerandoExcel, setIsGerandoExcel] = useState(false);
+
     // Datas disponíveis (últimas com manifesto)
     const { data: datasDisp } = api.manifesto.datasDisponiveis.useQuery(undefined, {
         staleTime: 10 * 60 * 1000,
@@ -122,6 +129,129 @@ export default function AuditoriaManifestoPage() {
     const kpiComAlerta = itensFiltrados.filter(i => i.status === "ALERTA").length;
     const kpiSemAlerta = itensFiltrados.filter(i => i.status === "OK").length;
 
+    // ── API para buscar dados de auditoria por período (para o relatório) ────
+    const utils = api.useUtils();
+
+    async function gerarRelatorioExcel() {
+        setIsGerandoExcel(true);
+        try {
+            const agora = new Date();
+            let dataInicio: Date;
+            let dataFim: Date;
+            let tituloPeriodo = "";
+
+            if (tipoRelatorioExcel === "DIA") {
+                dataInicio = new Date(agora);
+                dataInicio.setHours(0, 0, 0, 0);
+                dataFim = new Date(agora);
+                dataFim.setHours(23, 59, 59, 999);
+                tituloPeriodo = `Dia: ${agora.toLocaleDateString("pt-BR")}`;
+            } else if (tipoRelatorioExcel === "SEMANA") {
+                dataInicio = new Date(agora);
+                dataInicio.setDate(agora.getDate() - agora.getDay());
+                dataInicio.setHours(0, 0, 0, 0);
+                dataFim = new Date(agora);
+                dataFim.setHours(23, 59, 59, 999);
+                tituloPeriodo = `Semana: ${dataInicio.toLocaleDateString("pt-BR")} a ${dataFim.toLocaleDateString("pt-BR")}`;
+            } else if (tipoRelatorioExcel === "MES") {
+                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
+                dataFim = new Date(agora);
+                dataFim.setHours(23, 59, 59, 999);
+                tituloPeriodo = `Mês: ${agora.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}`;
+            } else if (tipoRelatorioExcel === "PERSONALIZADO") {
+                const partes = (dataExcelPersonalizada || "").split("-").map(Number);
+                const ano = partes[0] ?? agora.getFullYear();
+                const mes = partes[1] ?? agora.getMonth() + 1;
+                const dia = partes[2] ?? agora.getDate();
+                dataInicio = new Date(ano, mes - 1, dia, 0, 0, 0, 0);
+                dataFim = new Date(ano, mes - 1, dia, 23, 59, 59, 999);
+                tituloPeriodo = `Dia: ${dataInicio.toLocaleDateString("pt-BR")}`;
+            } else {
+                dataInicio = new Date(2000, 0, 1);
+                dataFim = new Date(agora);
+                dataFim.setHours(23, 59, 59, 999);
+                tituloPeriodo = "Histórico Completo";
+            }
+
+            // Busca os dados para o período selecionado
+            // Como a auditoria é por dia, iteramos pelas datas do período
+            const datas: string[] = [];
+            const cursor = new Date(dataInicio);
+            while (cursor <= dataFim) {
+                datas.push(format(cursor, "yyyy-MM-dd"));
+                cursor.setDate(cursor.getDate() + 1);
+            }
+
+            // Busca dados para todas as datas do período (limitado a 31 dias)
+            const datasParaBuscar = datas.slice(0, 31);
+            const resultados = await Promise.all(
+                datasParaBuscar.map(d => utils.manifesto.auditoria.fetch({ data: d }).catch(() => null))
+            );
+
+            // Consolida todos os itens
+            const todosItens: (AuditoriaItem & { dataBusca: string })[] = [];
+            resultados.forEach((res, idx) => {
+                if (res?.itens) {
+                    (res.itens as AuditoriaItem[]).forEach(item => {
+                        todosItens.push({ ...item, dataBusca: datasParaBuscar[idx] ?? "" });
+                    });
+                }
+            });
+
+            // Monta as linhas da planilha
+            const linhas = todosItens.map(item => ({
+                "Data": item.prevSaidaData ? format(new Date(item.prevSaidaData + "T12:00:00"), "dd/MM/yyyy") : "—",
+                "Hora Saída": item.prevSaidaHora ? String(item.prevSaidaHora).substring(0, 5) : "—",
+                "Nº Manifesto": item.idManifesto,
+                "Tipo Manifesto": item.tipoManifesto,
+                "Unidade de Origem": item.unidade,
+                "Placa": item.placa,
+                "Origem": item.origem ?? "—",
+                "Destino": item.destino ?? "—",
+                "Valor Total (R$)": item.valorTotal,
+                "Tem Viagem": item.temViagem ? "SIM" : "NÃO",
+                "Código da Viagem": item.viagemId ?? "—",
+                "Status": item.status === "OK" ? "Viagem OK" : "Sem Viagem",
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(linhas);
+
+            // Larguras das colunas
+            ws["!cols"] = [
+                { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 22 },
+                { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 10 },
+                { wch: 22 }, { wch: 14 },
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+
+            // Aba de resumo
+            const totalItens = todosItens.length;
+            const comViagem = todosItens.filter(i => i.status === "OK").length;
+            const semViagem = todosItens.filter(i => i.status === "ALERTA").length;
+            const resumoLinhas = [
+                { "Informação": "Período", "Valor": tituloPeriodo },
+                { "Informação": "Total de Manifestos Auditados", "Valor": totalItens },
+                { "Informação": "Com Viagem Registrada", "Valor": comViagem },
+                { "Informação": "Sem Viagem (Alerta)", "Valor": semViagem },
+                { "Informação": "Gerado em", "Valor": new Date().toLocaleString("pt-BR") },
+            ];
+            const wsResumo = XLSX.utils.json_to_sheet(resumoLinhas);
+            wsResumo["!cols"] = [{ wch: 32 }, { wch: 36 }];
+            XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
+
+            const nomeArquivo = `Auditoria_Manifestos_${agora.toISOString().split("T")[0]}.xlsx`;
+            XLSX.writeFile(wb, nomeArquivo);
+        } catch (error) {
+            console.error("Erro ao gerar Excel:", error);
+            alert("Não foi possível gerar o relatório. Tente novamente.");
+        } finally {
+            setIsGerandoExcel(false);
+            setIsModalExcelOpen(false);
+        }
+    }
+
     return (
         <div className="min-h-screen bg-slate-50">
             {/* ── Cabeçalho ── */}
@@ -136,6 +266,13 @@ export default function AuditoriaManifestoPage() {
                         </p>
                     </div>
                     <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                            onClick={() => setIsModalExcelOpen(true)}
+                            className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center gap-1.5"
+                            id="btn-gerar-excel-auditoria"
+                        >
+                            📊 Gerar Relatório Excel
+                        </button>
                         <Link
                             href="/analise"
                             className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
@@ -552,6 +689,102 @@ export default function AuditoriaManifestoPage() {
                 <div className="fixed bottom-4 right-4 bg-white border border-slate-200 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 text-xs text-slate-600 z-50">
                     <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
                     Atualizando dados...
+                </div>
+            )}
+
+            {/* ── Modal de Relatório Excel ── */}
+            {isModalExcelOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xl">📊</span>
+                                <h2 className="font-bold text-slate-800 text-lg">Gerar Relatório Excel</h2>
+                            </div>
+                            <button
+                                onClick={() => setIsModalExcelOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-slate-600">
+                                Selecione o período para exportar os dados de auditoria de manifestos:
+                            </p>
+
+                            <div className="space-y-2">
+                                {[
+                                    { id: "DIA", label: "Do Dia (Hoje)", icon: "📅" },
+                                    { id: "SEMANA", label: "Da Semana (Desde Domingo)", icon: "📆" },
+                                    { id: "MES", label: "Do Mês Atual", icon: "🗓" },
+                                    { id: "TODAS", label: "Histórico Completo", icon: "📂" },
+                                    { id: "PERSONALIZADO", label: "Dia Específico", icon: "🔎" },
+                                ].map(opt => (
+                                    <div key={opt.id} className="flex flex-col gap-2">
+                                        <label
+                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                                                tipoRelatorioExcel === opt.id
+                                                    ? "border-emerald-500 bg-emerald-50"
+                                                    : "border-slate-200 hover:bg-slate-50"
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="tipoRelatorioExcel"
+                                                value={opt.id}
+                                                checked={tipoRelatorioExcel === opt.id}
+                                                onChange={() => setTipoRelatorioExcel(opt.id as any)}
+                                                className="w-4 h-4 text-emerald-600"
+                                            />
+                                            <span className="text-base">{opt.icon}</span>
+                                            <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
+                                        </label>
+
+                                        {opt.id === "PERSONALIZADO" && tipoRelatorioExcel === "PERSONALIZADO" && (
+                                            <div className="pl-11 pr-3 pb-2">
+                                                <input
+                                                    type="date"
+                                                    value={dataExcelPersonalizada}
+                                                    onChange={e => setDataExcelPersonalizada(e.target.value)}
+                                                    max={new Date().toISOString().split("T")[0]}
+                                                    className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {tipoRelatorioExcel === "TODAS" && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+                                    ⚠️ O histórico completo pode demorar mais para ser gerado pois busca dados de múltiplas datas.
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                            <button
+                                onClick={() => setIsModalExcelOpen(false)}
+                                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={gerarRelatorioExcel}
+                                disabled={isGerandoExcel}
+                                className="px-6 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                                id="btn-confirmar-excel-auditoria"
+                            >
+                                {isGerandoExcel ? (
+                                    <><span className="animate-spin">⏳</span> Gerando...</>
+                                ) : (
+                                    <>📥 Baixar Excel</>
+                                )}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
