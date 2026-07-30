@@ -206,14 +206,14 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                                         Ocorrências ({ocorrencias.length})
                                     </p>
                                     {ocorrencias.map((oc: any) => (
-                                        <div key={oc.id} className={`p-3 rounded-lg border text-xs ${
+                                        <div key={oc.id} className={`p-3 rounded-lg border text-xs overflow-hidden ${
                                             oc.status === "RESOLVIDA"
                                                 ? "bg-emerald-50 border-emerald-100"
                                                 : "bg-amber-50 border-amber-100"
                                         }`}>
                                             <div className="flex items-center justify-between gap-1 mb-1">
-                                                <span className="font-bold text-gray-800">{oc.tipoOcorrencia}</span>
-                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                                <span className="font-bold text-gray-800 truncate">{oc.tipoOcorrencia}</span>
+                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold flex-shrink-0 ${
                                                     oc.status === "RESOLVIDA" ? "bg-emerald-100 text-emerald-700" :
                                                     oc.status === "EM_ATENDIMENTO" ? "bg-amber-100 text-amber-700" :
                                                     "bg-red-100 text-red-700"
@@ -221,9 +221,9 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                                                     {oc.status === "RESOLVIDA" ? "Resolvida" : oc.status === "EM_ATENDIMENTO" ? "Em Atendimento" : "Aberta"}
                                                 </span>
                                             </div>
-                                            <p className="text-gray-600 leading-relaxed">{oc.descricao}</p>
+                                            <p className="text-gray-600 leading-relaxed break-words">{oc.descricao}</p>
                                             {oc.resolucao && (
-                                                <p className="mt-2 text-emerald-700 font-medium border-t border-emerald-100 pt-2">
+                                                <p className="mt-2 text-emerald-700 font-medium border-t border-emerald-100 pt-2 break-words">
                                                     ✔ {oc.resolucao}
                                                 </p>
                                             )}

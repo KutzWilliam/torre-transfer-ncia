@@ -422,23 +422,24 @@ export default function HistoricoOcorrenciasPage() {
                 head: [colunas],
                 body: rows,
                 theme: "grid",
-                styles: { fontSize: 7, cellPadding: 2.5 },
+                styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak" },
                 headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7, fontStyle: "bold" },
                 alternateRowStyles: { fillColor: [248, 250, 252] },
+                tableWidth: "wrap",
                 columnStyles: {
                     0: { cellWidth: 22 },  // Abertura
-                    1: { cellWidth: 16 },  // Placa
-                    2: { cellWidth: 28 },  // Tipo
-                    3: { cellWidth: 32 },  // Rota
-                    4: { cellWidth: 18 },  // Status
-                    5: { cellWidth: 18 },  // Tempo Total
-                    6: { cellWidth: 24 },  // Aberta Por
-                    7: { cellWidth: 24 },  // Atendimento
-                    8: { cellWidth: 14 },  // AB+AC
-                    9: { cellWidth: 24 },  // Unidade Resp.
-                    10: { cellWidth: 24 }, // Resolvida Por
-                    11: { cellWidth: 14 }, // AC+RES
-                    12: { cellWidth: "auto" }, // Solução
+                    1: { cellWidth: 14 },  // Placa
+                    2: { cellWidth: 26 },  // Tipo
+                    3: { cellWidth: 30 },  // Rota
+                    4: { cellWidth: 16 },  // Status
+                    5: { cellWidth: 14 },  // Tempo Total
+                    6: { cellWidth: 22 },  // Aberta Por
+                    7: { cellWidth: 22 },  // Atendimento
+                    8: { cellWidth: 12 },  // AB+AC
+                    9: { cellWidth: 22 },  // Unidade Resp.
+                    10: { cellWidth: 22 }, // Resolvida Por
+                    11: { cellWidth: 12 }, // AC+RES
+                    12: { cellWidth: 40, overflow: "linebreak" }, // Solução
                 },
                 didParseCell: (data) => {
                     if (data.section === 'body' && data.column.index === 4) {
