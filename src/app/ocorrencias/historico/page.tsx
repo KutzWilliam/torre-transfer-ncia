@@ -26,7 +26,18 @@ function formatarDuracao(de: Date | string, ate: Date | string): string {
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     if (h > 0) return `${h}h ${m}min`;
-    return `${m}min`;
+    return `${m} Min`;
+}
+
+function formatarDuracaoMinutos(de: Date | string | null | undefined, ate: Date | string | null | undefined): string {
+    if (!de || !ate) return "—";
+    const ms = new Date(ate).getTime() - new Date(de).getTime();
+    if (ms <= 0) return "—";
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h > 0) return `${h}h ${m} Min`;
+    return `${m} Min`;
 }
 
 const STATUS_CONFIG = {
@@ -364,40 +375,91 @@ export default function HistoricoOcorrenciasPage() {
             doc.text(`Tempo Médio (Resolução): ${tempoMedioStr}`, 190, 51);
 
             // ─── Tabela ──────────────────────────────────────────────────
+            // Colunas: Abertura | Placa | Tipo | Rota | Status | Tempo Total |
+            //          Aberta Por | Atendimento | AB+AC | Unidade Resp. |
+            //          Resolvida Por | AC+RES | Solução
             const rows = dados.map(oc => {
                 let statusLabel: string = oc.status;
                 if (statusLabel === "EM_ATENDIMENTO") statusLabel = "EM ATEND.";
-                
-                const tempoRes = oc.resolvidaEm ? formatarDuracao(oc.createdAt, oc.resolvidaEm) : "—";
-                
+                else if (statusLabel === "RESOLVIDA") statusLabel = "Resolvida";
+                else if (statusLabel === "ABERTA") statusLabel = "Aberta";
+
+                const tempoTotal = formatarDuracaoMinutos(oc.createdAt, oc.resolvidaEm);
+                const abAc      = formatarDuracaoMinutos(oc.createdAt, oc.acionadoEm);
+                const acRes     = formatarDuracaoMinutos(oc.acionadoEm, oc.resolvidaEm);
+
+                const abertura  = new Date(oc.createdAt).toLocaleString("pt-BR", {
+                    day: "2-digit", month: "2-digit", year: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                    timeZone: "America/Sao_Paulo",
+                });
+
                 return [
-                    new Date(oc.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+                    abertura,
                     oc.viagem.veiculo.placa,
                     oc.tipoOcorrencia,
                     `${oc.viagem.baseOrigem.cidade} > ${oc.viagem.baseDestino.cidade}`,
                     statusLabel,
-                    tempoRes,
+                    tempoTotal,
                     oc.abertaPor?.name ?? "Sistema",
+                    oc.acionadoPor?.name ?? "—",
+                    abAc,
                     oc.unidadeResponsavel?.nome ?? "—",
                     oc.resolvidaPor?.name ?? "—",
+                    acRes,
                     oc.resolucao ?? "—",
                 ];
             });
 
+            const colunas = [
+                "Abertura", "Placa", "Tipo", "Rota", "Status",
+                "Tempo Total", "Aberta Por", "Atendimento", "AB+AC",
+                "Unidade Resp.", "Resolvida Por", "AC+RES", "Solução",
+            ];
+
             autoTable(doc, {
                 startY: 65,
-                head: [["Abertura", "Placa", "Tipo", "Rota", "Status", "Tempo", "Aberta Por", "Unidade Resp.", "Resolvida Por", "Solução"]],
+                head: [colunas],
                 body: rows,
                 theme: "grid",
-                styles: { fontSize: 8, cellPadding: 3 },
-                headStyles: { fillColor: [30, 41, 59], textColor: 255 }, // slate-800
+                styles: { fontSize: 7, cellPadding: 2.5 },
+                headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7, fontStyle: "bold" },
                 alternateRowStyles: { fillColor: [248, 250, 252] },
+                columnStyles: {
+                    0: { cellWidth: 22 },  // Abertura
+                    1: { cellWidth: 16 },  // Placa
+                    2: { cellWidth: 28 },  // Tipo
+                    3: { cellWidth: 32 },  // Rota
+                    4: { cellWidth: 18 },  // Status
+                    5: { cellWidth: 18 },  // Tempo Total
+                    6: { cellWidth: 24 },  // Aberta Por
+                    7: { cellWidth: 24 },  // Atendimento
+                    8: { cellWidth: 14 },  // AB+AC
+                    9: { cellWidth: 24 },  // Unidade Resp.
+                    10: { cellWidth: 24 }, // Resolvida Por
+                    11: { cellWidth: 14 }, // AC+RES
+                    12: { cellWidth: "auto" }, // Solução
+                },
                 didParseCell: (data) => {
-                    if (data.section === 'body' && data.column.index === 4) { // Status column
+                    if (data.section === 'body' && data.column.index === 4) {
                         const status = data.cell.raw;
-                        if (status === "ABERTA") data.cell.styles.textColor = [220, 38, 38];
+                        if (status === "Aberta")     data.cell.styles.textColor = [220, 38, 38];
                         else if (status === "EM ATEND.") data.cell.styles.textColor = [217, 119, 6];
-                        else if (status === "RESOLVIDA") data.cell.styles.textColor = [5, 150, 105];
+                        else if (status === "Resolvida") data.cell.styles.textColor = [5, 150, 105];
+                    }
+                    // Destacar tempos em laranja se existirem
+                    if (data.section === 'body' && (data.column.index === 8 || data.column.index === 11)) {
+                        if (data.cell.raw && data.cell.raw !== "—") {
+                            data.cell.styles.textColor = [217, 119, 6];
+                            data.cell.styles.fontStyle = "bold";
+                        }
+                    }
+                    // Tempo total em verde se resolvida
+                    if (data.section === 'body' && data.column.index === 5) {
+                        if (data.cell.raw && data.cell.raw !== "—") {
+                            data.cell.styles.textColor = [5, 150, 105];
+                            data.cell.styles.fontStyle = "bold";
+                        }
                     }
                 }
             });

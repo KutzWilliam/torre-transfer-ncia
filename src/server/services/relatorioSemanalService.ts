@@ -89,13 +89,18 @@ function measureWrapHeight(ctx: SKRSContext2D, text: string, maxWidth: number, l
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 interface OcorrenciaResumo {
-    placa:          string;
-    tipo:           string;
-    status:         string;
-    dataAbertura:   Date;
-    rota:           string;
-    resolucao:      string | null;
-    notaTorre:      string | null;
+    placa:                  string;
+    tipo:                   string;
+    status:                 string;
+    dataAbertura:           Date;
+    rota:                   string;
+    resolucao:              string | null;
+    notaTorre:              string | null;
+    abertaPorNome:          string | null;
+    acionadoPorNome:        string | null;
+    acionadoEm:             Date | null;
+    resolvidaPorNome:       string | null;
+    resolvidaEm:            Date | null;
     unidadeResponsavelNome: string | null;
 }
 
@@ -150,6 +155,9 @@ export async function coletarDadosRelatorio(): Promise<{
             },
             include: {
                 unidadeResponsavel: { select: { nome: true } },
+                abertaPor:   { select: { name: true } },
+                acionadoPor: { select: { name: true } },
+                resolvidaPor: { select: { name: true } },
                 viagem: {
                     include: {
                         veiculo: true,
@@ -162,13 +170,18 @@ export async function coletarDadosRelatorio(): Promise<{
         });
 
         const resumoOcorrencias: OcorrenciaResumo[] = ocorrencias.map(o => ({
-            placa:        o.viagem.veiculo.placa,
-            tipo:         o.tipoOcorrencia,
-            status:       o.status,
-            dataAbertura: o.createdAt,
-            rota:         `${o.viagem.baseOrigem?.nome ?? "?"} -> ${o.viagem.baseDestino?.nome ?? "?"}`,
-            resolucao:    o.resolucao,
-            notaTorre:    o.notaTorre,
+            placa:                  o.viagem.veiculo.placa,
+            tipo:                   o.tipoOcorrencia,
+            status:                 o.status,
+            dataAbertura:           o.createdAt,
+            rota:                   `${o.viagem.baseOrigem?.nome ?? "?"} -> ${o.viagem.baseDestino?.nome ?? "?"}`,
+            resolucao:              o.resolucao,
+            notaTorre:              o.notaTorre,
+            abertaPorNome:          o.abertaPor?.name ?? null,
+            acionadoPorNome:        o.acionadoPor?.name ?? null,
+            acionadoEm:             o.acionadoEm ?? null,
+            resolvidaPorNome:       o.resolvidaPor?.name ?? null,
+            resolvidaEm:            o.resolvidaEm ?? null,
             unidadeResponsavelNome: o.unidadeResponsavel?.nome ?? null,
         }));
 
@@ -210,11 +223,17 @@ export async function gerarImagemRelatorio(
     const EMPTY_H    = 50;
     const GAP        = 24;
     const FOOTER_H   = 70;
+    // Tabela mais larga com as novas colunas
     const COLS = {
-        placa: { x: PAD + 16, w: 90 },
-        info:  { x: PAD + 116, w: 260 },
-        desc:  { x: PAD + 386, w: 320 },
-        status: { x: PAD + 726, w: 100 }
+        placa:       { x: PAD + 8,   w: 75 },
+        tipo:        { x: PAD + 88,  w: 120 },
+        abertaPor:   { x: PAD + 213, w: 95 },
+        atendimento: { x: PAD + 313, w: 95 },
+        abAc:        { x: PAD + 413, w: 55 },
+        unidade:     { x: PAD + 473, w: 100 },
+        resolvidaPor:{ x: PAD + 578, w: 100 },
+        acRes:       { x: PAD + 683, w: 55 },
+        status:      { x: PAD + 743, w: 70 },
     };
 
     let totalH = HEADER_H + PERIOD_H + GAP;
@@ -232,28 +251,13 @@ export async function gerarImagemRelatorio(
         if (r.ocorrencias.length === 0) {
             totalH += EMPTY_H;
         } else {
-            totalH += 35; // Header da tabela
+            totalH += 38; // Header da tabela
             
-            dCtx.font = "12px Arial"; // Fonte da descrição
+            dCtx.font = "11px Arial";
             for (const oc of r.ocorrencias) {
-                const isResolvida = oc.status === "RESOLVIDA";
-                let descText = "";
-                
-                const torreStr = oc.notaTorre ? `Torre: ${oc.notaTorre}` : "";
-                const unidStr = oc.unidadeResponsavelNome ? `(Resp: ${oc.unidadeResponsavelNome})` : "";
-                const tratativaStr = [torreStr, unidStr].filter(Boolean).join(" ");
-
-                if (isResolvida && oc.resolucao) {
-                    descText = tratativaStr ? `${tratativaStr}\nResolução: ${oc.resolucao}` : oc.resolucao;
-                } else if (oc.status === "EM_ATENDIMENTO") {
-                    descText = tratativaStr || "Tratativa iniciada...";
-                } else {
-                    descText = "Aguardando tratativa da unidade...";
-                }
-                
-                const textHeight = measureWrapHeight(dCtx, descText, COLS.desc.w - 10, 16);
-                const rowH = Math.max(50, textHeight + 24); // Mínimo 50px de altura
-                rowLayouts.push({ oc, h: rowH, descText });
+                // Cada linha tem altura fixa mínima
+                const rowH = 44;
+                rowLayouts.push({ oc, h: rowH, descText: "" });
                 totalH += rowH;
             }
         }
@@ -442,24 +446,45 @@ export async function gerarImagemRelatorio(
             Y += EMPTY_H;
         } else {
             // Cabeçalho da tabela
-            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-            roundRect(ctx, PAD, Y, INNER, 35, 10);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+            roundRect(ctx, PAD, Y, INNER, 38, 10);
             ctx.fill();
-            ctx.font = "bold 10px Arial";
+            ctx.font = "bold 9px Arial";
             ctx.fillStyle = "#94a3b8";
             
-            ctx.fillText("PLACA & DATA", COLS.placa.x, Y + 22);
-            ctx.fillText("TIPO E ROTA", COLS.info.x, Y + 22);
-            ctx.fillText("DESCRIÇÃO DA RESOLUÇÃO / TRATATIVA", COLS.desc.x, Y + 22);
-            ctx.fillText("STATUS", COLS.status.x, Y + 22);
-            Y += 35;
+            ctx.fillText("PLACA / DATA",       COLS.placa.x,        Y + 14);
+            ctx.fillText("TIPO / ROTA",         COLS.tipo.x,         Y + 14);
+            ctx.fillText("ABERTA POR",          COLS.abertaPor.x,    Y + 14);
+            ctx.fillText("ATENDIMENTO",         COLS.atendimento.x,  Y + 14);
+            ctx.fillText("AB+AC",               COLS.abAc.x,         Y + 14);
+            ctx.fillText("UNIDADE RESP.",       COLS.unidade.x,      Y + 14);
+            ctx.fillText("RESOLVIDA POR",       COLS.resolvidaPor.x, Y + 14);
+            ctx.fillText("AC+RES",              COLS.acRes.x,        Y + 14);
+            ctx.fillText("STATUS",              COLS.status.x,       Y + 14);
+
+            // Sub-header: SOLUÇÃO
+            ctx.font = "9px Arial";
+            ctx.fillStyle = "#64748b";
+            ctx.fillText("(Solução na segunda linha)", COLS.abertaPor.x, Y + 28);
+            Y += 38;
+
+            // Função para calcular tempo em minutos
+            const calcMin = (de: Date | null, ate: Date | null): string => {
+                if (!de || !ate) return "—";
+                const ms = new Date(ate).getTime() - new Date(de).getTime();
+                if (ms <= 0) return "—";
+                const totalMin = Math.floor(ms / 60000);
+                const h = Math.floor(totalMin / 60);
+                const m = totalMin % 60;
+                return h > 0 ? `${h}h ${m}min` : `${m} Min`;
+            };
 
             // Linhas
             for (let i = 0; i < rowLayouts.length; i++) {
-                const { oc, h, descText } = rowLayouts[i]!;
+                const { oc, h } = rowLayouts[i]!;
                 
                 // Background da linha
-                const rowBg = i % 2 === 0 ? "rgba(255, 255, 255, 0.02)" : "rgba(255, 255, 255, 0)";
+                const rowBg = i % 2 === 0 ? "rgba(255, 255, 255, 0.025)" : "rgba(255, 255, 255, 0)";
                 ctx.fillStyle = rowBg;
                 ctx.fillRect(PAD, Y, INNER, h);
 
@@ -473,33 +498,80 @@ export async function gerarImagemRelatorio(
                     ctx.stroke();
                 }
 
-                const textY = Y + 22;
-                const statusColor = oc.status === "RESOLVIDA" ? "#10b981" : oc.status === "EM_ATENDIMENTO" ? "#f59e0b" : "#f43f5e";
-                const statusLabel = oc.status === "RESOLVIDA" ? "Resolvida" : oc.status === "EM_ATENDIMENTO" ? "Em Atend." : "Aberta";
+                const textY = Y + 16;
+                const statusColor  = oc.status === "RESOLVIDA" ? "#10b981" : oc.status === "EM_ATENDIMENTO" ? "#f59e0b" : "#f43f5e";
+                const statusLabel  = oc.status === "RESOLVIDA" ? "Resolvida" : oc.status === "EM_ATENDIMENTO" ? "Em Atend." : "Aberta";
 
-                // Placa e Data
-                ctx.font = "bold 13px Courier New";
+                const abAcStr  = calcMin(oc.dataAbertura, oc.acionadoEm);
+                const acResStr = calcMin(oc.acionadoEm, oc.resolvidaEm);
+
+                // Placa
+                ctx.font = "bold 11px Courier New";
                 ctx.fillStyle = "#60a5fa";
                 ctx.fillText(oc.placa, COLS.placa.x, textY);
-                ctx.font = "10px Arial";
+                // Data da abertura
+                ctx.font = "9px Arial";
                 ctx.fillStyle = "#64748b";
-                ctx.fillText(oc.dataAbertura.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" }), COLS.placa.x, textY + 16);
+                const dtAb = oc.dataAbertura.toLocaleString("pt-BR", {
+                    day: "2-digit", month: "2-digit",
+                    hour: "2-digit", minute: "2-digit",
+                    timeZone: "America/Sao_Paulo",
+                });
+                ctx.fillText(dtAb, COLS.placa.x, textY + 14);
 
-                // Tipo e Rota
-                ctx.font = "bold 12px Arial";
+                // Tipo
+                ctx.font = "bold 10px Arial";
                 ctx.fillStyle = "#e2e8f0";
-                ctx.fillText(truncate(oc.tipo, 35), COLS.info.x, textY);
-                ctx.font = "11px Arial";
+                ctx.fillText(truncate(oc.tipo, 18), COLS.tipo.x, textY);
+                // Rota
+                ctx.font = "9px Arial";
                 ctx.fillStyle = "#94a3b8";
-                ctx.fillText(truncate(oc.rota, 40), COLS.info.x, textY + 16);
+                ctx.fillText(truncate(oc.rota, 22), COLS.tipo.x, textY + 14);
 
-                // Descrição Tratativa (Wrapped)
-                ctx.font = "12px Arial";
-                ctx.fillStyle = oc.status === "RESOLVIDA" ? "#cbd5e1" : (oc.status === "EM_ATENDIMENTO" ? "#fdba74" : "#fca5a5");
-                wrapText(ctx, descText, COLS.desc.x, textY, COLS.desc.w, 16);
+                // Aberta Por
+                ctx.font = "10px Arial";
+                ctx.fillStyle = "#cbd5e1";
+                ctx.fillText(truncate(oc.abertaPorNome ?? "Sistema", 16), COLS.abertaPor.x, textY);
+                // Solução (abaixo do aberta por)
+                if (oc.resolucao) {
+                    ctx.font = "9px Arial";
+                    ctx.fillStyle = "#10b981";
+                    ctx.fillText(truncate(oc.resolucao, 18), COLS.abertaPor.x, textY + 14);
+                }
+
+                // Atendimento (acionadoPor)
+                ctx.font = "10px Arial";
+                ctx.fillStyle = "#fbbf24";
+                ctx.fillText(truncate(oc.acionadoPorNome ?? "—", 16), COLS.atendimento.x, textY);
+                // notaTorre abaixo
+                if (oc.notaTorre) {
+                    ctx.font = "9px Arial";
+                    ctx.fillStyle = "#94a3b8";
+                    ctx.fillText(truncate(oc.notaTorre, 18), COLS.atendimento.x, textY + 14);
+                }
+
+                // AB+AC
+                ctx.font = "bold 10px Arial";
+                ctx.fillStyle = abAcStr !== "—" ? "#f59e0b" : "#475569";
+                ctx.fillText(abAcStr, COLS.abAc.x, textY);
+
+                // Unidade Responsável
+                ctx.font = "10px Arial";
+                ctx.fillStyle = "#e2e8f0";
+                ctx.fillText(truncate(oc.unidadeResponsavelNome ?? "—", 16), COLS.unidade.x, textY);
+
+                // Resolvida Por
+                ctx.font = "10px Arial";
+                ctx.fillStyle = "#34d399";
+                ctx.fillText(truncate(oc.resolvidaPorNome ?? "—", 16), COLS.resolvidaPor.x, textY);
+
+                // AC+RES
+                ctx.font = "bold 10px Arial";
+                ctx.fillStyle = acResStr !== "—" ? "#34d399" : "#475569";
+                ctx.fillText(acResStr, COLS.acRes.x, textY);
 
                 // Status
-                ctx.font = "bold 11px Arial";
+                ctx.font = "bold 10px Arial";
                 ctx.fillStyle = statusColor;
                 ctx.fillText(statusLabel, COLS.status.x, textY);
 
