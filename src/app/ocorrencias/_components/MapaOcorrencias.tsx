@@ -1,6 +1,6 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useEffect } from "react";
@@ -66,6 +66,17 @@ const alertTruckIcon = L.divIcon({
     iconAnchor: [22, 22],
 });
 
+function MapRefresher() {
+    const map = useMap();
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            map.invalidateSize();
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [map]);
+    return null;
+}
+
 export default function MapaOcorrencias({ ocorrencias }: { ocorrencias: any[] }) {
     useEffect(() => {
         L.Marker.prototype.options.icon = customIcon;
@@ -97,8 +108,9 @@ export default function MapaOcorrencias({ ocorrencias }: { ocorrencias: any[] })
                 zoom={primeiroComPos ? 8 : 7}
                 style={{ height: "100%", width: "100%" }}
             >
+                <MapRefresher />
                 <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    url="/api/tiles/{z}/{x}/{y}.png"
                     attribution='&copy; OpenStreetMap'
                 />
                 {pontos.map((p, i) => (

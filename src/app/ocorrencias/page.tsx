@@ -742,7 +742,7 @@ export default function OcorrenciasPage() {
                                     <h2 className="font-bold text-slate-700">Localização das Ocorrências</h2>
                                     <span className="ml-auto text-xs text-slate-400">{ocorrenciasComPosicao.length} no mapa</span>
                                 </div>
-                                <div className="h-80">
+                                <div className="h-80 min-h-[50vh]">
                                     <MapaOcorrencias ocorrencias={ocorrenciasComPosicao} />
                                 </div>
                             </div>
