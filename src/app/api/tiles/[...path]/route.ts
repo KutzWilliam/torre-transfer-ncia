@@ -11,8 +11,7 @@ export async function GET(
     }
 
     const tilePath = path.join("/");
-    // Usando CartoDB Positron (light) em vez do OpenStreetMap para evitar o bloqueio severo de IP do OSM
-    const tileUrl = `https://a.basemaps.cartocdn.com/light_all/${tilePath}`;
+    const tileUrl = `https://tile.openstreetmap.org/${tilePath}`;
 
     try {
         const response = await fetch(tileUrl, {
