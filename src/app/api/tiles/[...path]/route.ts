@@ -2,23 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { path: string[] } }
+    context: { params: Promise<{ path: string[] }> }
 ) {
-    const path = params.path;
+    const { path } = await context.params;
     
     if (!path || path.length < 3) {
         return new NextResponse("Invalid tile path", { status: 400 });
     }
 
     const tilePath = path.join("/");
-    // Usando CartoDB Positron (light) em vez do OpenStreetMap para evitar o bloqueio severo de IP do OSM
-    const tileUrl = `https://a.basemaps.cartocdn.com/light_all/${tilePath}`;
+    const tileUrl = `https://tile.openstreetmap.org/${tilePath}`;
 
     try {
         const response = await fetch(tileUrl, {
             headers: {
-                "User-Agent": "TorreTransferencia/1.0 (Sistema Princesa)",
-                "Referer": "http://localhost:3000",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             },
         });
 
