@@ -138,6 +138,13 @@ function LinhaViagem({ v, idx }: { v: DadosDashboard; idx: number }) {
                 <span className="font-mono text-base font-bold text-white">{fmt(prevChegadaRef)}</span>
             </td>
 
+            {/* Próxima Parada */}
+            <td className="px-3 py-2.5 text-left">
+                <span className="text-sm font-bold text-cyan-200 truncate block max-w-[140px]" title={v.proximaParadaNome}>
+                    {v.status === "FINALIZADA" ? "—" : v.proximaParadaNome}
+                </span>
+            </td>
+
             {/* Chegada Real / ETA */}
             <td className="px-3 py-2.5 text-center">
                 {v.dataFimEfetivo ? (
@@ -384,29 +391,31 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
             <div className={`flex-1 overflow-hidden transition-opacity duration-300 ${animando ? "opacity-0" : "opacity-100"}`}>
                 <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
                     <colgroup>
-                        <col style={{ width: "11%" }} />
-                        <col style={{ width: "18%" }} />
-                        <col className="hidden lg:table-column" style={{ width: "13%" }} />
-                        <col style={{ width: "9%" }} />
-                        <col style={{ width: "9%" }} />
-                        <col style={{ width: "9%" }} />
-                        <col style={{ width: "9%" }} />
-                        <col style={{ width: "8%" }} />
                         <col style={{ width: "10%" }} />
-                        <col className="hidden xl:table-column" style={{ width: "7%" }} />
+                        <col style={{ width: "15%" }} />
+                        <col className="hidden lg:table-column" style={{ width: "11%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "11%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "7%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col className="hidden xl:table-column" style={{ width: "6%" }} />
                     </colgroup>
                     <thead className="bg-slate-800 border-b-2 border-blue-500/40">
                         <tr>
                             {[
                                 "# Viagem", "Rota", "Motorista",
-                                "Saída Prev.", "Saída Real", "Chegada Prev.", "Chegada / ETA",
+                                "Saída Prev.", "Saída Real", "Chegada Prev.",
+                                "Próx. Parada", "ETA",
                                 "Δ Saída", "Situação", "Progresso"
                             ].map((h, i) => (
                                 <th
                                     key={h}
                                     className={`px-3 py-2.5 text-[11px] font-extrabold uppercase tracking-widest text-blue-400 ${
-                                        i >= 3 && i <= 8 ? "text-center" : "text-left"
-                                    } ${i === 2 ? "hidden lg:table-cell" : ""} ${i === 9 ? "hidden xl:table-cell" : ""}`}
+                                        i >= 3 && i <= 8 && i !== 6 ? "text-center" : "text-left"
+                                    } ${i === 2 ? "hidden lg:table-cell" : ""} ${i === 10 ? "hidden xl:table-cell" : ""}`}
                                 >
                                     {h}
                                 </th>
