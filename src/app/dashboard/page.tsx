@@ -5,6 +5,7 @@ import { api } from "@/trpc/react";
 import { type RouterOutputs } from "@/trpc/react";
 import Link from "next/link";
 import { TruckLoaderFullscreen } from "@/components/TruckLoader";
+import { PainelTV } from "./PainelTV";
 
 // ─── Tipos inferidos do backend ───────────────────────────────────────────────
 type DadosDashboard = RouterOutputs["viagem"]["obterDashboard"][number];
@@ -383,6 +384,7 @@ export default function DashboardOperacionalPage() {
     const [horasFiltro, setHorasFiltro] = useState<"24" | "48">("48");
     const [baseFiltro, setBaseFiltro] = useState<string>("todas");
     const [agora, setAgora] = useState(new Date());
+    const [painelTVAtivo, setPainelTVAtivo] = useState(false);
 
     useEffect(() => {
         setIsMounted(true);
@@ -465,6 +467,14 @@ export default function DashboardOperacionalPage() {
 
     return (
         <div className="min-h-screen bg-slate-50">
+            {/* ── Painel TV (overlay fullscreen) ── */}
+            {painelTVAtivo && viagens && (
+                <PainelTV
+                    viagens={viagens}
+                    onFechar={() => setPainelTVAtivo(false)}
+                    agora={agora}
+                />
+            )}
             {/* ── Cabeçalho ── */}
             <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-sm shadow-sm">
                 <div className="mx-auto max-w-[1600px] flex items-center justify-between px-6 py-3">
@@ -527,6 +537,14 @@ export default function DashboardOperacionalPage() {
                                     className="rounded-lg bg-princesa-green px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-600 transition-colors shadow-sm"
                                 >
                                     ↻ Atualizar
+                                </button>
+                                <button
+                                    id="btn-painel-tv"
+                                    onClick={() => setPainelTVAtivo(true)}
+                                    title="Abrir Painel TV (modo tela cheia)"
+                                    className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition-colors shadow-sm flex items-center gap-1.5"
+                                >
+                                    📺 Painel TV
                                 </button>
                             </div>
                             <p className="text-[10px] text-slate-400 tabular-nums">
