@@ -112,6 +112,9 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
     const statusCfg = STATUS_CONFIG[v.status] ?? STATUS_CONFIG["PROGRAMADA"]!;
 
     const prevFimReal = v.prevFimReal ? new Date(v.prevFimReal) : null;
+    // REGRA: horários de previsão com prioridade: rota cadastrada > Excel
+    const prevSaidaRef = (v as any).prevSaidaRef ? new Date((v as any).prevSaidaRef) : new Date(v.prevInicioReal);
+    const prevChegadaRef = (v as any).prevChegadaRef ? new Date((v as any).prevChegadaRef) : prevFimReal;
     const previsaoBaseRef = v.previsaoBaseRef ? new Date(v.previsaoBaseRef) : null;
     const previsaoChegada = v.previsaoChegadaCalculada ? new Date(v.previsaoChegadaCalculada) : null;
 
@@ -167,7 +170,7 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                     {/* Linha Saída */}
                     <div>
                         <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">Saída Prev.</p>
-                        <p className="text-sm font-semibold text-gray-700">{isMounted ? formatarHorario(v.prevInicioReal) : "--:--"}</p>
+                        <p className="text-sm font-semibold text-gray-700">{isMounted ? formatarHorario(prevSaidaRef) : "--:--"}</p>
                     </div>
                     <div>
                         <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">Saída Real</p>
@@ -190,15 +193,15 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                     {/* Linha Chegada */}
                     {(() => {
                         const chegadaReal = v.dataFimEfetivo ? new Date(v.dataFimEfetivo) : null;
-                        const deltaChegada = chegadaReal && prevFimReal
-                            ? Math.round((chegadaReal.getTime() - prevFimReal.getTime()) / 60000)
+                        const deltaChegada = chegadaReal && prevChegadaRef
+                            ? Math.round((chegadaReal.getTime() - prevChegadaRef.getTime()) / 60000)
                             : null;
 
                         return (
                             <>
                                 <div>
                                     <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">Chegada Prev.</p>
-                                    <p className="text-sm font-semibold text-gray-700">{isMounted ? formatarHorario(prevFimReal) : "--:--"}</p>
+                                    <p className="text-sm font-semibold text-gray-700">{isMounted ? formatarHorario(prevChegadaRef) : "--:--"}</p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">Chegada Real</p>

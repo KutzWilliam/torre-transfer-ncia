@@ -360,10 +360,13 @@ export const viagemRouter = createTRPCRouter({
                 const ultimaTelemetria = telemetriaMapDashboard.get(v.veiculo.id) ?? null;
 
                 // 2. Atraso na saída (em minutos)
+                // REGRA: se tem rota cadastrada, usa o horário da 1ª parada (rota); senão usa o do Excel
+                const primeiraPD = v.paradasViagem[0];
+                const prevSaidaRef = primeiraPD?.prevSaida ?? v.prevInicioReal;
                 let atrasoSaidaMinutos: number | null = null;
                 if (v.dataInicioEfetivo) {
                     atrasoSaidaMinutos = Math.round(
-                        (v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000
+                        (v.dataInicioEfetivo.getTime() - prevSaidaRef.getTime()) / 60000
                     );
                 }
 
@@ -387,14 +390,16 @@ export const viagemRouter = createTRPCRouter({
                 let proximaParadaNome = v.baseDestino.nome;
                 let latDestino = v.baseDestino.latitude;
                 let lngDestino = v.baseDestino.longitude;
-                let previsaoBaseRef = v.prevFimReal;
+                // REGRA: usa horário da última parada cadastrada como referência; senão usa o do Excel
+                const ultimaPD = v.paradasViagem[v.paradasViagem.length - 1];
+                let previsaoBaseRef: Date = ultimaPD?.prevChegada ?? v.prevFimReal;
 
                 if (paradaAtualIndex < paradas.length) {
                     const proxParada = paradas[paradaAtualIndex]!;
                     proximaParadaNome = proxParada.base.nome;
                     latDestino = proxParada.base.latitude;
                     lngDestino = proxParada.base.longitude;
-                    previsaoBaseRef = proxParada.prevChegada ?? proxParada.prevSaida ?? v.prevFimReal;
+                    previsaoBaseRef = proxParada.prevChegada ?? proxParada.prevSaida ?? ultimaPD?.prevChegada ?? v.prevFimReal;
                 }
 
                 if (ultimaTelemetria) {
@@ -434,8 +439,11 @@ export const viagemRouter = createTRPCRouter({
                     nivelAlerta = "PONTUAL"; // canceladas não geram alerta
                 } else if (v.status === "FINALIZADA") {
                     // Para viagens finalizadas, calcula o atraso real com base no horário efetivo de chegada
-                    if (v.dataFimEfetivo && v.prevFimReal) {
-                        const atrasoReal = Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000);
+                    // REGRA: usa horário da última parada cadastrada; senão usa o do Excel
+                    const ultimaPDFin = v.paradasViagem[v.paradasViagem.length - 1];
+                    const prevChegadaRefFin = ultimaPDFin?.prevChegada ?? v.prevFimReal;
+                    if (v.dataFimEfetivo && prevChegadaRefFin) {
+                        const atrasoReal = Math.round((v.dataFimEfetivo.getTime() - prevChegadaRefFin.getTime()) / 60000);
                         if (atrasoReal >= 60) nivelAlerta = "CRITICO";
                         else if (atrasoReal >= 30) nivelAlerta = "ATRASADO";
                         else if (atrasoReal >= 10) nivelAlerta = "ATENCAO";
@@ -470,6 +478,9 @@ export const viagemRouter = createTRPCRouter({
                     previsaoChegadaCalculada,
                     atrasoChegadaMinutos,
                     nivelAlerta,
+                    // Horários de previsão com prioridade: rota cadastrada > Excel
+                    prevSaidaRef,           // Saída prevista correta (rota ou Excel)
+                    prevChegadaRef: ultimaPD?.prevChegada ?? v.prevFimReal, // Chegada prevista correta
                     semSinalGPS,
                 };
             });
@@ -582,16 +593,22 @@ export const viagemRouter = createTRPCRouter({
             const picMap = new Map(picosVelocidade.map((p) => [p.viagemId, p._max.velocidade]));
 
             const viagensEnriquecidas = viagens.map((v) => {
-                const atrasoChegadaMin = v.dataFimEfetivo && v.prevFimReal
-                    ? Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000)
+                // REGRA: se tem rota cadastrada, usa horários das paradas; senão usa o do Excel
+                const primeiraParadaA = v.paradasViagem[0];
+                const ultimaParadaA = v.paradasViagem[v.paradasViagem.length - 1];
+                const prevSaidaRefA = primeiraParadaA?.prevSaida ?? v.prevInicioReal;
+                const prevChegadaRefA = ultimaParadaA?.prevChegada ?? v.prevFimReal;
+
+                const atrasoChegadaMin = v.dataFimEfetivo && prevChegadaRefA
+                    ? Math.round((v.dataFimEfetivo.getTime() - prevChegadaRefA.getTime()) / 60000)
                     : 0;
 
-                const atrasoSaidaMin = v.dataInicioEfetivo && v.prevInicioReal
-                    ? Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000)
+                const atrasoSaidaMin = v.dataInicioEfetivo && prevSaidaRefA
+                    ? Math.round((v.dataInicioEfetivo.getTime() - prevSaidaRefA.getTime()) / 60000)
                     : null;
 
                 const duracaoPrevistaMin = Math.round(
-                    (v.prevFimReal.getTime() - v.prevInicioReal.getTime()) / 60000
+                    (prevChegadaRefA.getTime() - prevSaidaRefA.getTime()) / 60000
                 );
                 const duracaoRealMin = v.dataFimEfetivo && v.dataInicioEfetivo
                     ? Math.round((v.dataFimEfetivo.getTime() - v.dataInicioEfetivo.getTime()) / 60000)
