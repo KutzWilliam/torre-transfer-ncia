@@ -581,16 +581,26 @@ export const viagemRouter = createTRPCRouter({
             // Enriquecer cada viagem com métricas calculadas
             type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
 
-            // Buscar pico de velocidade por viagem de forma eficiente (Single Query via GroupBy)
-            const picosVelocidade = await ctx.db.telemetria.groupBy({
-                by: ["viagemId"],
-                where: {
-                    viagemId: { in: viagens.map((v) => v.id) },
-                    velocidade: { not: null },
-                },
-                _max: { velocidade: true },
+            // Buscar pico de velocidade usando janelas de tempo, já que viagemId pode estar nulo na telemetria
+            const picosPromises = viagens.map(async (v) => {
+                const dataCorteInicio = v.dataInicioEfetivo ? new Date(v.dataInicioEfetivo.getTime() - 5 * 60000) : new Date(v.prevInicioReal.getTime() - 6 * 60 * 60 * 1000);
+                const dataCorteEfim = v.dataFimEfetivo ? new Date(v.dataFimEfetivo.getTime() + 5 * 60000) : new Date(v.prevFimReal.getTime() + 12 * 60 * 60 * 1000);
+                
+                const pico = await ctx.db.telemetria.aggregate({
+                    where: {
+                        veiculoId: v.veiculo.id,
+                        dataHoraLocal: {
+                            gte: dataCorteInicio,
+                            lte: dataCorteEfim,
+                        },
+                        velocidade: { not: null },
+                    },
+                    _max: { velocidade: true },
+                });
+                return { viagemId: v.id, velocidade: pico._max.velocidade };
             });
-            const picMap = new Map(picosVelocidade.map((p) => [p.viagemId, p._max.velocidade]));
+            const picos = await Promise.all(picosPromises);
+            const picMap = new Map(picos.map(p => [p.viagemId, p.velocidade]));
 
             const viagensEnriquecidas = viagens.map((v) => {
                 // REGRA: se tem rota cadastrada, usa horários das paradas; senão usa o do Excel
@@ -626,8 +636,8 @@ export const viagemRouter = createTRPCRouter({
                     rotaDescricao: v.rotaDescricao,
                     baseOrigemNome: v.baseOrigem.nome,
                     baseDestinoNome: v.baseDestino.nome,
-                    prevInicio: v.prevInicioReal,
-                    prevFim: v.prevFimReal,
+                    prevInicio: prevSaidaRefA,
+                    prevFim: prevChegadaRefA,
                     dataInicioEfetivo: v.dataInicioEfetivo,
                     dataFimEfetivo: v.dataFimEfetivo,
                     atrasoChegadaMin,
