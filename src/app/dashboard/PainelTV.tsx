@@ -64,7 +64,14 @@ function LinhaViagem({ v, idx }: { v: DadosDashboard; idx: number }) {
 
     const prevSaidaRef = (v as any).prevSaidaRef ? new Date((v as any).prevSaidaRef) : new Date(v.prevInicioReal);
     const prevChegadaRef = (v as any).prevChegadaRef ? new Date((v as any).prevChegadaRef) : new Date(v.prevFimReal);
-    const temOcorrencia = !!((v as any).ocorrencias?.[0]);
+    
+    const ocorrencia = (v as any).ocorrencias?.[0];
+    const temOcorrencia = !!ocorrencia;
+    let corOcorrencia = "text-amber-400"; // Default: EM_ATENDIMENTO
+    if (ocorrencia) {
+        if (ocorrencia.status === "ABERTA") corOcorrencia = "text-red-500";
+        else if (ocorrencia.status === "RESOLVIDA" || ocorrencia.status === "ENCERRADA") corOcorrencia = "text-emerald-500";
+    }
 
     let progresso = 0;
     if (v.status === "FINALIZADA") {
@@ -93,7 +100,7 @@ function LinhaViagem({ v, idx }: { v: DadosDashboard; idx: number }) {
                 <div className="flex flex-col gap-0.5">
                     <span className="font-mono text-sm font-bold text-white tracking-tight">
                         #{v.id}
-                        {temOcorrencia && <span className="ml-1.5 text-amber-400 text-xs">⚠</span>}
+                        {temOcorrencia && <span className={`ml-1.5 text-xs ${corOcorrencia}`} title={`Ocorrência: ${ocorrencia.status}`}>⚠</span>}
                     </span>
                     <span className="text-[11px] font-mono text-slate-400">{v.veiculo.placa}</span>
                 </div>

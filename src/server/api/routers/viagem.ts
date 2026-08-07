@@ -274,7 +274,6 @@ export const viagemRouter = createTRPCRouter({
                     orderBy: { ordem: "asc" },
                 },
                 ocorrencias: {
-                    where: { status: { in: ["ABERTA", "EM_ATENDIMENTO"] } },
                     orderBy: { createdAt: "desc" },
                     take: 1,
                 },
@@ -326,7 +325,6 @@ export const viagemRouter = createTRPCRouter({
                     orderBy: { ordem: "asc" },
                 },
                 ocorrencias: {
-                    where: { status: { in: ["ABERTA", "EM_ATENDIMENTO"] } },
                     orderBy: { createdAt: "desc" },
                     take: 1,
                 },
