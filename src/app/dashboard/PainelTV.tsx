@@ -82,6 +82,10 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
 
     const prevSaidaRef = (v as any).prevSaidaRef ? new Date((v as any).prevSaidaRef) : new Date(v.prevInicioReal);
     const prevChegadaRef = (v as any).prevChegadaRef ? new Date((v as any).prevChegadaRef) : new Date(v.prevFimReal);
+
+    // Chegou 30+ min antes do horário previsto
+    const isAntecipado = v.status === "FINALIZADA" && !!v.dataFimEfetivo &&
+        (prevChegadaRef.getTime() - new Date(v.dataFimEfetivo).getTime()) >= 30 * 60 * 1000;
     
     const ocorrencia = (v as any).ocorrencias?.[0];
     const temOcorrencia = !!ocorrencia;
@@ -174,6 +178,16 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
                 )}
             </td>
 
+            {/* Δ Saída — logo após Saída Real */}
+            <td className="px-3 py-2.5 text-center">
+                <span className={`font-mono text-sm font-bold ${
+                    v.atrasoSaidaMinutos && v.atrasoSaidaMinutos > 0 ? "text-red-400" :
+                    v.atrasoSaidaMinutos && v.atrasoSaidaMinutos < 0 ? "text-emerald-400" : "text-slate-500"
+                }`}>
+                    {v.atrasoSaidaMinutos !== null && v.atrasoSaidaMinutos !== 0 ? fmtMin(v.atrasoSaidaMinutos) : "—"}
+                </span>
+            </td>
+
             {/* Chegada Prevista (destino final) */}
             <td className="px-3 py-2.5 text-center">
                 <div className="flex flex-col items-center gap-0.5">
@@ -186,14 +200,7 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
                 </div>
             </td>
 
-            {/* Próxima Parada */}
-            <td className="px-3 py-2.5 text-left">
-                <span className="text-sm font-bold text-cyan-200 truncate block max-w-[140px]" title={v.proximaParadaNome}>
-                    {v.status === "FINALIZADA" ? "—" : v.proximaParadaNome}
-                </span>
-            </td>
-
-            {/* Chegada Final (destino) — Real se finalizada, ou previsão calculada para o destino final */}
+            {/* Chegada Final — logo após Chegada Prev */}
             <td className="px-3 py-2.5 text-center">
                 {v.dataFimEfetivo ? (
                     <div className="flex flex-col items-center gap-0.5" title="Chegada real no destino">
@@ -218,25 +225,34 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
                 )}
             </td>
 
-            {/* Δ Saída */}
-            <td className="px-3 py-2.5 text-center">
-                <span className={`font-mono text-sm font-bold ${
-                    v.atrasoSaidaMinutos && v.atrasoSaidaMinutos > 0 ? "text-red-400" :
-                    v.atrasoSaidaMinutos && v.atrasoSaidaMinutos < 0 ? "text-emerald-400" : "text-slate-500"
-                }`}>
-                    {v.atrasoSaidaMinutos !== null && v.atrasoSaidaMinutos !== 0 ? fmtMin(v.atrasoSaidaMinutos) : "—"}
+            {/* Próxima Parada */}
+            <td className="px-3 py-2.5 text-left">
+                <span className="text-sm font-bold text-cyan-200 truncate block max-w-[140px]" title={v.proximaParadaNome}>
+                    {v.status === "FINALIZADA" ? "—" : v.proximaParadaNome}
                 </span>
             </td>
 
-            {/* Status / Alerta */}
+            {/* Status / Alerta (com detecção de ANTECIPADO) */}
             <td className="px-3 py-2.5 text-center">
                 <div className="flex flex-col items-center gap-1">
-                    <span className={`text-[10px] font-bold uppercase tracking-widest ${statusCfg.color}`}>
-                        {statusCfg.label}
-                    </span>
-                    <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${cfg.badgeBg} ${cfg.badgeText}`}>
-                        {cfg.label}
-                    </span>
+                    {isAntecipado ? (
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-300">
+                            ANTECIPADO
+                        </span>
+                    ) : (
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${statusCfg.color}`}>
+                            {statusCfg.label}
+                        </span>
+                    )}
+                    {isAntecipado ? (
+                        <span className="inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-cyan-700 text-white">
+                            ADIANT.
+                        </span>
+                    ) : (
+                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${cfg.badgeBg} ${cfg.badgeText}`}>
+                            {cfg.label}
+                        </span>
+                    )}
                 </div>
             </td>
 
@@ -512,30 +528,31 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
             <div className={`flex-1 overflow-hidden transition-opacity duration-300 ${animando ? "opacity-0" : "opacity-100"}`}>
                 <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
                     <colgroup>
-                        <col style={{ width: "10%" }} />
-                        <col style={{ width: "15%" }} />
-                        <col className="hidden lg:table-column" style={{ width: "11%" }} />
-                        <col style={{ width: "8%" }} />
-                        <col style={{ width: "8%" }} />
-                        <col style={{ width: "8%" }} />
-                        <col style={{ width: "11%" }} />
-                        <col style={{ width: "8%" }} />
-                        <col style={{ width: "7%" }} />
-                        <col style={{ width: "8%" }} />
-                        <col className="hidden xl:table-column" style={{ width: "6%" }} />
+                        <col style={{ width: "9%" }} />{/* # Viagem */}
+                        <col style={{ width: "14%" }} />{/* Rota */}
+                        <col className="hidden lg:table-column" style={{ width: "10%" }} />{/* Motorista */}
+                        <col style={{ width: "7%" }} />{/* Saída Prev */}
+                        <col style={{ width: "7%" }} />{/* Saída Real */}
+                        <col style={{ width: "6%" }} />{/* Δ Saída */}
+                        <col style={{ width: "7%" }} />{/* Chegada Prev */}
+                        <col style={{ width: "7%" }} />{/* Chegada Final */}
+                        <col style={{ width: "10%" }} />{/* Próx. Parada */}
+                        <col style={{ width: "9%" }} />{/* Situação */}
+                        <col className="hidden xl:table-column" style={{ width: "6%" }} />{/* Progresso */}
                     </colgroup>
                     <thead className="bg-slate-800 border-b-2 border-blue-500/40">
                         <tr>
                             {[
                                 "# Viagem", "Rota", "Motorista",
-                                "Saída Prev.", "Saída Real", "Chegada Prev.",
-                                "Próx. Parada", "Chegada Final",
-                                "Δ Saída", "Situação", "Progresso"
+                                "Saída Prev.", "Saída Real", "Δ Saída",
+                                "Chegada Prev.", "Chegada Final",
+                                "Próx. Parada", "Situação", "Progresso"
                             ].map((h, i) => (
                                 <th
                                     key={h}
                                     className={`px-3 py-2.5 text-[11px] font-extrabold uppercase tracking-widest text-blue-400 ${
-                                        i >= 3 && i <= 8 && i !== 6 ? "text-center" : "text-left"
+                                        i >= 3 && i <= 7 ? "text-center" :
+                                        i === 8 ? "text-left" : "text-left"
                                     } ${i === 2 ? "hidden lg:table-cell" : ""} ${i === 10 ? "hidden xl:table-cell" : ""}`}
                                 >
                                     {h}
