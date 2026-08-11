@@ -11,16 +11,34 @@ const INTERVALO_PAGINA_MS = 60_000;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmt(date: Date | string | null | undefined): string {
+/** Retorna só o horário se for hoje; caso contrário, exibe "DD/MM · HH:mm" */
+function fmt(date: Date | string | null | undefined, hoje?: Date): string {
     if (!date) return "—";
-    return new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const d = new Date(date);
+    const ref = hoje ?? new Date();
+    const mesmodia =
+        d.getDate() === ref.getDate() &&
+        d.getMonth() === ref.getMonth() &&
+        d.getFullYear() === ref.getFullYear();
+    const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    if (mesmodia) return hora;
+    const dia = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    return `${dia} · ${hora}`;
+}
+
+/** Retorna sempre "DD/MM · HH:mm" independente do dia */
+function fmtDataHora(date: Date | string | null | undefined): string {
+    if (!date) return "—";
+    const d = new Date(date);
+    const dia = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    return `${dia} · ${hora}`;
 }
 
 function fmtMin(min: number | null): string {
     if (min === null) return "—";
     const abs = Math.abs(min);
     const sinal = min > 0 ? "+" : "-";
-    if (abs < 60) return `${sinal}${abs}min`;
     if (abs < 60) return `${sinal}${abs}min`;
     const h = Math.floor(abs / 60);
     const m = abs % 60;
@@ -57,7 +75,7 @@ const STATUS_TV: Record<string, { label: string; color: string }> = {
 
 // ─── Linha da Tabela ──────────────────────────────────────────────────────────
 
-function LinhaViagem({ v, idx }: { v: DadosDashboard; idx: number }) {
+function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora: Date }) {
     const nivel = v.nivelAlerta as NivelAlerta;
     const cfg = NIVEL_TV[nivel];
     const statusCfg = STATUS_TV[v.status] ?? STATUS_TV["PROGRAMADA"]!;
@@ -130,19 +148,42 @@ function LinhaViagem({ v, idx }: { v: DadosDashboard; idx: number }) {
 
             {/* Saída Prevista */}
             <td className="px-3 py-2.5 text-center">
-                <span className="font-mono text-base font-bold text-white">{fmt(prevSaidaRef)}</span>
+                <div className="flex flex-col items-center gap-0.5">
+                    <span className="font-mono text-base font-bold text-white">
+                        {prevSaidaRef.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className="font-mono text-[10px] font-semibold bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">
+                        {prevSaidaRef.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                    </span>
+                </div>
             </td>
 
             {/* Saída Real */}
             <td className="px-3 py-2.5 text-center">
-                <span className={`font-mono text-base font-bold ${v.dataInicioEfetivo ? "text-blue-300" : "text-slate-600"}`}>
-                    {v.dataInicioEfetivo ? fmt(v.dataInicioEfetivo) : "—"}
-                </span>
+                {v.dataInicioEfetivo ? (
+                    <div className="flex flex-col items-center gap-0.5">
+                        <span className="font-mono text-base font-bold text-blue-300">
+                            {new Date(v.dataInicioEfetivo).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="font-mono text-[10px] font-semibold bg-blue-900/70 text-blue-200 px-1.5 py-0.5 rounded">
+                            {new Date(v.dataInicioEfetivo).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        </span>
+                    </div>
+                ) : (
+                    <span className="text-slate-600 text-base font-bold">—</span>
+                )}
             </td>
 
-            {/* Chegada Prevista */}
+            {/* Chegada Prevista (destino final) */}
             <td className="px-3 py-2.5 text-center">
-                <span className="font-mono text-base font-bold text-white">{fmt(prevChegadaRef)}</span>
+                <div className="flex flex-col items-center gap-0.5">
+                    <span className="font-mono text-base font-bold text-white">
+                        {prevChegadaRef.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className="font-mono text-[10px] font-semibold bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">
+                        {prevChegadaRef.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                    </span>
+                </div>
             </td>
 
             {/* Próxima Parada */}
@@ -152,12 +193,26 @@ function LinhaViagem({ v, idx }: { v: DadosDashboard; idx: number }) {
                 </span>
             </td>
 
-            {/* Chegada Real / ETA */}
+            {/* Chegada Final (destino) — Real se finalizada, ou previsão calculada para o destino final */}
             <td className="px-3 py-2.5 text-center">
                 {v.dataFimEfetivo ? (
-                    <span className="font-mono text-base font-bold text-emerald-400">{fmt(v.dataFimEfetivo)}</span>
+                    <div className="flex flex-col items-center gap-0.5" title="Chegada real no destino">
+                        <span className="font-mono text-base font-bold text-emerald-400">
+                            {new Date(v.dataFimEfetivo).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="font-mono text-[10px] font-semibold bg-emerald-900/70 text-emerald-300 px-1.5 py-0.5 rounded">
+                            {new Date(v.dataFimEfetivo).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        </span>
+                    </div>
                 ) : v.previsaoChegadaCalculada ? (
-                    <span className="font-mono text-sm font-bold text-amber-300">~{fmt(v.previsaoChegadaCalculada)}</span>
+                    <div className="flex flex-col items-center gap-0.5" title="Previsão de chegada no destino final">
+                        <span className="font-mono text-base font-bold text-amber-300">
+                            ~{new Date(v.previsaoChegadaCalculada).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="font-mono text-[10px] font-semibold bg-amber-900/70 text-amber-300 px-1.5 py-0.5 rounded">
+                            {new Date(v.previsaoChegadaCalculada).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        </span>
+                    </div>
                 ) : (
                     <span className="text-slate-600 text-sm">—</span>
                 )}
@@ -240,12 +295,28 @@ interface PainelTVProps {
     agora: Date;
 }
 
+/** Formata Date para "YYYY-MM-DD" (valor de input date) */
+function toInputDate(d: Date): string {
+    return d.toISOString().slice(0, 10);
+}
+
 export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
     const [paginaAtual, setPaginaAtual] = useState(0);
     const [animando, setAnimando] = useState(false);
-    
-    // Filtros de exibição
+
+    // Filtros de status
     const [filtros, setFiltros] = useState<Set<string>>(new Set(["EM_ANDAMENTO", "FINALIZADA", "PROGRAMADA_6H"]));
+
+    // Filtro de período (baseado na data de saída prevista)
+    const hojeStr = toInputDate(agora);
+    const [filtroDataDe,  setFiltroDataDe]  = useState(hojeStr);
+    const [filtroDataAte, setFiltroDataAte] = useState(hojeStr);
+    const filtroDataAtivo = filtroDataDe !== hojeStr || filtroDataAte !== hojeStr;
+
+    const resetarFiltroData = () => {
+        setFiltroDataDe(hojeStr);
+        setFiltroDataAte(hojeStr);
+    };
 
     const toggleFiltro = (f: string) => {
         setFiltros(prev => {
@@ -257,10 +328,25 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
     };
 
     const viagensFiltradas = viagens.filter(v => {
+        // ── Filtro de período ──────────────────────────────────────────
+        const prevSaidaRef = (v as any).prevSaidaRef
+            ? new Date((v as any).prevSaidaRef)
+            : new Date(v.prevInicioReal);
+        const prevChegadaRef = (v as any).prevChegadaRef
+            ? new Date((v as any).prevChegadaRef)
+            : new Date(v.prevFimReal);
+        // A viagem intersecta o intervalo se: saída <= filtroAte E chegada >= filtroDe
+        const inicioFiltro = new Date(filtroDataDe + "T00:00:00");
+        const fimFiltro    = new Date(filtroDataAte + "T23:59:59");
+        const dentroDoIntervalo =
+            prevSaidaRef  <= fimFiltro &&
+            prevChegadaRef >= inicioFiltro;
+        if (!dentroDoIntervalo) return false;
+
+        // ── Filtro de status ───────────────────────────────────────────
         if (filtros.has("EM_ANDAMENTO") && v.status === "EM_ANDAMENTO") return true;
-        if (filtros.has("FINALIZADA") && v.status === "FINALIZADA") return true;
+        if (filtros.has("FINALIZADA")   && v.status === "FINALIZADA")   return true;
         if (filtros.has("PROGRAMADA_6H") && v.status === "PROGRAMADA") {
-            const prevSaidaRef = (v as any).prevSaidaRef ? new Date((v as any).prevSaidaRef) : new Date(v.prevInicioReal);
             const diffHrs = (prevSaidaRef.getTime() - agora.getTime()) / (1000 * 60 * 60);
             if (diffHrs <= 6) return true;
         }
@@ -361,6 +447,34 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
                             Próx 6h
                         </button>
                     </div>
+
+                    {/* ── Filtro de período ── */}
+                    <div className="hidden md:flex items-center gap-2 ml-2 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">📅 De</span>
+                        <input
+                            type="date"
+                            value={filtroDataDe}
+                            onChange={e => setFiltroDataDe(e.target.value)}
+                            className="bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono rounded px-2 py-0.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Até</span>
+                        <input
+                            type="date"
+                            value={filtroDataAte}
+                            min={filtroDataDe}
+                            onChange={e => setFiltroDataAte(e.target.value)}
+                            className="bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono rounded px-2 py-0.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        />
+                        {filtroDataAtivo && (
+                            <button
+                                onClick={resetarFiltroData}
+                                className="text-[10px] font-bold text-amber-400 hover:text-amber-300 transition-colors uppercase tracking-wider"
+                                title="Voltar para hoje"
+                            >
+                                ✕ Hoje
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-5">
@@ -415,7 +529,7 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
                             {[
                                 "# Viagem", "Rota", "Motorista",
                                 "Saída Prev.", "Saída Real", "Chegada Prev.",
-                                "Próx. Parada", "ETA",
+                                "Próx. Parada", "Chegada Final",
                                 "Δ Saída", "Situação", "Progresso"
                             ].map((h, i) => (
                                 <th
@@ -431,7 +545,7 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
                     </thead>
                     <tbody>
                         {viagensPagina.map((v, idx) => (
-                            <LinhaViagem key={v.id} v={v} idx={idx} />
+                            <LinhaViagem key={v.id} v={v} idx={idx} agora={agora} />
                         ))}
                         {/* Linhas vazias para manter altura consistente */}
                         {Array.from({ length: Math.max(0, LINHAS_POR_PAGINA - viagensPagina.length) }).map((_, i) => (
