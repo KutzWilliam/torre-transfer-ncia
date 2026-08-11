@@ -6,6 +6,7 @@ import { type RouterOutputs } from "@/trpc/react";
 import Link from "next/link";
 import { TruckLoaderFullscreen } from "@/components/TruckLoader";
 import { PainelTV } from "./PainelTV";
+import { useHoraReal } from "@/hooks/useHoraReal";
 
 // ─── Tipos inferidos do backend ───────────────────────────────────────────────
 type DadosDashboard = RouterOutputs["viagem"]["obterDashboard"][number];
@@ -383,17 +384,13 @@ export default function DashboardOperacionalPage() {
     const [filtro, setFiltro] = useState<Filtro>("todos");
     const [horasFiltro, setHorasFiltro] = useState<"24" | "48">("48");
     const [baseFiltro, setBaseFiltro] = useState<string>("todas");
-    const [agora, setAgora] = useState(new Date());
     const [painelTVAtivo, setPainelTVAtivo] = useState(false);
+
+    // Hora real sincronizada via API (corrige relógio incorreto da TV)
+    const { agora, sincronizado } = useHoraReal();
 
     useEffect(() => {
         setIsMounted(true);
-    }, []);
-
-    // Atualiza o relógio em tempo real
-    useEffect(() => {
-        const timer = setInterval(() => setAgora(new Date()), 1000);
-        return () => clearInterval(timer);
     }, []);
 
     // Dados com toda a lógica de enriquecimento
@@ -517,9 +514,23 @@ export default function DashboardOperacionalPage() {
                     
                     <div className="flex items-center gap-4">
                         <div className="text-right hidden sm:block">
-                            <p className="text-2xl font-mono font-bold text-slate-800 tabular-nums">
-                                {isMounted ? agora.toLocaleTimeString("pt-BR") : "--:--:--"}
-                            </p>
+                            <div className="flex items-center justify-end gap-1.5">
+                                <p className="text-2xl font-mono font-bold text-slate-800 tabular-nums">
+                                    {isMounted ? agora.toLocaleTimeString("pt-BR") : "--:--:--"}
+                                </p>
+                                {isMounted && (
+                                    <span
+                                        title={sincronizado ? "Hora sincronizada com servidor de tempo" : "Usando relógio local (aguardando sincronização)"}
+                                        className={`text-[10px] font-bold rounded px-1 py-0.5 leading-none ${
+                                            sincronizado
+                                                ? "bg-emerald-100 text-emerald-700"
+                                                : "bg-amber-100 text-amber-600 animate-pulse"
+                                        }`}
+                                    >
+                                        {sincronizado ? "• NTP" : "• local"}
+                                    </span>
+                                )}
+                            </div>
                             <p className="text-xs text-slate-400">
                                 {isMounted ? agora.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) : "--/--/--"}
                             </p>
