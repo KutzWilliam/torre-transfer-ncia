@@ -1,94 +1,75 @@
 /**
  * useHoraReal
  *
- * Sincroniza a hora local com uma API de tempo na internet (timeapi.io).
- * Estratégia: busca a hora real na montagem, calcula o offset em relação ao
- * relógio local (new Date()) e depois incrementa com setInterval usando esse
- * offset. Se a API falhar, cai silenciosamente para o relógio local.
+ * Sincroniza a hora local com o SERVIDOR da aplicação via /api/hora.
+ * Isso resolve o problema de TVs/computadores com relógio do sistema incorreto:
+ * o servidor sempre tem a hora certa (independente do OS do cliente).
  *
- * Benefício: a TV pode ter o relógio do sistema errado (dias/horas) mas o
- * painel sempre exibirá a hora correta de Brasília (America/Sao_Paulo).
+ * Estratégia:
+ * 1. Busca GET /api/hora (rota interna Next.js — sem CORS, sem firewall externo)
+ * 2. Calcula o offset: horaServidor - horaLocal
+ * 3. Aplica offset a cada tick de 1s: new Date(Date.now() + offset)
+ * 4. Re-sincroniza a cada 15 minutos para evitar desvio gradual
+ * 5. Fallback silencioso para relógio local se a requisição falhar
  */
 
 import { useEffect, useRef, useState } from "react";
 
-const TIMEZONE = "America/Sao_Paulo";
-// APIs de fallback em ordem de prioridade
-const APIS = [
-  `https://timeapi.io/api/time/current/zone?timeZone=${encodeURIComponent(TIMEZONE)}`,
-  `https://worldtimeapi.org/api/timezone/${TIMEZONE}`,
-];
-
-async function buscarHoraReal(): Promise<Date | null> {
-  for (const url of APIS) {
+async function buscarHoraServidor(): Promise<number | null> {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) continue;
-      const json = await res.json();
+        const antes = Date.now();
+        const res = await fetch("/api/hora", { cache: "no-store" });
+        const depois = Date.now();
+        if (!res.ok) return null;
 
-      // timeapi.io → { dateTime: "2026-08-11T13:45:20.123" }
-      if (json.dateTime) {
-        const d = new Date(json.dateTime);
-        if (!isNaN(d.getTime())) return d;
-      }
+        const json = (await res.json()) as { ts: number };
+        if (typeof json.ts !== "number") return null;
 
-      // worldtimeapi.org → { datetime: "2026-08-11T13:45:20.123456-03:00" }
-      if (json.datetime) {
-        const d = new Date(json.datetime);
-        if (!isNaN(d.getTime())) return d;
-      }
+        // Compensa metade do RTT para estimar a hora no momento da resposta
+        const latencia = Math.round((depois - antes) / 2);
+        return json.ts + latencia;
     } catch {
-      // silently try next API
+        return null;
     }
-  }
-  return null;
 }
 
-/**
- * Retorna { agora, sincronizado }
- * - agora: Date correto (da API ou local como fallback)
- * - sincronizado: true quando a hora veio da API
- */
 export function useHoraReal(): { agora: Date; sincronizado: boolean } {
-  const [agora, setAgora] = useState(() => new Date());
-  const [sincronizado, setSincronizado] = useState(false);
-  // Offset em ms: horaReal - horaLocal no momento da sincronização
-  const offsetRef = useRef<number>(0);
+    const [agora, setAgora] = useState(() => new Date());
+    const [sincronizado, setSincronizado] = useState(false);
+    const offsetMs = useRef<number>(0); // horaServidor - horaLocal
 
-  useEffect(() => {
-    let intervaloId: ReturnType<typeof setInterval>;
+    useEffect(() => {
+        let tickId: ReturnType<typeof setInterval>;
 
-    async function sincronizar() {
-      const horaReal = await buscarHoraReal();
-      if (horaReal) {
-        const horaLocal = new Date();
-        offsetRef.current = horaReal.getTime() - horaLocal.getTime();
-        setSincronizado(true);
-      }
-      // Inicia relógio com offset (0 se falhou — usa local)
-      setAgora(new Date(Date.now() + offsetRef.current));
-      intervaloId = setInterval(() => {
-        setAgora(new Date(Date.now() + offsetRef.current));
-      }, 1000);
-    }
-
-    sincronizar();
-
-    // Re-sincroniza com a API a cada 30 minutos para evitar desvio de clock
-    const resyncId = setInterval(() => {
-      buscarHoraReal().then((horaReal) => {
-        if (horaReal) {
-          offsetRef.current = horaReal.getTime() - Date.now();
-          setSincronizado(true);
+        async function sincronizar() {
+            const tsServidor = await buscarHoraServidor();
+            if (tsServidor !== null) {
+                offsetMs.current = tsServidor - Date.now();
+                setSincronizado(true);
+            }
+            // Inicia tick independente do resultado (offset = 0 se falhou)
+            setAgora(new Date(Date.now() + offsetMs.current));
+            tickId = setInterval(() => {
+                setAgora(new Date(Date.now() + offsetMs.current));
+            }, 1000);
         }
-      });
-    }, 30 * 60 * 1000);
 
-    return () => {
-      clearInterval(intervaloId);
-      clearInterval(resyncId);
-    };
-  }, []);
+        void sincronizar();
 
-  return { agora, sincronizado };
+        // Re-sincroniza a cada 15 minutos
+        const resyncId = setInterval(async () => {
+            const tsServidor = await buscarHoraServidor();
+            if (tsServidor !== null) {
+                offsetMs.current = tsServidor - Date.now();
+                setSincronizado(true);
+            }
+        }, 15 * 60 * 1000);
+
+        return () => {
+            clearInterval(tickId);
+            clearInterval(resyncId);
+        };
+    }, []);
+
+    return { agora, sincronizado };
 }
