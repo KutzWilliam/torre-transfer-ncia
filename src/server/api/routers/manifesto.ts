@@ -163,4 +163,196 @@ export const manifestoRouter = createTRPCRouter({
             .map(r => r.data)
             .filter(d => d && d.length === 10);
     }),
+
+    /**
+     * Agrupa manifestos do dia por unidade de destino (transf_destino),
+     * vincula cada manifesto à viagem correspondente (placa + janela de data)
+     * e retorna as contagens: chegaram (FINALIZADA) e chegando (demais).
+     */
+    chegadasPorUnidade: protectedProcedure
+        .input(z.object({ data: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const manifestosResult = await telemetriaDb.query<{
+                id_manifesto: string;
+                placa: string;
+                prev_saida_data: string;
+                id_aero: string;
+                nome_unidade: string;
+            }>(`
+                SELECT
+                    m.id_manifesto::text                                AS id_manifesto,
+                    COALESCE(v.placa, m.veiculo::text)                  AS placa,
+                    LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
+                    a.id_aero::text                                     AS id_aero,
+                    a.aeroporto                                         AS nome_unidade
+                FROM manifesto m
+                LEFT JOIN veiculos v ON v.id_veiculo::text = m.veiculo::text
+                JOIN  aero        a ON a.id_aero::text     = m.transf_destino::text
+                WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                  AND LEFT(m.prev_saida_data::text, 10) = $1
+                  AND m.transf_destino IS NOT NULL
+                ORDER BY a.aeroporto
+            `, [input.data]);
+
+            const resultados = await Promise.all(manifestosResult.rows.map(async (row) => {
+                const placaOriginal = (row.placa ?? "").trim().toUpperCase();
+                const placaSemTraco = placaOriginal.replace(/-/g, "").replace(/\s+/g, "");
+                const dataParte = row.prev_saida_data;
+                const inicioDia = new Date(dataParte + "T00:00:00");
+                const fimDia    = new Date(dataParte + "T23:59:59");
+
+                const viagem = placaSemTraco
+                    ? await ctx.db.viagem.findFirst({
+                        where: {
+                            veiculo: { OR: [{ placa: placaOriginal }, { placa: placaSemTraco }] },
+                            prevInicioReal: { lte: fimDia },
+                            prevFimReal:    { gte: inicioDia },
+                        },
+                        select: { id: true, status: true },
+                    })
+                    : null;
+
+                return { idAero: row.id_aero, nomeUnidade: row.nome_unidade, viagem };
+            }));
+
+            // Agrupa por unidade de destino
+            const mapa = new Map<string, {
+                idAero: string; nomeUnidade: string;
+                total: number; chegaram: number; chegando: number; semViagem: number;
+            }>();
+
+            for (const r of resultados) {
+                if (!mapa.has(r.idAero)) {
+                    mapa.set(r.idAero, { idAero: r.idAero, nomeUnidade: r.nomeUnidade, total: 0, chegaram: 0, chegando: 0, semViagem: 0 });
+                }
+                const u = mapa.get(r.idAero)!;
+                u.total++;
+                if (!r.viagem)                          u.semViagem++;
+                else if (r.viagem.status === "FINALIZADA") u.chegaram++;
+                else                                    u.chegando++;
+            }
+
+            return Array.from(mapa.values())
+                .sort((a, b) => a.nomeUnidade.localeCompare(b.nomeUnidade, "pt-BR"));
+        }),
+
+    /**
+     * Retorna todos os manifestos de um dia cuja unidade de destino é idAero,
+     * enriquecidos com a viagem vinculada (placa + janela de data).
+     * Também devolve o nome da unidade de destino.
+     */
+    manifestosPorUnidade: protectedProcedure
+        .input(z.object({ idAero: z.string(), data: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const rows = await telemetriaDb.query<{
+                id_manifesto: string;
+                placa: string;
+                prev_saida_data: string;
+                origem: string | null;
+                nome_unidade: string | null;
+            }>(`
+                SELECT
+                    m.id_manifesto::text                                AS id_manifesto,
+                    COALESCE(v.placa, m.veiculo::text)                  AS placa,
+                    LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
+                    ao.aeroporto                                        AS origem,
+                    ad.aeroporto                                        AS nome_unidade
+                FROM manifesto m
+                LEFT JOIN veiculos v  ON v.id_veiculo::text  = m.veiculo::text
+                LEFT JOIN aero    ao ON ao.id_aero::text     = m.transf_origem::text
+                LEFT JOIN aero    ad ON ad.id_aero::text     = m.transf_destino::text
+                WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                  AND LEFT(m.prev_saida_data::text, 10) = $1
+                  AND m.transf_destino::text = $2
+                ORDER BY m.id_manifesto DESC
+            `, [input.data, input.idAero]);
+
+            const nomeUnidade = rows.rows[0]?.nome_unidade ?? `Unidade ${input.idAero}`;
+
+            const manifestos = await Promise.all(rows.rows.map(async (row) => {
+                const placaOriginal = (row.placa ?? "").trim().toUpperCase();
+                const placaSemTraco = placaOriginal.replace(/-/g, "").replace(/\s+/g, "");
+                const dataParte = row.prev_saida_data;
+                const inicioDia = new Date(dataParte + "T00:00:00");
+                const fimDia    = new Date(dataParte + "T23:59:59");
+
+                const viagem = placaSemTraco
+                    ? await ctx.db.viagem.findFirst({
+                        where: {
+                            veiculo: { OR: [{ placa: placaOriginal }, { placa: placaSemTraco }] },
+                            prevInicioReal: { lte: fimDia },
+                            prevFimReal:    { gte: inicioDia },
+                        },
+                        select: { id: true, status: true, dataFimEfetivo: true },
+                    })
+                    : null;
+
+                return {
+                    idManifesto: parseInt(row.id_manifesto, 10),
+                    placa:       row.placa ?? "—",
+                    origem:      row.origem ?? "—",
+                    viagem:      viagem ? { id: viagem.id, status: viagem.status, dataFimEfetivo: viagem.dataFimEfetivo } : null,
+                    chegou:      viagem?.status === "FINALIZADA",
+                };
+            }));
+
+            // Chegados primeiro, depois a chegar, depois sem viagem
+            manifestos.sort((a, b) => {
+                const peso = (m: typeof a) => m.chegou ? 0 : m.viagem ? 1 : 2;
+                return peso(a) - peso(b) || b.idManifesto - a.idManifesto;
+            });
+
+            return { nomeUnidade, manifestos };
+        }),
+
+    /**
+     * Retorna as minutas de um manifesto com nomes de cliente (via fornecedores)
+     * e nomes de unidade origem/destino (via aero).
+     */
+    minutasPorManifesto: protectedProcedure
+        .input(z.object({ idManifesto: z.number(), idAero: z.string() }))
+        .query(async ({ input }) => {
+            const result = await telemetriaDb.query<{
+                id_minuta:            string;
+                cliente_remetente:    string | null;
+                cliente_destinatario: string | null;
+                prev_entrega:         string | null;
+                total_volumes:        string | null;
+                unidade_origem:       string | null;
+                unidade_destino:      string | null;
+                id_aero_destino:      string | null;
+            }>(`
+                SELECT
+                    mn.id_minuta::text                                  AS id_minuta,
+                    fo.fantasia                                         AS cliente_remetente,
+                    fd.fantasia                                         AS cliente_destinatario,
+                    mn.prev_entrega::text                               AS prev_entrega,
+                    mn.total_volumes::text                              AS total_volumes,
+                    ao.aeroporto                                        AS unidade_origem,
+                    ad.aeroporto                                        AS unidade_destino,
+                    mn.transf_destino::text                             AS id_aero_destino
+                FROM manifesto_list ml
+                JOIN   minuta        mn ON mn.id_minuta::text   = ml.minuta::text
+                LEFT JOIN aero       ao ON ao.id_aero::text     = mn.transf_origem::text
+                LEFT JOIN aero       ad ON ad.id_aero::text     = mn.transf_destino::text
+                LEFT JOIN fornecedores fo ON fo.id_local::text  = mn.id_origem::text
+                LEFT JOIN fornecedores fd ON fd.id_local::text  = mn.id_destino::text
+                WHERE ml.id_manifesto::text = $1
+                ORDER BY
+                    CASE WHEN mn.transf_destino::text = $2 THEN 0 ELSE 1 END,
+                    mn.id_minuta
+            `, [input.idManifesto.toString(), input.idAero]);
+
+            return result.rows.map(row => ({
+                idMinuta:            parseInt(row.id_minuta, 10),
+                clienteRemetente:    row.cliente_remetente    ?? "—",
+                clienteDestinatario: row.cliente_destinatario ?? "—",
+                prevEntrega:         row.prev_entrega         ?? null,
+                totalVolumes:        row.total_volumes ? parseInt(row.total_volumes, 10) : null,
+                unidadeOrigem:       row.unidade_origem  ?? "—",
+                unidadeDestino:      row.unidade_destino ?? "—",
+                isDestinoFinal:      row.id_aero_destino === input.idAero,
+            }));
+        }),
 });
+
