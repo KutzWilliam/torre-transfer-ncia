@@ -338,6 +338,7 @@ export const manifestoRouter = createTRPCRouter({
                 LEFT JOIN fornecedores fo ON fo.id_local::text  = mn.id_origem::text
                 LEFT JOIN fornecedores fd ON fd.id_local::text  = mn.id_destino::text
                 WHERE ml.id_manifesto::text = $1
+                  AND mn.cte_numero::text != '0'
                 ORDER BY
                     CASE WHEN mn.transf_destino::text = $2 THEN 0 ELSE 1 END,
                     mn.id_minuta
