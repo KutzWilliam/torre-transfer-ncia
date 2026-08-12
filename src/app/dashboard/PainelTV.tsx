@@ -58,12 +58,12 @@ function calcularDistancia(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 // ─── Mapeamento visual por nível de alerta ────────────────────────────────────
 
-const NIVEL_TV: Record<NivelAlerta, { label: string; rowBg: string; badgeBg: string; badgeText: string }> = {
-    PONTUAL:   { label: "PONTUAL",   rowBg: "bg-transparent",     badgeBg: "bg-emerald-600", badgeText: "text-white"       },
-    ATENCAO:   { label: "ATENÇÃO",   rowBg: "bg-amber-950/30",    badgeBg: "bg-amber-500",   badgeText: "text-black"       },
-    ATRASADO:  { label: "ATRASADO",  rowBg: "bg-orange-950/40",   badgeBg: "bg-orange-600",  badgeText: "text-white"       },
-    CRITICO:   { label: "CRÍTICO",   rowBg: "bg-red-950/50",      badgeBg: "bg-red-600",     badgeText: "text-white"       },
-    SEM_SINAL: { label: "SEM SINAL", rowBg: "bg-slate-800/40",    badgeBg: "bg-slate-600",   badgeText: "text-slate-200"   },
+const NIVEL_TV: Record<NivelAlerta, { label: string; badgeBg: string; badgeText: string }> = {
+    PONTUAL:   { label: "PONTUAL",   badgeBg: "bg-emerald-600", badgeText: "text-white"       },
+    ATENCAO:   { label: "ATENÇÃO",   badgeBg: "bg-amber-500",   badgeText: "text-black"       },
+    ATRASADO:  { label: "ATRASADO",  badgeBg: "bg-orange-600",  badgeText: "text-white"       },
+    CRITICO:   { label: "CRÍTICO",   badgeBg: "bg-red-600",     badgeText: "text-white"       },
+    SEM_SINAL: { label: "SEM SINAL", badgeBg: "bg-slate-600",   badgeText: "text-slate-200"   },
 };
 
 const STATUS_TV: Record<string, { label: string; color: string }> = {
@@ -112,9 +112,13 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
         }
     }
 
+    // Chegada atrasada: viagem finalizada com nível ATRASADO ou CRITICO
+    const chegouAtrasado = v.status === "FINALIZADA" && !!v.dataFimEfetivo &&
+        (nivel === "ATRASADO" || nivel === "CRITICO");
+
     return (
         <tr
-            className={`border-b border-slate-700/50 ${cfg.rowBg} ${idx % 2 === 0 ? "" : "bg-white/[0.03]"}`}
+            className={`border-b border-slate-700/50 ${idx % 2 === 0 ? "bg-slate-900/60" : "bg-slate-800/40"}`}
             style={{ animationDelay: `${idx * 40}ms` }}
         >
             {/* # Viagem + Placa */}
@@ -203,11 +207,15 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
             {/* Chegada Final — logo após Chegada Prev */}
             <td className="px-3 py-2.5 text-center">
                 {v.dataFimEfetivo ? (
-                    <div className="flex flex-col items-center gap-0.5" title="Chegada real no destino">
-                        <span className="font-mono text-base font-bold text-emerald-400">
+                    <div className="flex flex-col items-center gap-0.5" title={chegouAtrasado ? "Chegou com atraso" : "Chegada real no destino"}>
+                        <span className={`font-mono text-base font-bold ${chegouAtrasado ? "text-red-400" : "text-emerald-400"}`}>
                             {new Date(v.dataFimEfetivo).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                         </span>
-                        <span className="font-mono text-[10px] font-semibold bg-emerald-900/70 text-emerald-300 px-1.5 py-0.5 rounded">
+                        <span className={`font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                            chegouAtrasado
+                                ? "bg-red-900/70 text-red-300"
+                                : "bg-emerald-900/70 text-emerald-300"
+                        }`}>
                             {new Date(v.dataFimEfetivo).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                         </span>
                     </div>
