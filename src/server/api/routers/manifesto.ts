@@ -92,8 +92,8 @@ export const manifestoRouter = createTRPCRouter({
                 // Ex: viagem 08/07→10/07 cobre um manifesto de 09/07 (dia intermediário).
                 // Buscamos viagens onde:  prevInicioReal <= fim_do_dia_manifesto
                 //                    AND prevFimReal   >= inicio_do_dia_manifesto
-                const viagem = placaSemTraco
-                    ? await ctx.db.viagem.findFirst({
+                const viagens = placaSemTraco
+                    ? await ctx.db.viagem.findMany({
                         where: {
                             veiculo: {
                                 OR: [
@@ -104,9 +104,24 @@ export const manifestoRouter = createTRPCRouter({
                             prevInicioReal: { lte: fimDia },    // viagem iniciou antes ou no fim do dia do manifesto
                             prevFimReal:    { gte: inicioDia }, // viagem termina após ou no início do dia do manifesto
                         },
-                        select: { id: true },
+                        select: { id: true, rotaDescricao: true },
                     })
-                    : null;
+                    : [];
+
+                // Escolher a melhor viagem baseada na origem e destino
+                let melhorViagem = null;
+                let maxScore = -1;
+                for (const v of viagens) {
+                    let score = 0;
+                    const rota = (v.rotaDescricao ?? "").toUpperCase();
+                    if (m.origem && rota.includes(m.origem.toUpperCase())) score++;
+                    if (m.destino && rota.includes(m.destino.toUpperCase())) score++;
+                    
+                    if (score > maxScore) {
+                        maxScore = score;
+                        melhorViagem = v;
+                    }
+                }
 
                 return {
                     idManifesto:  parseInt(m.id_manifesto, 10),
@@ -118,9 +133,9 @@ export const manifestoRouter = createTRPCRouter({
                     destino:   m.destino ?? null,
                     tipoManifesto: m.tipo_manifesto ?? "—",
                     valorTotal,
-                    temViagem: !!viagem,
-                    viagemId:  viagem?.id ?? null,
-                    status:    (viagem ? "OK" : "ALERTA") as "OK" | "ALERTA",
+                    temViagem: !!melhorViagem,
+                    viagemId:  melhorViagem?.id ?? null,
+                    status:    (melhorViagem ? "OK" : "ALERTA") as "OK" | "ALERTA",
                 };
             }));
 
@@ -178,16 +193,19 @@ export const manifestoRouter = createTRPCRouter({
                 prev_saida_data: string;
                 id_aero: string;
                 nome_unidade: string;
+                origem: string | null;
             }>(`
                 SELECT
                     m.id_manifesto::text                                AS id_manifesto,
                     COALESCE(v.placa, m.veiculo::text)                  AS placa,
                     LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
                     a.id_aero::text                                     AS id_aero,
-                    a.aeroporto                                         AS nome_unidade
+                    a.aeroporto                                         AS nome_unidade,
+                    ao.aeroporto                                        AS origem
                 FROM manifesto m
                 LEFT JOIN veiculos v ON v.id_veiculo::text = m.veiculo::text
                 JOIN  aero        a ON a.id_aero::text     = m.transf_destino::text
+                LEFT JOIN aero    ao ON ao.id_aero::text   = m.transf_origem::text
                 WHERE m.prev_saida_data::text NOT LIKE '0000%'
                   AND LEFT(m.prev_saida_data::text, 10) = $1
                   AND m.transf_destino IS NOT NULL
@@ -201,18 +219,31 @@ export const manifestoRouter = createTRPCRouter({
                 const inicioDia = new Date(dataParte + "T00:00:00");
                 const fimDia    = new Date(dataParte + "T23:59:59");
 
-                const viagem = placaSemTraco
-                    ? await ctx.db.viagem.findFirst({
+                const viagens = placaSemTraco
+                    ? await ctx.db.viagem.findMany({
                         where: {
                             veiculo: { OR: [{ placa: placaOriginal }, { placa: placaSemTraco }] },
                             prevInicioReal: { lte: fimDia },
                             prevFimReal:    { gte: inicioDia },
                         },
-                        select: { id: true, status: true },
+                        select: { id: true, status: true, rotaDescricao: true },
                     })
-                    : null;
+                    : [];
 
-                return { idAero: row.id_aero, nomeUnidade: row.nome_unidade, viagem };
+                let melhorViagem = null;
+                let maxScore = -1;
+                for (const v of viagens) {
+                    let score = 0;
+                    const rota = (v.rotaDescricao ?? "").toUpperCase();
+                    if (row.origem && rota.includes(row.origem.toUpperCase())) score++;
+                    if (row.nome_unidade && rota.includes(row.nome_unidade.toUpperCase())) score++;
+                    if (score > maxScore) {
+                        maxScore = score;
+                        melhorViagem = v;
+                    }
+                }
+
+                return { idAero: row.id_aero, nomeUnidade: row.nome_unidade, viagem: melhorViagem };
             }));
 
             // Agrupa por unidade de destino
@@ -276,23 +307,36 @@ export const manifestoRouter = createTRPCRouter({
                 const inicioDia = new Date(dataParte + "T00:00:00");
                 const fimDia    = new Date(dataParte + "T23:59:59");
 
-                const viagem = placaSemTraco
-                    ? await ctx.db.viagem.findFirst({
+                const viagens = placaSemTraco
+                    ? await ctx.db.viagem.findMany({
                         where: {
                             veiculo: { OR: [{ placa: placaOriginal }, { placa: placaSemTraco }] },
                             prevInicioReal: { lte: fimDia },
                             prevFimReal:    { gte: inicioDia },
                         },
-                        select: { id: true, status: true, dataFimEfetivo: true },
+                        select: { id: true, status: true, dataFimEfetivo: true, rotaDescricao: true },
                     })
-                    : null;
+                    : [];
+
+                let melhorViagem = null;
+                let maxScore = -1;
+                for (const v of viagens) {
+                    let score = 0;
+                    const rota = (v.rotaDescricao ?? "").toUpperCase();
+                    if (row.origem && rota.includes(row.origem.toUpperCase())) score++;
+                    if (row.nome_unidade && rota.includes(row.nome_unidade.toUpperCase())) score++;
+                    if (score > maxScore) {
+                        maxScore = score;
+                        melhorViagem = v;
+                    }
+                }
 
                 return {
                     idManifesto: parseInt(row.id_manifesto, 10),
-                    placa:       row.placa ?? "—",
+                    placa:       placaOriginal,
                     origem:      row.origem ?? "—",
-                    viagem:      viagem ? { id: viagem.id, status: viagem.status, dataFimEfetivo: viagem.dataFimEfetivo } : null,
-                    chegou:      viagem?.status === "FINALIZADA",
+                    viagem:      melhorViagem ? { id: melhorViagem.id, status: melhorViagem.status, dataFimEfetivo: melhorViagem.dataFimEfetivo } : null,
+                    chegou:      melhorViagem?.status === "FINALIZADA",
                 };
             }));
 
