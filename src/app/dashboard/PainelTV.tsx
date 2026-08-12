@@ -118,7 +118,7 @@ function LinhaViagem({ v, idx, agora }: { v: DadosDashboard; idx: number; agora:
 
     return (
         <tr
-            className={`border-b border-slate-700/50 ${idx % 2 === 0 ? "bg-slate-900/60" : "bg-slate-800/40"}`}
+            className={`border-b border-slate-700/50 ${idx % 2 === 0 ? "bg-slate-950" : "bg-slate-700/60"}`}
             style={{ animationDelay: `${idx * 40}ms` }}
         >
             {/* # Viagem + Placa */}
