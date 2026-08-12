@@ -351,31 +351,41 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
         });
     };
 
-    const viagensFiltradas = viagens.filter(v => {
-        // ── Filtro de período ──────────────────────────────────────────
-        const prevSaidaRef = (v as any).prevSaidaRef
-            ? new Date((v as any).prevSaidaRef)
-            : new Date(v.prevInicioReal);
-        const prevChegadaRef = (v as any).prevChegadaRef
-            ? new Date((v as any).prevChegadaRef)
-            : new Date(v.prevFimReal);
-        // A viagem intersecta o intervalo se: saída <= filtroAte E chegada >= filtroDe
-        const inicioFiltro = new Date(filtroDataDe + "T00:00:00");
-        const fimFiltro    = new Date(filtroDataAte + "T23:59:59");
-        const dentroDoIntervalo =
-            prevSaidaRef  <= fimFiltro &&
-            prevChegadaRef >= inicioFiltro;
-        if (!dentroDoIntervalo) return false;
+    const viagensFiltradas = viagens
+        .filter(v => {
+            // ── Filtro de período ──────────────────────────────────────────
+            const prevSaidaRef = (v as any).prevSaidaRef
+                ? new Date((v as any).prevSaidaRef)
+                : new Date(v.prevInicioReal);
+            const prevChegadaRef = (v as any).prevChegadaRef
+                ? new Date((v as any).prevChegadaRef)
+                : new Date(v.prevFimReal);
+            // A viagem intersecta o intervalo se: saída <= filtroAte E chegada >= filtroDe
+            const inicioFiltro = new Date(filtroDataDe + "T00:00:00");
+            const fimFiltro    = new Date(filtroDataAte + "T23:59:59");
+            const dentroDoIntervalo =
+                prevSaidaRef  <= fimFiltro &&
+                prevChegadaRef >= inicioFiltro;
+            if (!dentroDoIntervalo) return false;
 
-        // ── Filtro de status ───────────────────────────────────────────
-        if (filtros.has("EM_ANDAMENTO") && v.status === "EM_ANDAMENTO") return true;
-        if (filtros.has("FINALIZADA")   && v.status === "FINALIZADA")   return true;
-        if (filtros.has("PROGRAMADA_6H") && v.status === "PROGRAMADA") {
-            const diffHrs = (prevSaidaRef.getTime() - agora.getTime()) / (1000 * 60 * 60);
-            if (diffHrs <= 6) return true;
-        }
-        return false;
-    });
+            // ── Filtro de status ───────────────────────────────────────────
+            if (filtros.has("EM_ANDAMENTO") && v.status === "EM_ANDAMENTO") return true;
+            if (filtros.has("FINALIZADA")   && v.status === "FINALIZADA")   return true;
+            if (filtros.has("PROGRAMADA_6H") && v.status === "PROGRAMADA") {
+                const diffHrs = (prevSaidaRef.getTime() - agora.getTime()) / (1000 * 60 * 60);
+                if (diffHrs <= 6) return true;
+            }
+            return false;
+        })
+        .sort((a, b) => {
+            const chegadaA = (a as any).prevChegadaRef
+                ? new Date((a as any).prevChegadaRef).getTime()
+                : new Date(a.prevFimReal).getTime();
+            const chegadaB = (b as any).prevChegadaRef
+                ? new Date((b as any).prevChegadaRef).getTime()
+                : new Date(b.prevFimReal).getTime();
+            return chegadaA - chegadaB;
+        });
 
     const totalPaginas = Math.ceil(viagensFiltradas.length / LINHAS_POR_PAGINA);
     const viagensPagina = viagensFiltradas.slice(
