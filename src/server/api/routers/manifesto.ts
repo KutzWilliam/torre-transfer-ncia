@@ -116,8 +116,13 @@ export const manifestoRouter = createTRPCRouter({
                 for (const v of viagens) {
                     let score = 0;
                     const rota = (v.rotaDescricao ?? "").toUpperCase();
-                    if (m.origem && rota.includes(m.origem.toUpperCase())) score++;
-                    if (m.destino && rota.includes(m.destino.toUpperCase())) score++;
+                    const mOrig = (m.origem ?? "").toUpperCase();
+                    const mDest = (m.destino ?? "").toUpperCase();
+
+                    if (mOrig && rota.includes(mOrig)) score++;
+                    if (mDest && rota.includes(mDest)) score++;
+                    if (mOrig && rota.startsWith(mOrig)) score += 2;
+                    if (mDest && rota.endsWith(mDest)) score += 2;
                     
                     let timeDiff = Infinity;
                     if (m.prev_saida_hora && v.prevInicioReal) {
@@ -125,6 +130,11 @@ export const manifestoRouter = createTRPCRouter({
                         const manifestoDate = new Date(dataParte + "T00:00:00");
                         manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
                         timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    }
+
+                    // Se a diferença for maior que 6 horas (21600000 ms), rejeitar a viagem (evita falso positivo)
+                    if (timeDiff !== Infinity && timeDiff > 6 * 60 * 60 * 1000) {
+                        continue;
                     }
 
                     if (score > maxScore || (score === maxScore && timeDiff < minTimeDiff)) {
@@ -250,8 +260,13 @@ export const manifestoRouter = createTRPCRouter({
                 for (const v of viagens) {
                     let score = 0;
                     const rota = (v.rotaDescricao ?? "").toUpperCase();
-                    if (row.origem && rota.includes(row.origem.toUpperCase())) score++;
-                    if (row.nome_unidade && rota.includes(row.nome_unidade.toUpperCase())) score++;
+                    const rOrig = (row.origem ?? "").toUpperCase();
+                    const rDest = (row.nome_unidade ?? "").toUpperCase();
+
+                    if (rOrig && rota.includes(rOrig)) score++;
+                    if (rDest && rota.includes(rDest)) score++;
+                    if (rOrig && rota.startsWith(rOrig)) score += 2;
+                    if (rDest && rota.endsWith(rDest)) score += 2;
                     
                     let timeDiff = Infinity;
                     if (row.prev_saida_hora && v.prevInicioReal) {
@@ -259,6 +274,10 @@ export const manifestoRouter = createTRPCRouter({
                         const manifestoDate = new Date(dataParte + "T00:00:00");
                         manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
                         timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    }
+
+                    if (timeDiff !== Infinity && timeDiff > 6 * 60 * 60 * 1000) {
+                        continue;
                     }
 
                     if (score > maxScore || (score === maxScore && timeDiff < minTimeDiff)) {
@@ -352,8 +371,13 @@ export const manifestoRouter = createTRPCRouter({
                 for (const v of viagens) {
                     let score = 0;
                     const rota = (v.rotaDescricao ?? "").toUpperCase();
-                    if (row.origem && rota.includes(row.origem.toUpperCase())) score++;
-                    if (row.nome_unidade && rota.includes(row.nome_unidade.toUpperCase())) score++;
+                    const rOrig = (row.origem ?? "").toUpperCase();
+                    const rDest = (row.nome_unidade ?? "").toUpperCase();
+
+                    if (rOrig && rota.includes(rOrig)) score++;
+                    if (rDest && rota.includes(rDest)) score++;
+                    if (rOrig && rota.startsWith(rOrig)) score += 2;
+                    if (rDest && rota.endsWith(rDest)) score += 2;
                     
                     let timeDiff = Infinity;
                     if (row.prev_saida_hora && v.prevInicioReal) {
@@ -361,6 +385,10 @@ export const manifestoRouter = createTRPCRouter({
                         const manifestoDate = new Date(dataParte + "T00:00:00");
                         manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
                         timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    }
+
+                    if (timeDiff !== Infinity && timeDiff > 6 * 60 * 60 * 1000) {
+                        continue;
                     }
 
                     if (score > maxScore || (score === maxScore && timeDiff < minTimeDiff)) {
