@@ -104,21 +104,32 @@ export const manifestoRouter = createTRPCRouter({
                             prevInicioReal: { lte: fimDia },    // viagem iniciou antes ou no fim do dia do manifesto
                             prevFimReal:    { gte: inicioDia }, // viagem termina após ou no início do dia do manifesto
                         },
-                        select: { id: true, rotaDescricao: true },
+                        select: { id: true, rotaDescricao: true, prevInicioReal: true },
                     })
                     : [];
 
-                // Escolher a melhor viagem baseada na origem e destino
+                // Escolher a melhor viagem baseada na origem e destino, usando horário como desempate
                 let melhorViagem = null;
                 let maxScore = -1;
+                let minTimeDiff = Infinity;
+
                 for (const v of viagens) {
                     let score = 0;
                     const rota = (v.rotaDescricao ?? "").toUpperCase();
                     if (m.origem && rota.includes(m.origem.toUpperCase())) score++;
                     if (m.destino && rota.includes(m.destino.toUpperCase())) score++;
                     
-                    if (score > maxScore) {
+                    let timeDiff = Infinity;
+                    if (m.prev_saida_hora && v.prevInicioReal) {
+                        const [h, min, s] = m.prev_saida_hora.split(":");
+                        const manifestoDate = new Date(dataParte + "T00:00:00");
+                        manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                        timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    }
+
+                    if (score > maxScore || (score === maxScore && timeDiff < minTimeDiff)) {
                         maxScore = score;
+                        minTimeDiff = timeDiff;
                         melhorViagem = v;
                     }
                 }
@@ -191,6 +202,7 @@ export const manifestoRouter = createTRPCRouter({
                 id_manifesto: string;
                 placa: string;
                 prev_saida_data: string;
+                prev_saida_hora: string | null;
                 id_aero: string;
                 nome_unidade: string;
                 origem: string | null;
@@ -199,6 +211,7 @@ export const manifestoRouter = createTRPCRouter({
                     m.id_manifesto::text                                AS id_manifesto,
                     COALESCE(v.placa, m.veiculo::text)                  AS placa,
                     LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
+                    m.prev_saida_hora::text                             AS prev_saida_hora,
                     a.id_aero::text                                     AS id_aero,
                     a.aeroporto                                         AS nome_unidade,
                     ao.aeroporto                                        AS origem
@@ -226,19 +239,31 @@ export const manifestoRouter = createTRPCRouter({
                             prevInicioReal: { lte: fimDia },
                             prevFimReal:    { gte: inicioDia },
                         },
-                        select: { id: true, status: true, rotaDescricao: true },
+                        select: { id: true, status: true, rotaDescricao: true, prevInicioReal: true },
                     })
                     : [];
 
                 let melhorViagem = null;
                 let maxScore = -1;
+                let minTimeDiff = Infinity;
+
                 for (const v of viagens) {
                     let score = 0;
                     const rota = (v.rotaDescricao ?? "").toUpperCase();
                     if (row.origem && rota.includes(row.origem.toUpperCase())) score++;
                     if (row.nome_unidade && rota.includes(row.nome_unidade.toUpperCase())) score++;
-                    if (score > maxScore) {
+                    
+                    let timeDiff = Infinity;
+                    if (row.prev_saida_hora && v.prevInicioReal) {
+                        const [h, min, s] = row.prev_saida_hora.split(":");
+                        const manifestoDate = new Date(dataParte + "T00:00:00");
+                        manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                        timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    }
+
+                    if (score > maxScore || (score === maxScore && timeDiff < minTimeDiff)) {
                         maxScore = score;
+                        minTimeDiff = timeDiff;
                         melhorViagem = v;
                     }
                 }
@@ -279,6 +304,7 @@ export const manifestoRouter = createTRPCRouter({
                 id_manifesto: string;
                 placa: string;
                 prev_saida_data: string;
+                prev_saida_hora: string | null;
                 origem: string | null;
                 nome_unidade: string | null;
             }>(`
@@ -286,6 +312,7 @@ export const manifestoRouter = createTRPCRouter({
                     m.id_manifesto::text                                AS id_manifesto,
                     COALESCE(v.placa, m.veiculo::text)                  AS placa,
                     LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
+                    m.prev_saida_hora::text                             AS prev_saida_hora,
                     ao.aeroporto                                        AS origem,
                     ad.aeroporto                                        AS nome_unidade
                 FROM manifesto m
@@ -314,19 +341,31 @@ export const manifestoRouter = createTRPCRouter({
                             prevInicioReal: { lte: fimDia },
                             prevFimReal:    { gte: inicioDia },
                         },
-                        select: { id: true, status: true, dataFimEfetivo: true, rotaDescricao: true },
+                        select: { id: true, status: true, dataFimEfetivo: true, rotaDescricao: true, prevInicioReal: true },
                     })
                     : [];
 
                 let melhorViagem = null;
                 let maxScore = -1;
+                let minTimeDiff = Infinity;
+
                 for (const v of viagens) {
                     let score = 0;
                     const rota = (v.rotaDescricao ?? "").toUpperCase();
                     if (row.origem && rota.includes(row.origem.toUpperCase())) score++;
                     if (row.nome_unidade && rota.includes(row.nome_unidade.toUpperCase())) score++;
-                    if (score > maxScore) {
+                    
+                    let timeDiff = Infinity;
+                    if (row.prev_saida_hora && v.prevInicioReal) {
+                        const [h, min, s] = row.prev_saida_hora.split(":");
+                        const manifestoDate = new Date(dataParte + "T00:00:00");
+                        manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                        timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    }
+
+                    if (score > maxScore || (score === maxScore && timeDiff < minTimeDiff)) {
                         maxScore = score;
+                        minTimeDiff = timeDiff;
                         melhorViagem = v;
                     }
                 }
