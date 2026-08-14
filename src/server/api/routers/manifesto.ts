@@ -8,6 +8,8 @@ interface ManifestoComValorRow {
     id_manifesto: string;
     prev_saida_data: string;
     prev_saida_hora: string | null;
+    saida_efetiva_data: string | null;
+    saida_efetiva_hora: string | null;
     unidade: string;
     placa: string;
     valor_total: string; // NUMERIC vem como string no node-postgres
@@ -43,6 +45,8 @@ export const manifestoRouter = createTRPCRouter({
                     m.id_manifesto::text                                      AS id_manifesto,
                     LEFT(m.prev_saida_data::text, 10)                         AS prev_saida_data,
                     m.prev_saida_hora::text                                   AS prev_saida_hora,
+                    LEFT(m.saida_efetiva_data::text, 10)                      AS saida_efetiva_data,
+                    m.saida_efetiva_hora::text                                AS saida_efetiva_hora,
                     COALESCE(u.fantasia,  m.base::text)                       AS unidade,
                     COALESCE(v.placa,     m.veiculo::text)                    AS placa,
                     COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0)      AS valor_total,
@@ -125,15 +129,29 @@ export const manifestoRouter = createTRPCRouter({
                     if (mDest && rota.endsWith(mDest)) score += 2;
                     
                     let timeDiff = Infinity;
-                    if (m.prev_saida_hora && v.prevInicioReal) {
-                        const [h, min, s] = m.prev_saida_hora.split(":");
-                        const manifestoDate = new Date(dataParte + "T00:00:00");
-                        manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
-                        timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    if (v.prevInicioReal) {
+                        let diffPrev = Infinity;
+                        let diffEfetiva = Infinity;
+
+                        if (m.prev_saida_hora && m.prev_saida_data) {
+                            const [h, min, s] = m.prev_saida_hora.split(":");
+                            const mDate = new Date(m.prev_saida_data + "T00:00:00");
+                            mDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                            diffPrev = Math.abs(mDate.getTime() - v.prevInicioReal.getTime());
+                        }
+
+                        if (m.saida_efetiva_hora && m.saida_efetiva_data && m.saida_efetiva_data !== '0000-00-00') {
+                            const [h, min, s] = m.saida_efetiva_hora.split(":");
+                            const mDateEfetiva = new Date(m.saida_efetiva_data + "T00:00:00");
+                            mDateEfetiva.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                            diffEfetiva = Math.abs(mDateEfetiva.getTime() - v.prevInicioReal.getTime());
+                        }
+                        
+                        timeDiff = Math.min(diffPrev, diffEfetiva);
                     }
 
-                    // Se a diferença for maior que 6 horas (21600000 ms), rejeitar a viagem (evita falso positivo)
-                    if (timeDiff !== Infinity && timeDiff > 6 * 60 * 60 * 1000) {
+                    // Se a diferença for maior que 4 horas (14400000 ms), rejeitar a viagem (evita falso positivo)
+                    if (timeDiff !== Infinity && timeDiff > 4 * 60 * 60 * 1000) {
                         continue;
                     }
 
@@ -187,10 +205,10 @@ export const manifestoRouter = createTRPCRouter({
         const dataLimite = sesentaDiasAtras.toISOString().split("T")[0]!;
 
         const result = await telemetriaDb.query<{ data: string }>(`
-            SELECT DISTINCT LEFT(prev_saida_data::text, 10) AS data
+            SELECT DISTINCT LEFT(prev_chegada_data::text, 10) AS data
             FROM manifesto
-            WHERE prev_saida_data::text NOT LIKE '0000%'
-              AND LEFT(prev_saida_data::text, 10) >= $1
+            WHERE prev_chegada_data::text NOT LIKE '0000%'
+              AND LEFT(prev_chegada_data::text, 10) >= $1
             ORDER BY data DESC
             LIMIT 6
         `, [dataLimite]);
@@ -213,6 +231,8 @@ export const manifestoRouter = createTRPCRouter({
                 placa: string;
                 prev_saida_data: string;
                 prev_saida_hora: string | null;
+                saida_efetiva_data: string | null;
+                saida_efetiva_hora: string | null;
                 id_aero: string;
                 nome_unidade: string;
                 origem: string | null;
@@ -222,6 +242,8 @@ export const manifestoRouter = createTRPCRouter({
                     COALESCE(v.placa, m.veiculo::text)                  AS placa,
                     LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
                     m.prev_saida_hora::text                             AS prev_saida_hora,
+                    LEFT(m.saida_efetiva_data::text, 10)                AS saida_efetiva_data,
+                    m.saida_efetiva_hora::text                          AS saida_efetiva_hora,
                     a.id_aero::text                                     AS id_aero,
                     a.aeroporto                                         AS nome_unidade,
                     ao.aeroporto                                        AS origem
@@ -229,8 +251,8 @@ export const manifestoRouter = createTRPCRouter({
                 LEFT JOIN veiculos v ON v.id_veiculo::text = m.veiculo::text
                 JOIN  aero        a ON a.id_aero::text     = m.transf_destino::text
                 LEFT JOIN aero    ao ON ao.id_aero::text   = m.transf_origem::text
-                WHERE m.prev_saida_data::text NOT LIKE '0000%'
-                  AND LEFT(m.prev_saida_data::text, 10) = $1
+                WHERE m.prev_chegada_data::text NOT LIKE '0000%'
+                  AND LEFT(m.prev_chegada_data::text, 10) = $1
                   AND m.transf_destino IS NOT NULL
                 ORDER BY a.aeroporto
             `, [input.data]);
@@ -269,14 +291,28 @@ export const manifestoRouter = createTRPCRouter({
                     if (rDest && rota.endsWith(rDest)) score += 2;
                     
                     let timeDiff = Infinity;
-                    if (row.prev_saida_hora && v.prevInicioReal) {
-                        const [h, min, s] = row.prev_saida_hora.split(":");
-                        const manifestoDate = new Date(dataParte + "T00:00:00");
-                        manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
-                        timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    if (v.prevInicioReal) {
+                        let diffPrev = Infinity;
+                        let diffEfetiva = Infinity;
+
+                        if (row.prev_saida_hora && row.prev_saida_data) {
+                            const [h, min, s] = row.prev_saida_hora.split(":");
+                            const mDate = new Date(row.prev_saida_data + "T00:00:00");
+                            mDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                            diffPrev = Math.abs(mDate.getTime() - v.prevInicioReal.getTime());
+                        }
+
+                        if (row.saida_efetiva_hora && row.saida_efetiva_data && row.saida_efetiva_data !== '0000-00-00') {
+                            const [h, min, s] = row.saida_efetiva_hora.split(":");
+                            const mDateEfetiva = new Date(row.saida_efetiva_data + "T00:00:00");
+                            mDateEfetiva.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                            diffEfetiva = Math.abs(mDateEfetiva.getTime() - v.prevInicioReal.getTime());
+                        }
+                        
+                        timeDiff = Math.min(diffPrev, diffEfetiva);
                     }
 
-                    if (timeDiff !== Infinity && timeDiff > 6 * 60 * 60 * 1000) {
+                    if (timeDiff !== Infinity && timeDiff > 4 * 60 * 60 * 1000) {
                         continue;
                     }
 
@@ -324,6 +360,8 @@ export const manifestoRouter = createTRPCRouter({
                 placa: string;
                 prev_saida_data: string;
                 prev_saida_hora: string | null;
+                saida_efetiva_data: string | null;
+                saida_efetiva_hora: string | null;
                 origem: string | null;
                 nome_unidade: string | null;
             }>(`
@@ -332,14 +370,16 @@ export const manifestoRouter = createTRPCRouter({
                     COALESCE(v.placa, m.veiculo::text)                  AS placa,
                     LEFT(m.prev_saida_data::text, 10)                   AS prev_saida_data,
                     m.prev_saida_hora::text                             AS prev_saida_hora,
+                    LEFT(m.saida_efetiva_data::text, 10)                AS saida_efetiva_data,
+                    m.saida_efetiva_hora::text                          AS saida_efetiva_hora,
                     ao.aeroporto                                        AS origem,
                     ad.aeroporto                                        AS nome_unidade
                 FROM manifesto m
                 LEFT JOIN veiculos v  ON v.id_veiculo::text  = m.veiculo::text
                 LEFT JOIN aero    ao ON ao.id_aero::text     = m.transf_origem::text
                 LEFT JOIN aero    ad ON ad.id_aero::text     = m.transf_destino::text
-                WHERE m.prev_saida_data::text NOT LIKE '0000%'
-                  AND LEFT(m.prev_saida_data::text, 10) = $1
+                WHERE m.prev_chegada_data::text NOT LIKE '0000%'
+                  AND LEFT(m.prev_chegada_data::text, 10) = $1
                   AND m.transf_destino::text = $2
                 ORDER BY m.id_manifesto DESC
             `, [input.data, input.idAero]);
@@ -380,14 +420,28 @@ export const manifestoRouter = createTRPCRouter({
                     if (rDest && rota.endsWith(rDest)) score += 2;
                     
                     let timeDiff = Infinity;
-                    if (row.prev_saida_hora && v.prevInicioReal) {
-                        const [h, min, s] = row.prev_saida_hora.split(":");
-                        const manifestoDate = new Date(dataParte + "T00:00:00");
-                        manifestoDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
-                        timeDiff = Math.abs(manifestoDate.getTime() - v.prevInicioReal.getTime());
+                    if (v.prevInicioReal) {
+                        let diffPrev = Infinity;
+                        let diffEfetiva = Infinity;
+
+                        if (row.prev_saida_hora && row.prev_saida_data) {
+                            const [h, min, s] = row.prev_saida_hora.split(":");
+                            const mDate = new Date(row.prev_saida_data + "T00:00:00");
+                            mDate.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                            diffPrev = Math.abs(mDate.getTime() - v.prevInicioReal.getTime());
+                        }
+
+                        if (row.saida_efetiva_hora && row.saida_efetiva_data && row.saida_efetiva_data !== '0000-00-00') {
+                            const [h, min, s] = row.saida_efetiva_hora.split(":");
+                            const mDateEfetiva = new Date(row.saida_efetiva_data + "T00:00:00");
+                            mDateEfetiva.setHours(parseInt(h || "0", 10), parseInt(min || "0", 10), parseInt(s || "0", 10));
+                            diffEfetiva = Math.abs(mDateEfetiva.getTime() - v.prevInicioReal.getTime());
+                        }
+                        
+                        timeDiff = Math.min(diffPrev, diffEfetiva);
                     }
 
-                    if (timeDiff !== Infinity && timeDiff > 6 * 60 * 60 * 1000) {
+                    if (timeDiff !== Infinity && timeDiff > 4 * 60 * 60 * 1000) {
                         continue;
                     }
 
