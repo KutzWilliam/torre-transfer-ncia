@@ -35,6 +35,11 @@ function MinutasPanel({ idManifesto, idAero }: { idManifesto: number; idAero: st
 
     function fmtData(d: string | null): string {
         if (!d) return "—";
+        // Tenta extrair YYYY-MM-DD usando regex para evitar bugs de fuso horário (UTC vs Local)
+        const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+            return `${match[3]}/${match[2]}/${match[1]}`;
+        }
         try {
             const parsed = new Date(d);
             if (isNaN(parsed.getTime())) return d;
