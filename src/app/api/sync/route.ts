@@ -3,8 +3,15 @@ import { db } from "@/server/db";
 import { telemetriaDb } from "@/server/db-telemetria";
 import { processarStatusViagens } from "@/server/services/viagemService";
 
+let isSyncing = false;
+
 export async function GET() {
+    if (isSyncing) {
+        return NextResponse.json({ success: false, message: "Sync já em andamento." });
+    }
+
     try {
+        isSyncing = true;
         console.log("A iniciar sincronização de telemetria...");
 
         // 1. Sincronizar Veículos — usando raw SQL para evitar conflito de FK ao atualizar o ID
@@ -135,6 +142,7 @@ export async function GET() {
         // 4. Processar chegadas nas bases e atualizar status das viagens
         const viagensBaixadas = await processarStatusViagens();
 
+        isSyncing = false;
         return NextResponse.json({
             success: true,
             message: "Sincronização concluída",
@@ -144,6 +152,7 @@ export async function GET() {
         });
 
     } catch (error) {
+        isSyncing = false;
         console.error("Erro na sincronização:", error);
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
     }
