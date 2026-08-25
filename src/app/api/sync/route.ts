@@ -35,17 +35,22 @@ export async function GET() {
                 const idVelho = porPlaca.id;
                 console.log(`[SYNC] Migrando veículo: placa=${placaLimpa} (raw: ${placaRaw}), id_antigo=${idVelho} → id_novo=${idNovo}`);
                 if (porId) {
-                    // Já existe um registro com o ID novo e outro com placa errada — merge: apagar o que caiu num ID errado.
+                    // Já existe um registro com o ID novo e outro com a placa duplicada (id temporário).
+                    // ORDEM: primeiro redirecionar as FKs dos filhos (Viagem/Telemetria) para o id definitivo,
+                    //        depois apagar o veículo duplicado (temp_*).
+                    // idNovo já existe em Veiculo (porId), então UPDATE Viagem é seguro.
                     await db.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`DELETE FROM "Veiculo" WHERE "id" = $1`, idVelho);
                     await db.veiculo.update({ where: { id: idNovo }, data: { placa: placaLimpa, descricao: row.descricao } });
                     console.log(`[SYNC]   → Merge realizado (apagado id_antigo=${idVelho})`);
                 } else {
-                    // Apenas muda o ID via raw SQL com cascade manual de FKs
+                    // idNovo NÃO existe ainda em Veiculo — precisamos renomear o id do registro existente.
+                    // ORDEM CORRETA: atualizar Veiculo.id PRIMEIRO (para que a FK exista),
+                    //               depois atualizar Viagem e Telemetria que referenciam o id novo.
+                    await db.$executeRawUnsafe(`UPDATE "Veiculo" SET "id" = $1, "descricao" = $2, "updatedAt" = NOW() WHERE "id" = $3`, idNovo, row.descricao, idVelho);
                     await db.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
-                    await db.$executeRawUnsafe(`UPDATE "Veiculo" SET "id" = $1, "descricao" = $2, "updatedAt" = NOW() WHERE "id" = $3`, idNovo, row.descricao, idVelho);
                     console.log(`[SYNC]   → ID migrado de ${idVelho} → ${idNovo}`);
                 }
                 veiculosMigrados.push(`${placaLimpa}(${idVelho}→${idNovo})`);
