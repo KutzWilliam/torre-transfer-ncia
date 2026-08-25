@@ -15,9 +15,14 @@ export async function GET() {
         `);
 
         let veiculosAtualizados = 0;
+        const veiculosMigrados: string[] = [];
+        const veiculosCriados: string[] = [];
+        const veiculosTemporarios: string[] = [];
+
         for (const row of resultVeiculos.rows) {
             if (!row.placa) continue;
-            const placaLimpa = row.placa.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().substring(0, 7);
+            const placaRaw = String(row.placa);
+            const placaLimpa = placaRaw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().substring(0, 7);
             const idNovo = String(row.idVeiculo);
 
             // Verificar se já existe pelo ID real
@@ -28,27 +33,45 @@ export async function GET() {
             if (porPlaca && porPlaca.id !== idNovo) {
                 // Existe pela placa mas com ID errado (temp_XXXX). Migrar via raw SQL.
                 const idVelho = porPlaca.id;
+                console.log(`[SYNC] Migrando veículo: placa=${placaLimpa} (raw: ${placaRaw}), id_antigo=${idVelho} → id_novo=${idNovo}`);
                 if (porId) {
                     // Já existe um registro com o ID novo e outro com placa errada — merge: apagar o que caiu num ID errado.
                     await db.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`DELETE FROM "Veiculo" WHERE "id" = $1`, idVelho);
                     await db.veiculo.update({ where: { id: idNovo }, data: { placa: placaLimpa, descricao: row.descricao } });
+                    console.log(`[SYNC]   → Merge realizado (apagado id_antigo=${idVelho})`);
                 } else {
                     // Apenas muda o ID via raw SQL com cascade manual de FKs
                     await db.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await db.$executeRawUnsafe(`UPDATE "Veiculo" SET "id" = $1, "descricao" = $2, "updatedAt" = NOW() WHERE "id" = $3`, idNovo, row.descricao, idVelho);
+                    console.log(`[SYNC]   → ID migrado de ${idVelho} → ${idNovo}`);
                 }
+                veiculosMigrados.push(`${placaLimpa}(${idVelho}→${idNovo})`);
             } else if (!porPlaca && !porId) {
                 // Novo veículo
                 await db.veiculo.create({ data: { id: idNovo, placa: placaLimpa, descricao: row.descricao } });
+                veiculosCriados.push(`${placaLimpa}(${idNovo})`);
             } else if (porId && !porPlaca) {
                 // ID existe mas placa errada — só atualizar placa
+                console.log(`[SYNC] Atualizando placa do veículo id=${idNovo}: ${porId.placa} → ${placaLimpa} (raw Sascar: ${placaRaw})`);
                 await db.veiculo.update({ where: { id: idNovo }, data: { placa: placaLimpa, descricao: row.descricao } });
             }
             veiculosAtualizados++;
         }
+
+        // Verificar se ainda existem veículos com ID temporário (indício de sync incompleto)
+        const tempVeiculos = await db.veiculo.findMany({
+            where: { id: { startsWith: "temp_" } },
+            select: { id: true, placa: true }
+        });
+        if (tempVeiculos.length > 0) {
+            console.warn(`[SYNC] ⚠ Veículos com ID temporário (não encontrados no Sascar): ${tempVeiculos.map(v => `${v.placa}(${v.id})`).join(", ")}`);
+            tempVeiculos.forEach(v => veiculosTemporarios.push(`${v.placa}(${v.id})`));
+        }
+        if (veiculosMigrados.length > 0) console.log(`[SYNC] Migrados: ${veiculosMigrados.join(", ")}`);
+        if (veiculosCriados.length > 0) console.log(`[SYNC] Criados: ${veiculosCriados.join(", ")}`);
 
         // 2. Obter a data do último registo na nossa base local (ignorando datas bizarramente no futuro)
         const agoraUtc = new Date();
@@ -141,6 +164,11 @@ export async function GET() {
             veiculos: veiculosAtualizados,
             telemetriasNovas: telemetriasInseridas,
             viagensAtualizadas: viagensBaixadas,
+            diagnostico: {
+                migrados: veiculosMigrados,
+                criados: veiculosCriados,
+                semSinal_idTemp: veiculosTemporarios,
+            },
         });
 
     } catch (error) {
