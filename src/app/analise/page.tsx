@@ -1,568 +1,126 @@
-"use client";
-
-import { useState, useMemo } from "react";
-import { api } from "@/trpc/react";
 import Link from "next/link";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { keepPreviousData } from "@tanstack/react-query";
-import { TruckLoader } from "@/components/TruckLoader";
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
-type PeriodoFiltro = "HOJE" | "SEMANA" | "MES" | "DIA_CUSTOM" | "MES_CUSTOM";
-type TipoFiltro = "TODAS" | "RECUPERACAO" | "ATRASO_ROTA" | "ATRASO_TOTAL";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-function fmtMin(min: number): string {
-    if (min <= 0) return "No prazo";
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    if (h === 0) return `+${m}min`;
-    return `+${h}h${m > 0 ? m + "min" : ""}`;
-}
-
-function fmtDuracao(min: number | null): string {
-    if (min === null) return "—";
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return `${h}h${m.toString().padStart(2, "0")}min`;
-}
-
-function fmtDataHora(d: Date | string | null): string {
-    if (!d) return "—";
-    return format(new Date(d), "dd/MM HH:mm", { locale: ptBR });
-}
-
-function fmtHora(d: Date | string | null): string {
-    if (!d) return "—";
-    return format(new Date(d), "HH:mm");
-}
-
-const NIVEL_CONFIG: Record<NivelAlerta, { label: string; bg: string; text: string; bar: string; dot: string }> = {
-    PONTUAL:  { label: "Pontual",  bg: "bg-emerald-50",  text: "text-emerald-700", bar: "bg-emerald-500", dot: "bg-emerald-500" },
-    ATENCAO:  { label: "Atenção",  bg: "bg-amber-50",    text: "text-amber-700",   bar: "bg-amber-400",   dot: "bg-amber-400"   },
-    ATRASADO: { label: "Atrasado", bg: "bg-orange-50",   text: "text-orange-700",  bar: "bg-orange-500",  dot: "bg-orange-500"  },
-    CRITICO:  { label: "Crítico",  bg: "bg-red-50",      text: "text-red-700",     bar: "bg-red-600",     dot: "bg-red-600"     },
-};
-
-// ─── Componentes Auxiliares ───────────────────────────────────────────────────
-
-function KpiCard({ icon, label, value, sub, colorClass }: {
-    icon: string; label: string; value: string | number; sub?: string; colorClass: string;
-}) {
-    return (
-        <div className={`rounded-2xl border bg-white p-5 shadow-sm flex flex-col gap-2 border-l-4 ${colorClass}`}>
-            <div className="flex items-center gap-2 text-gray-500">
-                <span className="text-xl">{icon}</span>
-                <span className="text-xs font-bold uppercase tracking-wider">{label}</span>
-            </div>
-            <p className="text-4xl font-extrabold text-gray-900 tabular-nums">{value}</p>
-            {sub && <p className="text-xs text-gray-400">{sub}</p>}
-        </div>
-    );
-}
-
-function BarraHorizontal({ label, value, maxValue, count, atrasadas }: {
-    label: string; value: number; maxValue: number; count: number; atrasadas: number;
-}) {
-    const pct = maxValue > 0 ? Math.round((value / maxValue) * 100) : 0;
-    const cor = value >= 120 ? "bg-red-500" : value >= 60 ? "bg-orange-500" : value >= 30 ? "bg-amber-400" : "bg-emerald-400";
-    return (
-        <div className="space-y-1">
-            <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="font-medium text-gray-700 truncate flex-1 min-w-0" title={label}>{label}</span>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-gray-400">{atrasadas}/{count} viagens</span>
-                    <span className="font-bold text-gray-800 w-16 text-right">{fmtMin(value)}</span>
-                </div>
-            </div>
-            <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
-                <div
-                    className={`h-3 rounded-full transition-all duration-500 ${cor}`}
-                    style={{ width: `${pct}%` }}
-                />
-            </div>
-        </div>
-    );
-}
-
-function DonutPontualidade({ dist, total }: {
-    dist: Record<NivelAlerta, number>; total: number;
-}) {
-    const itens: { nivel: NivelAlerta; count: number }[] = [
-        { nivel: "PONTUAL",  count: dist.PONTUAL  },
-        { nivel: "ATENCAO",  count: dist.ATENCAO  },
-        { nivel: "ATRASADO", count: dist.ATRASADO },
-        { nivel: "CRITICO",  count: dist.CRITICO  },
-    ];
-
-    return (
-        <div className="flex flex-col gap-3">
-            {itens.map(({ nivel, count }) => {
-                const cfg = NIVEL_CONFIG[nivel];
-                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                return (
-                    <div key={nivel} className="space-y-0.5">
-                        <div className="flex justify-between text-xs">
-                            <div className="flex items-center gap-1.5">
-                                <span className={`h-2 w-2 rounded-full ${cfg.dot}`} />
-                                <span className={`font-semibold ${cfg.text}`}>{cfg.label}</span>
-                            </div>
-                            <span className="font-bold text-gray-700">{count} <span className="text-gray-400 font-normal">({pct}%)</span></span>
-                        </div>
-                        <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-                            <div className={`h-2 rounded-full ${cfg.bar}`} style={{ width: `${pct}%` }} />
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
-// ─── Página Principal ─────────────────────────────────────────────────────────
+// ─── Módulos disponíveis ──────────────────────────────────────────────────────
+const modulos = [
+  {
+    href: "/analise/operacional",
+    titulo: "Analytics Operacional",
+    descricao:
+      "KPIs gerenciais das viagens finalizadas: pontualidade, ranking de rotas, distribuição de atrasos e tabela detalhada com exportação Excel.",
+    icon: "📊",
+    cor: "from-blue-600 to-blue-800",
+    borda: "border-blue-500/30",
+    badge: "Gerencial",
+    badgeCor: "bg-blue-500/20 text-blue-300",
+    novidade: false,
+  },
+  {
+    href: "/analise/comparativo",
+    titulo: "Comparativo por Período",
+    descricao:
+      "Compare semanas e meses lado a lado. Veja quantas rotas tiveram atraso na saída categorizadas por nível (Pontual · Atenção · Atrasado · Crítico) com drill-down detalhado por rota.",
+    icon: "📅",
+    cor: "from-violet-600 to-violet-800",
+    borda: "border-violet-500/30",
+    badge: "Novo",
+    badgeCor: "bg-violet-500/20 text-violet-300",
+    novidade: true,
+  },
+  {
+    href: "/analise/origem",
+    titulo: "Atrasos por Origem",
+    descricao:
+      "Ranking das bases de origem com maior volume de atrasos. Identifique padrões geográficos e foque esforços nas unidades mais críticas.",
+    icon: "📍",
+    cor: "from-emerald-600 to-emerald-800",
+    borda: "border-emerald-500/30",
+    badge: "Origem",
+    badgeCor: "bg-emerald-500/20 text-emerald-300",
+    novidade: false,
+  },
+];
 
 export default function AnalisePage() {
-    const hoje = new Date();
-    const [periodo, setPeriodo] = useState<PeriodoFiltro>("SEMANA");
-    const [diaCustom, setDiaCustom] = useState(format(hoje, "yyyy-MM-dd"));
-    const [mesCustom, setMesCustom] = useState(format(hoje, "yyyy-MM"));
-    const [baseOrigemNome, setBaseOrigemNome] = useState<string>("");
-    const [searchQuery, setSearchQuery] = useState("");
-
-    // Calcula intervalo de datas com base no filtro
-    const { dataInicio, dataFim } = useMemo(() => {
-        switch (periodo) {
-            case "HOJE":
-                return { dataInicio: format(hoje, "yyyy-MM-dd"), dataFim: format(hoje, "yyyy-MM-dd") };
-            case "SEMANA": {
-                const s = startOfWeek(hoje, { weekStartsOn: 1 });
-                const e = endOfWeek(hoje, { weekStartsOn: 1 });
-                return { dataInicio: format(s, "yyyy-MM-dd"), dataFim: format(e, "yyyy-MM-dd") };
-            }
-            case "MES": {
-                const s = startOfMonth(hoje);
-                const e = endOfMonth(hoje);
-                return { dataInicio: format(s, "yyyy-MM-dd"), dataFim: format(e, "yyyy-MM-dd") };
-            }
-            case "DIA_CUSTOM":
-                return { dataInicio: diaCustom, dataFim: diaCustom };
-            case "MES_CUSTOM": {
-                // Adicionamos T12:00:00 para garantir que o parse seja local e não mude o mês por fuso
-                const base = new Date(mesCustom + "-01T12:00:00");
-                const s = startOfMonth(base);
-                const e = endOfMonth(base);
-                return { dataInicio: format(s, "yyyy-MM-dd"), dataFim: format(e, "yyyy-MM-dd") };
-            }
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [periodo, diaCustom, mesCustom]);
-
-    const { data, isLoading, isFetching } = api.viagem.obterAnalytics.useQuery(
-        { dataInicio, dataFim, baseOrigemNome: baseOrigemNome || undefined },
-        {
-            refetchOnWindowFocus: false,
-            // ⚡ Dados históricos mudam pouco — 5 min de cache evita re-fetch ao trocar de aba
-            staleTime: 5 * 60 * 1000,
-            gcTime: 10 * 60 * 1000,
-            // ⚡ Mantém dados anteriores enquanto carrega novos (sem tela em branco ao mudar filtros)
-            placeholderData: keepPreviousData,
-        }
-    );
-
-    const [ordenacao, setOrdenacao] = useState<"atrasoChegadaMin" | "prevInicio">("prevInicio");
-    const [filtroTipo, setFiltroTipo] = useState<TipoFiltro>("TODAS");
-
-    const viagensOrdenadas = useMemo(() => {
-        if (!data?.viagens) return [];
-        const filtradas = data.viagens.filter((v) => {
-            // Filtro por Tipo
-            let matchTipo = true;
-            const saiuAtrasado  = (v.atrasoSaidaMin ?? 0) > 0;
-            const chegouAtrasado = v.atrasoChegadaMin > 0;
-            if (filtroTipo === "RECUPERACAO")  matchTipo = saiuAtrasado && !chegouAtrasado;
-            else if (filtroTipo === "ATRASO_ROTA")  matchTipo = !saiuAtrasado && chegouAtrasado;
-            else if (filtroTipo === "ATRASO_TOTAL") matchTipo = saiuAtrasado && chegouAtrasado;
-
-            // Filtro por Busca (Motorista, Placa ou ID)
-            const q = searchQuery.toLowerCase();
-            const matchBusca = !q || 
-                v.motorista.toLowerCase().includes(q) || 
-                v.placa.toLowerCase().includes(q) || 
-                v.id.toLowerCase().includes(q);
-
-            return matchTipo && matchBusca;
-        });
-        return [...filtradas].sort((a, b) =>
-            ordenacao === "atrasoChegadaMin"
-                ? b.atrasoChegadaMin - a.atrasoChegadaMin
-                : new Date(b.prevInicio).getTime() - new Date(a.prevInicio).getTime()
-        );
-    }, [data?.viagens, ordenacao, filtroTipo, searchQuery]);
-
-    const handleExportExcel = () => {
-        if (!viagensOrdenadas.length) return;
-        
-        // Importação dinâmica para reduzir o bundle inicial
-        import("xlsx").then((XLSX) => {
-            const exportData = viagensOrdenadas.map((v) => ({
-                "Cód. Viagem": v.id,
-                "Rota": v.rotaDescricao,
-                "Motorista": v.motorista,
-                "Placa": v.placa,
-                "Saída Prevista": fmtDataHora(v.prevInicio),
-                "Saída Real": v.dataInicioEfetivo ? fmtDataHora(v.dataInicioEfetivo) : "—",
-                "Atraso Saída (min)": v.atrasoSaidaMin ?? 0,
-                "Chegada Prevista": fmtDataHora(v.prevFim),
-                "Chegada Real": v.dataFimEfetivo ? fmtDataHora(v.dataFimEfetivo) : "—",
-                "Atraso Chegada (min)": v.atrasoChegadaMin,
-                "Duração Real": fmtDuracao(v.duracaoRealMin),
-                "Pico Velocidade": v.picVelocidade ? `${v.picVelocidade} km/h` : "—",
-                "Status": v.nivelAlerta
-            }));
-
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Viagens");
-            
-            const fileName = `Relatorio_Viagens_${format(new Date(), "dd_MM_yyyy_HHmm")}.xlsx`;
-            XLSX.writeFile(workbook, fileName);
-        });
-    };
-
-    const labelPeriodo = {
-        HOJE: "Hoje",
-        SEMANA: "Esta Semana",
-        MES: "Este Mês",
-        DIA_CUSTOM: format(new Date(diaCustom + "T12:00:00"), "dd/MM/yyyy"),
-        MES_CUSTOM: format(new Date(mesCustom + "-01"), "MMMM yyyy", { locale: ptBR }),
-    }[periodo];
-
-    return (
-        <div className="min-h-screen bg-slate-50">
-            {/* ── Cabeçalho ── */}
-            <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm">
-                <div className="mx-auto max-w-[1600px] px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">📊 Analytics Operacional</h1>
-                        <p className="text-xs text-slate-500 mt-0.5">Página de análise gerencial das viagens finalizadas • {labelPeriodo}</p>
-                    </div>
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <Link href="/analise/origem" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-                            Atrasos por Origem →
-                        </Link>
-                        <Link href="/dashboard" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-                            ← Dashboard Operacional
-                        </Link>
-                    </div>
-                </div>
-            </header>
-
-            <main className="mx-auto max-w-[1600px] px-6 py-6 space-y-6">
-
-                {/* ── Filtros ── */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-wrap gap-4 items-end">
-                    {/* Período */}
-                    <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Período</p>
-                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-0.5">
-                            {(["HOJE", "SEMANA", "MES", "DIA_CUSTOM", "MES_CUSTOM"] as PeriodoFiltro[]).map((p) => (
-                                <button
-                                    key={p}
-                                    onClick={() => setPeriodo(p)}
-                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                                        periodo === p ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                                    }`}
-                                >
-                                    {{ HOJE: "Hoje", SEMANA: "Semana", MES: "Mês", DIA_CUSTOM: "Dia específico", MES_CUSTOM: "Mês específico" }[p]}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Seletor data customizada */}
-                    {periodo === "DIA_CUSTOM" && (
-                        <div className="space-y-1.5">
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Selecione o dia</p>
-                            <input
-                                type="date" value={diaCustom}
-                                onChange={(e) => setDiaCustom(e.target.value)}
-                                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                            />
-                        </div>
-                    )}
-                    {periodo === "MES_CUSTOM" && (
-                        <div className="space-y-1.5">
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Selecione o mês</p>
-                            <input
-                                type="month" value={mesCustom}
-                                onChange={(e) => setMesCustom(e.target.value)}
-                                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                            />
-                        </div>
-                    )}
-
-                    {/* Filtro Unidade */}
-                    <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Unidade</p>
-                        <select
-                            value={baseOrigemNome}
-                            onChange={(e) => setBaseOrigemNome(e.target.value)}
-                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]"
-                        >
-                            <option value="">Todas as Unidades</option>
-                            {data?.basesDisponiveis.map((b) => (
-                                <option key={b.nome} value={b.nome}>{b.cidade}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Filtro Tipo de Viagem */}
-                    <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tipo de Viagem</p>
-                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-0.5">
-                            {([
-                                { key: "TODAS",       label: "Todas",               icon: "📋" },
-                                { key: "RECUPERACAO", label: "Recuperação em Rota", icon: "🔄" },
-                                { key: "ATRASO_ROTA", label: "Atraso em Rota",      icon: "⏩" },
-                                { key: "ATRASO_TOTAL",label: "Atraso Total",        icon: "🔴" },
-                            ] as { key: TipoFiltro; label: string; icon: string }[]).map(({ key, label, icon }) => (
-                                <button
-                                    key={key}
-                                    onClick={() => setFiltroTipo(key)}
-                                    title={label}
-                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
-                                        filtroTipo === key ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                                    }`}
-                                >
-                                    <span>{icon}</span>
-                                    <span className="hidden sm:inline">{label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Busca */}
-                    <div className="space-y-1.5 flex-1 min-w-[250px]">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Buscar Viagem</p>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
-                            <input
-                                type="text"
-                                placeholder="Motorista, placa ou código..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full text-sm pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Exportar */}
-                    <button
-                        onClick={handleExportExcel}
-                        disabled={!viagensOrdenadas.length}
-                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
-                    >
-                        📥 Exportar Excel
-                    </button>
-                </div>
-
-                {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20">
-                        <TruckLoader tamanho="lg" mensagem="Analisando viagens do período..." />
-                    </div>
-                ) : data ? (
-                    <>
-                        {/* ── KPIs ── */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                            <KpiCard icon="🚛" label="Total Finalizadas"  value={data.kpis.total}         colorClass="border-l-blue-400"    sub="no período" />
-                            <KpiCard icon="✅" label="Pontualidade"       value={`${data.kpis.pontualidade}%`} colorClass={data.kpis.pontualidade >= 80 ? "border-l-emerald-500" : "border-l-red-500"} sub="chegaram no prazo" />
-                            <KpiCard icon="⏱" label="Média de Atraso"    value={fmtMin(data.kpis.mediaAtraso)} colorClass="border-l-amber-400" sub="das viagens atrasadas" />
-                            <KpiCard icon="🔴" label="Viagens Críticas"   value={data.kpis.criticas}     colorClass={data.kpis.criticas > 0 ? "border-l-red-600" : "border-l-slate-200"} sub="atraso > 60 min" />
-                            <KpiCard icon="⚡" label="Atraso Acumulado"   value={`${Math.floor(data.kpis.somaAtrasos / 60)}h`} colorClass="border-l-orange-400" sub={`${data.kpis.somaAtrasos % 60 > 0 ? (data.kpis.somaAtrasos % 60) + "min" : ""} em atrasos`} />
-                        </div>
-
-                        {/* ── Gráficos ── */}
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                            {/* Ranking de rotas */}
-                            <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-                                <div>
-                                    <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">📉 Média de Atraso por Rota (Top 10)</h2>
-                                    <p className="text-xs text-slate-400 mt-0.5">Ordenado pelas rotas com maior atraso médio nas chegadas</p>
-                                </div>
-                                {data.rankingRotas.length === 0 ? (
-                                    <p className="text-sm text-slate-400 text-center py-8">Nenhum dado de rota disponível para o período</p>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {data.rankingRotas.map((r) => (
-                                            <BarraHorizontal
-                                                key={r.rota}
-                                                label={r.rota}
-                                                value={r.mediaAtrasoMin}
-                                                maxValue={data.rankingRotas[0]?.mediaAtrasoMin ?? 1}
-                                                count={r.totalViagens}
-                                                atrasadas={r.viagensAtrasadas}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Distribuição de pontualidade */}
-                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-                                <div>
-                                    <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">🎯 Distribuição de Pontualidade</h2>
-                                    <p className="text-xs text-slate-400 mt-0.5">Classificação das {data.kpis.total} viagens finalizadas</p>
-                                </div>
-                                <DonutPontualidade dist={data.distribuicao} total={data.kpis.total} />
-
-                                {/* Mini legenda */}
-                                <div className="border-t border-slate-100 pt-4 space-y-1.5">
-                                    <div className="flex justify-between text-xs text-slate-500">
-                                        <span>Pontual</span><span className="font-bold">&lt; +10 min</span>
-                                    </div>
-                                    <div className="flex justify-between text-xs text-amber-600">
-                                        <span>Atenção</span><span className="font-bold">+10 a +29 min</span>
-                                    </div>
-                                    <div className="flex justify-between text-xs text-orange-600">
-                                        <span>Atrasado</span><span className="font-bold">+30 a +59 min</span>
-                                    </div>
-                                    <div className="flex justify-between text-xs text-red-600">
-                                        <span>Crítico</span><span className="font-bold">+60 min ou mais</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* ── Tabela Detalhada ── */}
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
-                                <div>
-                                    <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">📋 Viagens Finalizadas no Período</h2>
-                                    <p className="text-xs text-slate-400 mt-0.5">{viagensOrdenadas.length} de {data.kpis.total} viagem(ns) exibida(s)
-                                        {filtroTipo !== "TODAS" && (
-                                            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700">
-                                                {{ RECUPERACAO: "🔄 Recuperação em Rota", ATRASO_ROTA: "⏩ Atraso em Rota", ATRASO_TOTAL: "🔴 Atraso Total", TODAS: "" }[filtroTipo]}
-                                            </span>
-                                        )}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs text-slate-500">Ordenar por:</span>
-                                    <select
-                                        value={ordenacao}
-                                        onChange={(e) => setOrdenacao(e.target.value as typeof ordenacao)}
-                                        className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                                    >
-                                        <option value="prevInicio">Data da Viagem</option>
-                                        <option value="atrasoChegadaMin">Maior Atraso Primeiro</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {data.kpis.total === 0 ? (
-                                <div className="py-20 text-center">
-                                    <p className="text-4xl mb-3">📭</p>
-                                    <p className="text-lg font-semibold text-gray-500">Nenhuma viagem finalizada no período</p>
-                                    <p className="text-sm text-gray-400 mt-1">Experimente ampliar o intervalo de datas</p>
-                                </div>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-gray-100">
-                                        <thead className="bg-gray-50">
-                                            <tr>
-                                                {["Viagem / Rota", "Motorista / Placa", "Saída Prev.", "Saída Real", "Δ Saída", "Chegada Prev.", "Chegada Real", "Δ Chegada", "Duração", "🏎 Pico km/h", "Status"].map((h) => (
-                                                    <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50">
-                                            {viagensOrdenadas.map((v) => {
-                                                const cfg = NIVEL_CONFIG[v.nivelAlerta as NivelAlerta];
-                                                return (
-                                                    <tr key={v.id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <Link href={`/viagens/${v.id}`} className="font-bold text-blue-600 hover:underline text-sm">#{v.id}</Link>
-                                                            <p className="text-[10px] text-gray-500 mt-0.5 max-w-[140px] truncate" title={v.rotaDescricao}>{v.rotaDescricao}</p>
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className="text-sm font-medium text-gray-800">{v.motorista}</p>
-                                                            <p className="text-xs text-gray-500 font-mono">{v.placa}</p>
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{fmtDataHora(v.prevInicio)}</td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                                            {v.dataInicioEfetivo ? (
-                                                                <span className="text-blue-700 font-medium">{fmtDataHora(v.dataInicioEfetivo)}</span>
-                                                            ) : <span className="text-gray-400">—</span>}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-bold">
-                                                            {v.atrasoSaidaMin !== null ? (
-                                                                <span className={v.atrasoSaidaMin > 0 ? "text-red-600" : "text-emerald-600"}>
-                                                                    {v.atrasoSaidaMin > 0 ? fmtMin(v.atrasoSaidaMin) : v.atrasoSaidaMin < 0 ? fmtMin(v.atrasoSaidaMin) : "Pontual"}
-                                                                </span>
-                                                            ) : <span className="text-gray-400">—</span>}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{fmtDataHora(v.prevFim)}</td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                                            {v.dataFimEfetivo ? (
-                                                                <span className="text-emerald-700 font-medium">{fmtDataHora(v.dataFimEfetivo)}</span>
-                                                            ) : <span className="text-gray-400">—</span>}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            {v.atrasoChegadaMin > 0 ? (
-                                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${cfg.bg} ${cfg.text}`}>
-                                                                    {fmtMin(v.atrasoChegadaMin)}
-                                                                </span>
-                                                            ) : (
-                                                                <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">
-                                                                    ✓ Pontual
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">
-                                                            <span className="text-gray-800 font-medium">{fmtDuracao(v.duracaoRealMin)}</span>
-                                                            {v.duracaoPrevistaMin && (
-                                                                <p className="text-gray-400">Prev: {fmtDuracao(v.duracaoPrevistaMin)}</p>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap text-center">
-                                                            {(v as typeof v & { picVelocidade?: number | null }).picVelocidade != null ? (
-                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                                                                    ((v as typeof v & { picVelocidade?: number }).picVelocidade ?? 0) >= 110
-                                                                        ? "bg-red-50 text-red-700"
-                                                                        : ((v as typeof v & { picVelocidade?: number }).picVelocidade ?? 0) >= 90
-                                                                        ? "bg-amber-50 text-amber-700"
-                                                                        : "bg-slate-50 text-slate-600"
-                                                                }`}>
-                                                                    🏎 {(v as typeof v & { picVelocidade?: number }).picVelocidade} km/h
-                                                                </span>
-                                                            ) : <span className="text-gray-400 text-xs">—</span>}
-                                                        </td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.bg} ${cfg.text}`}>
-                                                                <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                                                                {cfg.label}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
-                    </>
-                ) : null}
-            </main>
-            {/* ⚡ Indicador sutil de refetch em background (filtro já tem dados mas está atualizando) */}
-            {isFetching && !isLoading && (
-                <div className="fixed bottom-4 right-4 bg-white border border-slate-200 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 text-xs text-slate-600 z-50">
-                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                    Atualizando dados...
-                </div>
-            )}
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* ── Cabeçalho ── */}
+      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+        <div className="mx-auto max-w-5xl px-6 py-8">
+          <div className="flex items-center gap-4 mb-2">
+            <Link
+              href="/dashboard"
+              className="text-slate-500 hover:text-slate-700 transition-colors text-sm"
+            >
+              ← Dashboard
+            </Link>
+          </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            🔍 Central de Análises
+          </h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            Selecione o módulo de análise que deseja acessar
+          </p>
         </div>
-    );
+      </header>
+
+      {/* ── Cards de Módulos ── */}
+      <main className="mx-auto max-w-5xl px-6 py-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {modulos.map((m) => (
+            <Link
+              key={m.href}
+              href={m.href}
+              className={`group relative flex flex-col rounded-2xl border ${m.borda} bg-white hover:bg-slate-50 transition-all duration-200 overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5`}
+            >
+              {/* Gradiente topo */}
+              <div className={`h-1.5 w-full bg-gradient-to-r ${m.cor}`} />
+
+              <div className="p-6 flex flex-col gap-4 flex-1">
+                {/* Ícone + badge */}
+                <div className="flex items-start justify-between">
+                  <span className="text-4xl">{m.icon}</span>
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${m.badgeCor}`}
+                  >
+                    {m.badge}
+                    {m.novidade && (
+                      <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse align-middle" />
+                    )}
+                  </span>
+                </div>
+
+                {/* Título + Descrição */}
+                <div className="flex-1">
+                  <h2 className="text-lg font-bold text-slate-900 group-hover:text-slate-800 mb-2">
+                    {m.titulo}
+                  </h2>
+                  <p className="text-sm text-slate-600 leading-relaxed">
+                    {m.descricao}
+                  </p>
+                </div>
+
+                {/* CTA */}
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
+                  <span>Acessar módulo</span>
+                  <svg
+                    className="h-4 w-4 translate-x-0 group-hover:translate-x-1 transition-transform"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
 }

@@ -6,6 +6,7 @@ import {
 import { normalizeString, normalizeCityName } from "@/server/utils/stringUtils";
 import { getPlacaAtivaSascar } from "@/server/utils/sascarUtils";
 import { calcularDistanciaGeocerca } from "@/server/utils/geolocalizacao";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
 
 // Definimos o formato exato que esperamos receber do frontend (planilha convertida)
 const viagemSchema = z.object({
@@ -87,6 +88,17 @@ export const viagemRouter = createTRPCRouter({
                     normalizeString(r.nome).replace(/\s+/g, ' ').trim() === rotaNomeDescartavel
                 );
 
+                // Quando há rota cadastrada, usa as paradas da rota como origem/destino canônicos
+                // (a planilha pode trazer o destino da carga, não o destino final do trajeto)
+                let baseOrigemFinal = baseOrigem;
+                let baseDestinoFinal = baseDestino;
+                if (rotaPadrao && rotaPadrao.paradas.length > 0) {
+                    const primeiraParada = rotaPadrao.paradas[0]!;
+                    const ultimaParada = rotaPadrao.paradas[rotaPadrao.paradas.length - 1]!;
+                    baseOrigemFinal = await ctx.db.base.findUnique({ where: { id: primeiraParada.baseId } }) ?? baseOrigem;
+                    baseDestinoFinal = await ctx.db.base.findUnique({ where: { id: ultimaParada.baseId } }) ?? baseDestino;
+                }
+
                 // 5. Upsert da Viagem
                 const viagem = await ctx.db.viagem.upsert({
                     where: { id: item.numeroViagem },
@@ -94,13 +106,16 @@ export const viagemRouter = createTRPCRouter({
                         status: item.status, motorista: item.motorista, veiculoId: veiculo.id,
                         prevInicioReal: new Date(item.prevInicio), prevFimReal: new Date(item.prevFim),
                         rotaPadraoId: rotaPadrao?.id,
+                        // Corrige origem/destino com base na rota cadastrada (se disponível)
+                        baseOrigemId: baseOrigemFinal.id,
+                        baseDestinoId: baseDestinoFinal.id,
                         // Gravar horários reais vindos do Excel (quando disponíveis)
                         dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
                         dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
                     },
                     create: {
                         id: item.numeroViagem, motorista: item.motorista, rotaDescricao: item.rotaDescricao,
-                        veiculoId: veiculo.id, baseOrigemId: baseOrigem.id, baseDestinoId: baseDestino.id,
+                        veiculoId: veiculo.id, baseOrigemId: baseOrigemFinal.id, baseDestinoId: baseDestinoFinal.id,
                         prevInicioReal: new Date(item.prevInicio), prevFimReal: new Date(item.prevFim),
                         status: item.status, rotaPadraoId: rotaPadrao?.id,
                         dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
@@ -144,17 +159,44 @@ export const viagemRouter = createTRPCRouter({
             return { success: true, message: `Planilha processada! ${viagensCriadas} criadas e ${viagensAtualizadas} atualizadas com rotas completas.` };
         }),
 
-    listar: protectedProcedure.query(async ({ ctx }) => {
-        const viagens = await ctx.db.viagem.findMany({
-            orderBy: { prevInicioReal: "desc" }, // Mostra as mais recentes primeiro
-            include: {
-                veiculo: true,
-                baseOrigem: true,
-                baseDestino: true,
-            },
-        });
+    listar: protectedProcedure
+        .input(z.object({
+            limit: z.number().min(1).max(100).nullish(),
+            cursor: z.string().nullish(),
+        }).optional())
+        .query(async ({ ctx, input }) => {
+            const limit = input?.limit ?? 100;
+            const { cursor } = input ?? {};
 
-        return viagens;
+            const viagens = await ctx.db.viagem.findMany({
+                take: limit + 1,
+                cursor: cursor ? { id: cursor } : undefined,
+                orderBy: { prevInicioReal: "desc" },
+                select: {
+                    id: true,
+                    motorista: true,
+                    status: true,
+                    prevInicioReal: true,
+                    prevFimReal: true,
+                    dataInicioEfetivo: true,
+                    dataFimEfetivo: true,
+                    rotaDescricao: true,
+                    veiculo: { select: { id: true, placa: true } },
+                    baseOrigem: { select: { id: true, nome: true, cidade: true } },
+                    baseDestino: { select: { id: true, nome: true, cidade: true } },
+                },
+            });
+
+            let nextCursor: typeof cursor | undefined = undefined;
+            if (viagens.length > limit) {
+                const nextItem = viagens.pop();
+                nextCursor = nextItem!.id;
+            }
+
+            return {
+                items: viagens,
+                nextCursor,
+            };
     }),
     obterPorId: protectedProcedure
         .input(z.string())
@@ -492,10 +534,16 @@ export const viagemRouter = createTRPCRouter({
             where: {
                 dataFimEfetivo: { not: null }, // Chegou ao destino
             },
-            include: {
-                veiculo: true,
-                baseOrigem: true,
-                baseDestino: true,
+            select: {
+                id: true,
+                status: true,
+                motorista: true,
+                prevFimReal: true,
+                dataFimEfetivo: true,
+                prevInicioReal: true,
+                veiculo: { select: { placa: true } },
+                baseOrigem: { select: { cidade: true } },
+                baseDestino: { select: { cidade: true } },
             },
             orderBy: { prevInicioReal: "desc" }
         });
@@ -579,26 +627,31 @@ export const viagemRouter = createTRPCRouter({
             // Enriquecer cada viagem com métricas calculadas
             type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
 
-            // Buscar pico de velocidade usando janelas de tempo, já que viagemId pode estar nulo na telemetria
-            const picosPromises = viagens.map(async (v) => {
-                const dataCorteInicio = v.dataInicioEfetivo ? new Date(v.dataInicioEfetivo.getTime() - 5 * 60000) : new Date(v.prevInicioReal.getTime() - 6 * 60 * 60 * 1000);
-                const dataCorteEfim = v.dataFimEfetivo ? new Date(v.dataFimEfetivo.getTime() + 5 * 60000) : new Date(v.prevFimReal.getTime() + 12 * 60 * 60 * 1000);
-                
-                const pico = await ctx.db.telemetria.aggregate({
-                    where: {
-                        veiculoId: v.veiculo.id,
-                        dataHoraLocal: {
-                            gte: dataCorteInicio,
-                            lte: dataCorteEfim,
-                        },
-                        velocidade: { not: null },
-                    },
-                    _max: { velocidade: true },
-                });
-                return { viagemId: v.id, velocidade: pico._max.velocidade };
-            });
-            const picos = await Promise.all(picosPromises);
-            const picMap = new Map(picos.map(p => [p.viagemId, p.velocidade]));
+            // ⚡ Otimização: calcula pico de velocidade diretamente no banco com uma única query SQL
+            // Evita carregar centenas de milhares de linhas de telemetria em memória
+            const picMap = new Map<string, number | null>();
+
+            if (viagens.length > 0) {
+                type PicRow = { viagem_id: string; pic_velocidade: number | null };
+                const picRows = await ctx.db.$queryRaw<PicRow[]>`
+                    SELECT
+                        v.id AS viagem_id,
+                        MAX(t.velocidade)::int AS pic_velocidade
+                    FROM "Viagem" v
+                    JOIN "Telemetria" t ON t."veiculoId" = v."veiculoId"
+                    WHERE v.id = ANY(${viagens.map(v => v.id)}::text[])
+                      AND t."dataHoraLocal" BETWEEN
+                          COALESCE(v."dataInicioEfetivo", v."prevInicioReal") - INTERVAL '5 minutes'
+                          AND
+                          COALESCE(v."dataFimEfetivo", v."prevFimReal") + INTERVAL '5 minutes'
+                      AND t.velocidade IS NOT NULL
+                    GROUP BY v.id
+                `;
+                for (const row of picRows) {
+                    picMap.set(row.viagem_id, row.pic_velocidade);
+                }
+            }
+
 
             const viagensEnriquecidas = viagens.map((v) => {
                 // REGRA: se tem rota cadastrada, usa horários das paradas; senão usa o do Excel
@@ -692,4 +745,226 @@ export const viagemRouter = createTRPCRouter({
                 basesDisponiveis: todasBases,
             };
         }),
-});
+
+    // ====================================================================
+    //  COMPARATIVO DE ATRASOS — Análise por Semana / Mês (Saída ou Chegada)
+    // ====================================================================
+    obterComparativoAtrasos: protectedProcedure
+        .input(z.object({
+            dataInicio: z.string(),         // "yyyy-MM-dd"
+            dataFim: z.string(),            // "yyyy-MM-dd"
+            agrupamento: z.enum(["SEMANA", "MES"]).default("SEMANA"),
+            tipoAnalise: z.enum(["SAIDA", "CHEGADA"]).default("SAIDA"),
+            baseOrigemNome: z.string().optional(),
+        }))
+        .query(async ({ ctx, input }) => {
+            const inicio = new Date(input.dataInicio);
+            inicio.setHours(0, 0, 0, 0);
+            const fim = new Date(input.dataFim);
+            fim.setHours(23, 59, 59, 999);
+
+            const whereClause: Record<string, unknown> = {
+                // Se for chegada, buscamos viagens baseadas na data de previsão de fim?
+                // Ou mantemos agrupando pela data de início da viagem sempre?
+                // O mais padrão é agrupar pela data de início da viagem para a mesma coorte.
+                prevInicioReal: { gte: inicio, lte: fim },
+                status: { in: ["FINALIZADA", "EM_ANDAMENTO", "PROGRAMADA", "CANCELADA"] },
+            };
+            if (input.baseOrigemNome) {
+                whereClause.baseOrigem = { nome: input.baseOrigemNome };
+            }
+
+            const viagens = await ctx.db.viagem.findMany({
+                where: whereClause,
+                select: {
+                    id: true,
+                    motorista: true,
+                    rotaDescricao: true,
+                    prevInicioReal: true,
+                    prevFimReal: true,
+                    dataInicioEfetivo: true,
+                    dataFimEfetivo: true,
+                    status: true,
+                    veiculo: { select: { placa: true } },
+                    baseOrigem: { select: { nome: true, cidade: true } },
+                    baseDestino: { select: { nome: true, cidade: true } },
+                    paradasViagem: {
+                        select: { ordem: true, prevSaida: true, prevChegada: true },
+                        orderBy: { ordem: "asc" },
+                        take: 1,
+                    },
+                },
+                orderBy: { prevInicioReal: "asc" },
+            });
+
+            // Classifica nível de atraso
+            type NivelAtraso = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO";
+            function classificarAtraso(atrasoMin: number | null): NivelAtraso {
+                if (atrasoMin === null || atrasoMin < 10) return "PONTUAL";
+                if (atrasoMin < 30) return "ATENCAO";
+                if (atrasoMin < 60) return "ATRASADO";
+                return "CRITICO";
+            }
+
+            // Formata chave de agrupamento
+            function chaveAgrupamento(d: Date): string {
+                const ano = d.getFullYear();
+                if (input.agrupamento === "MES") {
+                    const mes = String(d.getMonth() + 1).padStart(2, "0");
+                    return `${ano}-${mes}`;
+                }
+                // Semana do mês (Dom a Sab)
+                const mes = d.getMonth();
+                const dateNum = d.getDate();
+                const firstDay = new Date(ano, mes, 1);
+                const daysToFirstSaturday = 6 - firstDay.getDay();
+                const firstSaturdayDate = 1 + daysToFirstSaturday;
+                
+                let weekNum = 1;
+                if (dateNum > firstSaturdayDate) {
+                    const daysAfterWeek1 = dateNum - firstSaturdayDate;
+                    weekNum = 1 + Math.ceil(daysAfterWeek1 / 7);
+                }
+                const mesStr = String(mes + 1).padStart(2, "0");
+                return `${ano}-${mesStr}-W${weekNum}`;
+            }
+
+            function labelAgrupamento(chave: string): string {
+                if (input.agrupamento === "MES") {
+                    const [ano, mes] = chave.split("-");
+                    const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+                    return `${nomes[(parseInt(mes ?? "1") - 1)] ?? mes}/${ano}`;
+                }
+                const [ano, mes, weekStr] = chave.split("-");
+                const weekNum = weekStr.replace("W", "");
+                const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+                const mesNome = nomes[(parseInt(mes ?? "1") - 1)] ?? mes;
+                return `${weekNum}ª Sem. ${mesNome}/${ano}`;
+            }
+
+            function datasAgrupamento(chave: string): { inicio: Date, fim: Date } {
+                if (input.agrupamento === "MES") {
+                    const [ano, mes] = chave.split("-");
+                    const d = new Date(Number(ano), Number(mes) - 1, 1);
+                    return { inicio: startOfMonth(d), fim: endOfMonth(d) };
+                }
+                const [anoStr, mesStr, weekStr] = chave.split("-");
+                const ano = Number(anoStr);
+                const mes = Number(mesStr) - 1;
+                const weekNum = Number(weekStr.replace("W", ""));
+                
+                const firstDay = new Date(ano, mes, 1);
+                const daysToFirstSaturday = 6 - firstDay.getDay();
+                const firstSaturdayDate = 1 + daysToFirstSaturday;
+                
+                if (weekNum === 1) {
+                    return { inicio: firstDay, fim: new Date(ano, mes, firstSaturdayDate) };
+                } else {
+                    const inicioNum = firstSaturdayDate + 1 + (weekNum - 2) * 7;
+                    let fimNum = inicioNum + 6;
+                    
+                    const lastDayOfMonth = endOfMonth(firstDay).getDate();
+                    if (inicioNum > lastDayOfMonth) {
+                        return { inicio: new Date(ano, mes, lastDayOfMonth), fim: new Date(ano, mes, lastDayOfMonth) };
+                    }
+                    if (fimNum > lastDayOfMonth) fimNum = lastDayOfMonth;
+                    
+                    return {
+                        inicio: new Date(ano, mes, inicioNum),
+                        fim: new Date(ano, mes, fimNum)
+                    };
+                }
+            }
+
+            // Detalhes por viagem
+            type ViagemDetalhe = {
+                id: string;
+                motorista: string;
+                placa: string;
+                rotaDescricao: string;
+                baseOrigem: string;
+                baseDestino: string;
+                dataReferencia: Date;
+                dataEfetiva: Date | null;
+                atrasoMin: number | null;
+                nivel: NivelAtraso;
+                status: string;
+            };
+
+            const detalhes: ViagemDetalhe[] = viagens.map((v) => {
+                let dataReferencia: Date;
+                let dataEfetiva: Date | null;
+                let atrasoMin: number | null = null;
+
+                if (input.tipoAnalise === "SAIDA") {
+                    const primeiraParada = v.paradasViagem[0];
+                    dataReferencia = primeiraParada?.prevSaida ?? v.prevInicioReal;
+                    dataEfetiva = v.dataInicioEfetivo;
+                    if (dataEfetiva) {
+                        atrasoMin = Math.round((dataEfetiva.getTime() - dataReferencia.getTime()) / 60000);
+                    }
+                } else {
+                    dataReferencia = v.prevFimReal;
+                    dataEfetiva = v.dataFimEfetivo;
+                    // Só calcula atraso de chegada se a viagem finalizou ou tem data de chegada
+                    if (dataEfetiva) {
+                        atrasoMin = Math.round((dataEfetiva.getTime() - dataReferencia.getTime()) / 60000);
+                    }
+                }
+
+                return {
+                    id: v.id,
+                    motorista: v.motorista,
+                    placa: v.veiculo.placa,
+                    rotaDescricao: v.rotaDescricao,
+                    baseOrigem: v.baseOrigem.cidade,
+                    baseDestino: v.baseDestino.cidade,
+                    dataReferencia,
+                    dataEfetiva,
+                    atrasoMin,
+                    nivel: classificarAtraso(atrasoMin),
+                    status: v.status,
+                };
+            });
+
+            // Agrupa por período (sempre agrupando pela data de início real para ter a mesma base de comparação)
+            const periodoMap = new Map<string, ViagemDetalhe[]>();
+            for (let i = 0; i < viagens.length; i++) {
+                const v = viagens[i]!;
+                const d = detalhes[i]!;
+                
+                // Agrupar pela prevInicio da viagem para manter consistência de safra
+                const chave = chaveAgrupamento(v.prevInicioReal);
+                const bucket = periodoMap.get(chave) ?? [];
+                bucket.push(d);
+                periodoMap.set(chave, bucket);
+            }
+
+            const periodos = Array.from(periodoMap.entries())
+                .sort(([a], [b]) => b.localeCompare(a))
+                .map(([chave, viagens]) => {
+                    const { inicio, fim } = datasAgrupamento(chave);
+                    return {
+                        chave,
+                        label: labelAgrupamento(chave),
+                        dataInicio: inicio,
+                        dataFim: fim,
+                        total: viagens.length,
+                        pontual:  viagens.filter(v => v.nivel === "PONTUAL").length,
+                        atencao:  viagens.filter(v => v.nivel === "ATENCAO").length,
+                        atrasado: viagens.filter(v => v.nivel === "ATRASADO").length,
+                        critico:  viagens.filter(v => v.nivel === "CRITICO").length,
+                        viagens,
+                    };
+                });
+
+            const todasBases = await ctx.db.base.findMany({
+                where: { viagensOrigem: { some: {} } },
+                select: { nome: true, cidade: true },
+                orderBy: { nome: "asc" },
+            });
+
+            return { periodos, basesDisponiveis: todasBases };
+        }),
+});
+

@@ -36,7 +36,8 @@ export async function processarStatusViagens() {
                     lte: dataCorteEfim
                 }
             },
-            orderBy: { dataHoraLocal: "asc" }
+            orderBy: { dataHoraLocal: "asc" },
+            select: { latitude: true, longitude: true, dataHoraLocal: true } // OTIMIZADO: Evita carregar campos desnecessários e poupa muita RAM
         });
 
         if (telemetrias.length === 0) continue;

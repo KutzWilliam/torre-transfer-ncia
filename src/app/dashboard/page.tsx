@@ -396,7 +396,7 @@ export default function DashboardOperacionalPage() {
     // Dados com toda a lógica de enriquecimento
     const { data: viagens, isLoading, dataUpdatedAt, refetch } = api.viagem.obterDashboard.useQuery({ horasFiltro }, {
         refetchInterval: 30000,
-        refetchOnWindowFocus: true,
+        refetchOnWindowFocus: false,
         // ⚡ staleTime: dados ficam "frescos" por 25s — evita re-fetch duplicado ao montar componentes
         staleTime: 25_000,
     });

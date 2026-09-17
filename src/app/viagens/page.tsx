@@ -3,14 +3,30 @@
 import { useEffect, useState, useMemo } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
+import { TruckLoaderFullscreen } from "@/components/TruckLoader";
 
 type StatusFiltro = "TODOS" | "PROGRAMADA" | "EM_ANDAMENTO" | "FINALIZADA" | "CANCELADA";
 
 export default function ListaViagensPage() {
-    const { data: viagens, isLoading } = api.viagem.listar.useQuery(undefined, {
-        refetchInterval: 30000,
-        refetchOnWindowFocus: true,
-    });
+    const { 
+        data, 
+        isLoading,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage
+    } = api.viagem.listar.useInfiniteQuery(
+        { limit: 100 },
+        {
+            getNextPageParam: (lastPage) => lastPage.nextCursor,
+            refetchInterval: 30000,
+            refetchOnWindowFocus: false,
+            staleTime: 25_000,
+        }
+    );
+
+    const viagens = useMemo(() => {
+        return data?.pages.flatMap((page) => page.items) ?? [];
+    }, [data]);
 
     const [busca, setBusca] = useState("");
     const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("TODOS");
@@ -80,12 +96,8 @@ export default function ListaViagensPage() {
         { key: "CANCELADA", label: "Canceladas", color: "bg-red-100 text-red-700 hover:bg-red-200" },
     ];
 
-    if (isLoading && !viagens) {
-        return (
-            <div className="flex h-screen items-center justify-center">
-                <div className="text-xl font-semibold text-gray-500 animate-pulse">Carregando viagens...</div>
-            </div>
-        );
+    if (isLoading && viagens.length === 0) {
+        return <TruckLoaderFullscreen mensagem="Carregando viagens..." />;
     }
 
     return (
@@ -238,11 +250,20 @@ export default function ListaViagensPage() {
                     </table>
 
                     {/* Rodapé da tabela */}
-                    {viagensFiltradas.length > 0 && (
-                        <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
-                            Exibindo {viagensFiltradas.length} de {viagens?.length ?? 0} viagens
-                        </div>
-                    )}
+                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-xs text-gray-400">
+                            Exibindo {viagensFiltradas.length} de {viagens.length} viagens carregadas
+                        </span>
+                        {hasNextPage && (
+                            <button
+                                onClick={() => fetchNextPage()}
+                                disabled={isFetchingNextPage}
+                                className="px-4 py-1.5 bg-white border border-gray-200 shadow-sm rounded-lg text-sm text-gray-700 font-semibold hover:bg-gray-50 focus:ring-2 focus:ring-princesa-green transition-colors disabled:opacity-50"
+                            >
+                                {isFetchingNextPage ? "Carregando..." : "Carregar Mais"}
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

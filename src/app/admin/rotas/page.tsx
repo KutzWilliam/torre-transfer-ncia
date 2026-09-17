@@ -399,7 +399,7 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
 
     return (
         <>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <div className="min-w-0">
                     <h2 className="text-sm font-bold text-gray-900 truncate">{rota.nome}</h2>
                     <p className="text-xs text-gray-400">{total} parada(s) na rota</p>
@@ -422,7 +422,7 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
             </div>
 
             {confirmExcluirRota && (
-                <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200">
+                <div className="mb-4 p-3 bg-red-50 rounded-xl border border-red-200 flex-shrink-0">
                     <p className="text-sm text-red-800 font-medium mb-1">
                         Deseja realmente excluir a rota <strong>{rota.nome}</strong>?
                     </p>
@@ -448,7 +448,7 @@ function PainelRota({ rotaId, onClose }: { rotaId: string; onClose: () => void }
                 </div>
             )}
 
-            <div className="space-y-2 overflow-y-auto flex-1">
+            <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
                 {rota.paradas.map((p: any) => (
                     <div
                         key={p.id}
@@ -549,6 +549,12 @@ export default function AdminRotasPage() {
         refetchOnWindowFocus: false,
     });
 
+    useEffect(() => {
+        if (rotaSelecionadaId && typeof window !== "undefined" && window.innerWidth < 1024) {
+            document.getElementById("painel-rota")?.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [rotaSelecionadaId]);
+
     const rotasFiltradas = (rotas ?? []).filter((r: Rota) =>
         r.nome.toLowerCase().includes(busca.toLowerCase())
     );
@@ -579,11 +585,13 @@ export default function AdminRotasPage() {
                 </div>
             </header>
 
-            <div className="mx-auto w-full max-w-[1400px] px-4 md:px-6 py-6 flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+            <div className="mx-auto w-full max-w-[1400px] px-4 md:px-6 py-6 flex flex-col lg:flex-row gap-6 flex-1 min-h-0 items-start">
                 {/* ── Lista de Rotas ── */}
-                <div className={`flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${rotaSelecionadaId ? "w-full lg:w-96 flex-shrink-0" : "flex-1"}`}>
+                <div className={`flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 ${
+                    rotaSelecionadaId ? "w-full lg:w-96 flex-shrink-0" : "flex-1"
+                } lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-7rem)] lg:h-[calc(100vh-7rem)]`}>
                     {/* Busca */}
-                    <div className="p-4 border-b border-slate-100">
+                    <div className="p-4 border-b border-slate-100 flex-shrink-0">
                         <input
                             type="text"
                             value={busca}
@@ -595,7 +603,7 @@ export default function AdminRotasPage() {
                     </div>
 
                     {/* Lista */}
-                    <div className="overflow-y-auto flex-1">
+                    <div className="overflow-y-auto flex-1 min-h-0">
                         {isLoading ? (
                             <div className="flex items-center justify-center py-20">
                                 <div className="animate-pulse text-slate-400 text-sm">Carregando rotas...</div>
@@ -632,7 +640,10 @@ export default function AdminRotasPage() {
 
                 {/* ── Painel de Edição ── */}
                 {rotaSelecionadaId && (
-                    <div className="flex-1 min-w-0 lg:min-w-[400px] bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5 overflow-hidden flex flex-col h-[600px] lg:h-auto">
+                    <div
+                        id="painel-rota"
+                        className="flex-1 min-w-0 lg:min-w-[400px] bg-white rounded-2xl border border-slate-200 shadow-sm p-4 md:p-5 overflow-hidden flex flex-col h-[600px] lg:h-[calc(100vh-7rem)] lg:max-h-[calc(100vh-7rem)] lg:sticky lg:top-24 lg:self-start"
+                    >
                         <PainelRota
                             key={rotaSelecionadaId}
                             rotaId={rotaSelecionadaId}
@@ -643,7 +654,7 @@ export default function AdminRotasPage() {
 
                 {/* ── Placeholder quando nada selecionado ── */}
                 {!rotaSelecionadaId && (
-                    <div className="hidden lg:flex flex-1 rounded-2xl border-2 border-dashed border-slate-200 flex-col items-center justify-center text-slate-400 gap-3">
+                    <div className="hidden lg:flex flex-1 rounded-2xl border-2 border-dashed border-slate-200 flex-col items-center justify-center text-slate-400 gap-3 min-h-[400px] lg:h-[calc(100vh-7rem)] lg:sticky lg:top-24 lg:self-start">
                         <span className="text-5xl">🗺️</span>
                         <p className="font-semibold px-4 text-center">Selecione uma rota para editar</p>
                         <p className="text-xs px-4 text-center">Clique em qualquer rota da lista para visualizar e editar suas paradas e horários</p>

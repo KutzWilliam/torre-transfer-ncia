@@ -110,40 +110,30 @@ export function TruckLoader({
           <g style={styles.bounce}>
 
             {/* ═══════════════════════════════════
-                BAÚ (cargo box) — verde empresa
+                BAÚ (cargo box) — fundo branco com logo
             ═══════════════════════════════════ */}
             {/* Corpo do baú */}
             <rect
               x="14" y="95"
               width="326" height="170"
               rx="12" ry="12"
-              fill={cor}
+              fill="#ffffff"
               stroke="#0f172a"
               strokeWidth="14"
               strokeLinejoin="round"
             />
-            {/* Reflexo interno sutil */}
-            <rect
-              x="30" y="110"
-              width="294" height="140"
-              rx="7" ry="7"
-              fill="white"
-              fillOpacity="0.09"
-            />
-            {/* Linha decorativa central horizontal */}
-            <line
-              x1="30" y1="180"
-              x2="326" y2="180"
-              stroke="white"
-              strokeOpacity="0.18"
-              strokeWidth="4"
+            {/* Logo da empresa centralizada no baú */}
+            <image 
+              href="/cropped-icon.png" 
+              x="102" y="120" 
+              width="150" height="120" 
+              preserveAspectRatio="xMidYMid meet"
             />
             {/* Traço de separação lateral do baú */}
             <line
               x1="30" y1="240"
               x2="326" y2="240"
               stroke="#0f172a"
-              strokeOpacity="0.15"
               strokeWidth="3"
             />
 
@@ -153,29 +143,53 @@ export function TruckLoader({
             <rect x="14" y="252" width="420" height="20" rx="5" fill="#1e293b" />
 
             {/* ═══════════════════════════════════
-                CABINE
+                CABINE - frente verde
             ═══════════════════════════════════ */}
             {/* Corpo da cabine */}
             <path
               d="M340 118 L340 265 L472 265 L500 244 L500 178 L472 118 Z"
-              fill="#f8fafc"
+              fill={cor}
               stroke="#0f172a"
               strokeWidth="14"
               strokeLinejoin="round"
             />
-            {/* Para-brisa */}
+            <defs>
+              <clipPath id="clipTopHalf">
+                {/* Metade superior do para-brisa */}
+                <rect x="340" y="130" width="140" height="50" />
+              </clipPath>
+            </defs>
+
+            {/* Janela (apenas metade superior) */}
             <path
-              d="M355 130 L355 240 L448 240 L470 218 L470 152 L448 130 Z"
+              d="M355 140 L355 220 L448 220 L468 198 L468 162 L448 140 Z"
               fill="#bfdbfe"
               fillOpacity="0.72"
+              stroke="none"
+              clipPath="url(#clipTopHalf)"
+            />
+            
+            {/* Contorno completo da área do vidro antigo para manter a forma da cabine estruturada */}
+            <path
+              d="M355 140 L355 220 L448 220 L468 198 L468 162 L448 140 Z"
+              fill="none"
               stroke="#0f172a"
               strokeWidth="9"
               strokeLinejoin="round"
             />
-            {/* Divisor vertical do para-brisa */}
+            
+            {/* Linha divisória horizontal (base da janela) */}
             <line
-              x1="412" y1="130"
-              x2="412" y2="240"
+              x1="355" y1="180"
+              x2="468" y2="180"
+              stroke="#0f172a"
+              strokeWidth="7"
+            />
+            
+            {/* Divisor vertical do para-brisa (apenas na janela de cima) */}
+            <line
+              x1="412" y1="140"
+              x2="412" y2="180"
               stroke="#0f172a"
               strokeWidth="7"
             />
