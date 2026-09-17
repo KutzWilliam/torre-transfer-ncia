@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
 
@@ -247,6 +247,326 @@ function ModalNotificacao({
                                 </button>
                             </div>
                         </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Componente: Card da Unidade ─────────────────────────────────────────────
+
+const LIMITE_INICIAL_OCORRENCIAS = 3;
+
+function CardUnidade({
+    unidade,
+    onAbrirNotificacao,
+    onAbrirResolucao,
+}: {
+    unidade: any;
+    onAbrirNotificacao: (id: string, usuarios: any[]) => void;
+    onAbrirResolucao: (id: string, placa: string, unidadeNome: string) => void;
+}) {
+    const [expandido, setExpandido] = useState(false);
+
+    const ocorrenciasExibidas = useMemo(() => {
+        if (expandido) return unidade.ocorrencias;
+        return unidade.ocorrencias.slice(0, LIMITE_INICIAL_OCORRENCIAS);
+    }, [unidade.ocorrencias, expandido]);
+
+    const temMaisOcorrencias = unidade.ocorrencias.length > LIMITE_INICIAL_OCORRENCIAS;
+    const qtdOcultas = unidade.ocorrencias.length - LIMITE_INICIAL_OCORRENCIAS;
+
+    return (
+        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden">
+            {/* Cabeçalho da Unidade */}
+            <div className="p-6 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-lg">🏢</span>
+                        <h2 className="text-lg font-extrabold tracking-tight text-white truncate">
+                            {unidade.nome}
+                        </h2>
+                        <span className="text-xs bg-slate-700/80 text-slate-200 px-2.5 py-0.5 rounded-full font-medium">
+                            {unidade.cidade}
+                        </span>
+                    </div>
+
+                    {/* Responsável da Unidade e Telefone de Contato */}
+                    <div className="mt-2.5 flex items-center gap-3 text-xs text-slate-300 flex-wrap">
+                        {unidade.responsavelNome ? (
+                            <span className="flex items-center gap-1">
+                                <span className="text-slate-400">Responsável:</span>
+                                <strong className="text-slate-100">{unidade.responsavelNome}</strong>
+                            </span>
+                        ) : (
+                            <span className="text-slate-400 italic">Responsável não configurado</span>
+                        )}
+
+                        {unidade.responsavelContato && (
+                            <a
+                                href={`tel:${unidade.responsavelContato}`}
+                                className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold hover:bg-amber-500/30 transition-colors"
+                            >
+                                📞 {unidade.responsavelContato}
+                            </a>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex-shrink-0 text-right">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 font-extrabold text-sm shadow-sm">
+                        <span className="h-2 w-2 rounded-full bg-red-400 animate-ping" />
+                        {unidade.totalOcorrencias} ocorrência(s)
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-6 space-y-6 flex-1 flex flex-col justify-between">
+                {/* ─── Seção 1: Usuários do Sistema Vinculados à Unidade ─── */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                                👥 Usuários Vinculados à Unidade ({unidade.usuarios.length})
+                            </span>
+                        </div>
+                        <span className="text-[11px] text-slate-400">Notificações e resolução</span>
+                    </div>
+
+                    {unidade.usuarios.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {unidade.usuarios.map((u: any) => (
+                                <div
+                                    key={u.id}
+                                    className="bg-white border border-slate-200/70 rounded-xl p-2.5 flex items-center gap-3 shadow-2xs hover:border-blue-300 transition-colors"
+                                >
+                                    <div className="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-extrabold text-xs flex-shrink-0 shadow-sm">
+                                        {(u.name ?? "U").charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-1">
+                                            <p className="text-xs font-bold text-slate-800 truncate">
+                                                {u.name ?? "Sem nome"}
+                                            </p>
+                                            <span
+                                                className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                                    u.role === "ADMIN"
+                                                        ? "bg-amber-100 text-amber-800"
+                                                        : u.role === "GERENTE"
+                                                        ? "bg-purple-100 text-purple-800"
+                                                        : "bg-blue-100 text-blue-800"
+                                                }`}
+                                            >
+                                                {u.role}
+                                            </span>
+                                        </div>
+                                        <a
+                                            href={`mailto:${u.email}`}
+                                            className="text-[11px] text-slate-500 hover:text-blue-600 truncate block transition-colors"
+                                            title={u.email}
+                                        >
+                                            {u.email}
+                                        </a>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="rounded-xl bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 flex items-start gap-2.5">
+                            <span className="text-base flex-shrink-0">⚠️</span>
+                            <div>
+                                <p className="font-bold">Nenhum usuário cadastrado nesta unidade!</p>
+                                <p className="text-rose-600 text-[11px] mt-0.5">
+                                    Nenhum colaborador possui acesso para responder ou ser notificado
+                                    diretamente por esta unidade.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* ─── Seção 2: Ocorrências da Unidade ─── */}
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                            🚨 Ocorrências sob Responsabilidade ({unidade.ocorrencias.length})
+                        </h3>
+                        {temMaisOcorrencias && (
+                            <span className="text-xs text-slate-400 font-medium">
+                                {expandido
+                                    ? `Exibindo todas (${unidade.ocorrencias.length})`
+                                    : `Exibindo 3 de ${unidade.ocorrencias.length}`}
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="space-y-3.5">
+                        {ocorrenciasExibidas.map((oc: any) => {
+                            const tempoMin = tempoDecorridoMinutos(oc.createdAt);
+                            const isUrgente = tempoMin > 60;
+
+                            return (
+                                <div
+                                    key={oc.id}
+                                    className="rounded-2xl border border-slate-200 bg-white p-4.5 space-y-3.5 shadow-2xs hover:border-amber-400 transition-all"
+                                >
+                                    {/* Header Ocorrência */}
+                                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                                        <div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                    Em Atendimento
+                                                </span>
+                                                <span
+                                                    className={`text-xs font-semibold px-2 py-0.5 rounded-md ${
+                                                        isUrgente
+                                                            ? "bg-red-50 text-red-700 font-bold"
+                                                            : "text-slate-500"
+                                                    }`}
+                                                >
+                                                    ⏱️ {tempoAgo(oc.createdAt)}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-extrabold text-slate-800 mt-1.5 flex items-center gap-1.5">
+                                                <span>⚠️</span> {oc.tipoOcorrencia}
+                                            </p>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <p className="text-base font-extrabold font-mono text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-lg inline-block">
+                                                {oc.viagem.veiculo.placa}
+                                            </p>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                                Viagem #{oc.viagem.id}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Rota & Motorista */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-50/80 rounded-xl p-3 border border-slate-100">
+                                        <div>
+                                            <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                                                Rota
+                                            </span>
+                                            <p className="font-bold text-slate-700 truncate mt-0.5">
+                                                {oc.viagem.baseOrigem.cidade} ➔ {oc.viagem.baseDestino.cidade}
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                                                Motorista
+                                            </span>
+                                            <p className="font-semibold text-slate-800 truncate mt-0.5">
+                                                {oc.viagem.motorista}
+                                            </p>
+                                        </div>
+
+                                        {oc.ultimaTelemetria && (
+                                            <div className="sm:col-span-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500">
+                                                <span>
+                                                    📍 Último Sinal:{" "}
+                                                    {formatarDataHora(oc.ultimaTelemetria.dataHoraLocal)}
+                                                </span>
+                                                <span className="font-semibold text-slate-700">
+                                                    Velocidade: {oc.ultimaTelemetria.velocidade ?? 0} km/h
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Descrição do Problema */}
+                                    <div className="text-xs text-slate-600 bg-white rounded-xl p-3 border border-slate-100">
+                                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
+                                            Descrição Inicial:
+                                        </span>
+                                        <p className="leading-relaxed whitespace-pre-wrap">{oc.descricao}</p>
+                                    </div>
+
+                                    {/* Nota da Torre */}
+                                    {oc.notaTorre && (
+                                        <div className="text-xs bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 text-amber-900 space-y-1">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                                                    📞 Nota da Torre de Controle:
+                                                </span>
+                                                <span className="text-[10px] text-amber-600">
+                                                    {oc.acionadoPor?.name ? `Por: ${oc.acionadoPor.name}` : ""}
+                                                </span>
+                                            </div>
+                                            <p className="leading-relaxed whitespace-pre-wrap font-medium">
+                                                {oc.notaTorre}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Rodapé de Ações da Ocorrência */}
+                                    <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100 flex-wrap">
+                                        <span className="text-[11px] text-slate-400">
+                                            Aberta por {oc.abertaPor?.name ?? "Sistema"}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() =>
+                                                    onAbrirNotificacao(oc.id, unidade.usuarios)
+                                                }
+                                                className="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1 shadow-2xs"
+                                            >
+                                                📧 Notificar
+                                            </button>
+                                            <Link
+                                                href={`/viagens/${oc.viagemId}`}
+                                                className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors shadow-2xs"
+                                            >
+                                                Viagem →
+                                            </Link>
+                                            <button
+                                                onClick={() =>
+                                                    onAbrirResolucao(
+                                                        oc.id,
+                                                        oc.viagem.veiculo.placa,
+                                                        unidade.nome
+                                                    )
+                                                }
+                                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20"
+                                            >
+                                                ✓ Resolver
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Botão Ver Mais / Ver Menos */}
+                    {temMaisOcorrencias && (
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setExpandido(!expandido)}
+                                className={`w-full py-2.5 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs ${
+                                    expandido
+                                        ? "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200"
+                                        : "bg-amber-50/80 border-amber-200 text-amber-800 hover:bg-amber-100"
+                                }`}
+                            >
+                                {expandido ? (
+                                    <>
+                                        <span>▲</span>
+                                        <span>Recolher (mostrar apenas as 3 últimas)</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>▼</span>
+                                        <span>
+                                            Ver mais <strong>{qtdOcultas}</strong> ocorrência(s) desta unidade
+                                        </span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>
@@ -550,7 +870,7 @@ export default function PainelUnidadesOcorrenciasPage() {
 
                 {/* ─── Loading State ─────────────────────────────────────────── */}
                 {isLoading && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                         {[1, 2, 3, 4].map((i) => (
                             <div
                                 key={i}
@@ -589,287 +909,18 @@ export default function PainelUnidadesOcorrenciasPage() {
 
                 {/* ─── Lista / Cards de Unidades com Ocorrências ─────────────── */}
                 {!isLoading && unidadesFiltradas.length > 0 && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                         {unidadesFiltradas.map((unidade) => (
-                            <div
+                            <CardUnidade
                                 key={unidade.id}
-                                className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden"
-                            >
-                                {/* Cabeçalho da Unidade */}
-                                <div className="p-6 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-wrap items-start justify-between gap-4">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="text-lg">🏢</span>
-                                            <h2 className="text-lg font-extrabold tracking-tight text-white truncate">
-                                                {unidade.nome}
-                                            </h2>
-                                            <span className="text-xs bg-slate-700/80 text-slate-200 px-2.5 py-0.5 rounded-full font-medium">
-                                                {unidade.cidade}
-                                            </span>
-                                        </div>
-
-                                        {/* Responsável da Unidade e Telefone de Contato */}
-                                        <div className="mt-2.5 flex items-center gap-3 text-xs text-slate-300 flex-wrap">
-                                            {unidade.responsavelNome ? (
-                                                <span className="flex items-center gap-1">
-                                                    <span className="text-slate-400">Responsável:</span>
-                                                    <strong className="text-slate-100">
-                                                        {unidade.responsavelNome}
-                                                    </strong>
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400 italic">
-                                                    Responsável não configurado
-                                                </span>
-                                            )}
-
-                                            {unidade.responsavelContato && (
-                                                <a
-                                                    href={`tel:${unidade.responsavelContato}`}
-                                                    className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold hover:bg-amber-500/30 transition-colors"
-                                                >
-                                                    📞 {unidade.responsavelContato}
-                                                </a>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-shrink-0 text-right">
-                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-300 font-extrabold text-sm shadow-sm">
-                                            <span className="h-2 w-2 rounded-full bg-red-400 animate-ping" />
-                                            {unidade.totalOcorrencias} ocorrência(s)
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="p-6 space-y-6 flex-1 flex flex-col justify-between">
-                                    {/* ─── Seção 1: Usuários do Sistema Vinculados à Unidade ─── */}
-                                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                                                    👥 Usuários Vinculados à Unidade ({unidade.usuarios.length})
-                                                </span>
-                                            </div>
-                                            <span className="text-[11px] text-slate-400">
-                                                Notificações e resolução
-                                            </span>
-                                        </div>
-
-                                        {unidade.usuarios.length > 0 ? (
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                                {unidade.usuarios.map((u) => (
-                                                    <div
-                                                        key={u.id}
-                                                        className="bg-white border border-slate-200/70 rounded-xl p-2.5 flex items-center gap-3 shadow-2xs hover:border-blue-300 transition-colors"
-                                                    >
-                                                        <div className="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-extrabold text-xs flex-shrink-0 shadow-sm">
-                                                            {(u.name ?? "U").charAt(0).toUpperCase()}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center justify-between gap-1">
-                                                                <p className="text-xs font-bold text-slate-800 truncate">
-                                                                    {u.name ?? "Sem nome"}
-                                                                </p>
-                                                                <span
-                                                                    className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                                                                        u.role === "ADMIN"
-                                                                            ? "bg-amber-100 text-amber-800"
-                                                                            : u.role === "GERENTE"
-                                                                            ? "bg-purple-100 text-purple-800"
-                                                                            : "bg-blue-100 text-blue-800"
-                                                                    }`}
-                                                                >
-                                                                    {u.role}
-                                                                </span>
-                                                            </div>
-                                                            <a
-                                                                href={`mailto:${u.email}`}
-                                                                className="text-[11px] text-slate-500 hover:text-blue-600 truncate block transition-colors"
-                                                                title={u.email}
-                                                            >
-                                                                {u.email}
-                                                            </a>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 flex items-start gap-2.5">
-                                                <span className="text-base flex-shrink-0">⚠️</span>
-                                                <div>
-                                                    <p className="font-bold">
-                                                        Nenhum usuário cadastrado nesta unidade!
-                                                    </p>
-                                                    <p className="text-rose-600 text-[11px] mt-0.5">
-                                                        Nenhum colaborador possui acesso para responder ou ser
-                                                        notificado diretamente por esta unidade.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* ─── Seção 2: Ocorrências da Unidade ─── */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                                                🚨 Ocorrências sob Responsabilidade ({unidade.ocorrencias.length})
-                                            </h3>
-                                        </div>
-
-                                        <div className="space-y-3.5">
-                                            {unidade.ocorrencias.map((oc) => {
-                                                const tempoMin = tempoDecorridoMinutos(oc.createdAt);
-                                                const isUrgente = tempoMin > 60;
-
-                                                return (
-                                                    <div
-                                                        key={oc.id}
-                                                        className="rounded-2xl border border-slate-200 bg-white p-4.5 space-y-3.5 shadow-2xs hover:border-amber-400 transition-all"
-                                                    >
-                                                        {/* Header Ocorrência */}
-                                                        <div className="flex items-start justify-between gap-2 flex-wrap">
-                                                            <div>
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                                                        Em Atendimento
-                                                                    </span>
-                                                                    <span
-                                                                        className={`text-xs font-semibold px-2 py-0.5 rounded-md ${
-                                                                            isUrgente
-                                                                                ? "bg-red-50 text-red-700 font-bold"
-                                                                                : "text-slate-500"
-                                                                        }`}
-                                                                    >
-                                                                        ⏱️ {tempoAgo(oc.createdAt)}
-                                                                    </span>
-                                                                </div>
-                                                                <p className="text-sm font-extrabold text-slate-800 mt-1.5 flex items-center gap-1.5">
-                                                                    <span>⚠️</span> {oc.tipoOcorrencia}
-                                                                </p>
-                                                            </div>
-
-                                                            <div className="text-right">
-                                                                <p className="text-base font-extrabold font-mono text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-lg inline-block">
-                                                                    {oc.viagem.veiculo.placa}
-                                                                </p>
-                                                                <p className="text-[11px] text-slate-400 mt-0.5">
-                                                                    Viagem #{oc.viagem.id}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Rota & Motorista */}
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-slate-50/80 rounded-xl p-3 border border-slate-100">
-                                                            <div>
-                                                                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                                                                    Rota
-                                                                </span>
-                                                                <p className="font-bold text-slate-700 truncate mt-0.5">
-                                                                    {oc.viagem.baseOrigem.cidade} ➔{" "}
-                                                                    {oc.viagem.baseDestino.cidade}
-                                                                </p>
-                                                            </div>
-                                                            <div>
-                                                                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                                                                    Motorista
-                                                                </span>
-                                                                <p className="font-semibold text-slate-800 truncate mt-0.5">
-                                                                    {oc.viagem.motorista}
-                                                                </p>
-                                                            </div>
-
-                                                            {oc.ultimaTelemetria && (
-                                                                <div className="sm:col-span-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500">
-                                                                    <span>
-                                                                        📍 Último Sinal:{" "}
-                                                                        {formatarDataHora(
-                                                                            oc.ultimaTelemetria.dataHoraLocal
-                                                                        )}
-                                                                    </span>
-                                                                    <span className="font-semibold text-slate-700">
-                                                                        Velocidade:{" "}
-                                                                        {oc.ultimaTelemetria.velocidade ?? 0} km/h
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Descrição do Problema */}
-                                                        <div className="text-xs text-slate-600 bg-white rounded-xl p-3 border border-slate-100">
-                                                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">
-                                                                Descrição Inicial:
-                                                            </span>
-                                                            <p className="leading-relaxed whitespace-pre-wrap">
-                                                                {oc.descricao}
-                                                            </p>
-                                                        </div>
-
-                                                        {/* Nota da Torre */}
-                                                        {oc.notaTorre && (
-                                                            <div className="text-xs bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 text-amber-900 space-y-1">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                                                                        📞 Nota da Torre de Controle:
-                                                                    </span>
-                                                                    <span className="text-[10px] text-amber-600">
-                                                                        {oc.acionadoPor?.name
-                                                                            ? `Por: ${oc.acionadoPor.name}`
-                                                                            : ""}
-                                                                    </span>
-                                                                </div>
-                                                                <p className="leading-relaxed whitespace-pre-wrap font-medium">
-                                                                    {oc.notaTorre}
-                                                                </p>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Rodapé de Ações da Ocorrência */}
-                                                        <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100 flex-wrap">
-                                                            <span className="text-[11px] text-slate-400">
-                                                                Aberta por {oc.abertaPor?.name ?? "Sistema"}
-                                                            </span>
-                                                            <div className="flex items-center gap-2">
-                                                                <button
-                                                                    onClick={() =>
-                                                                        setSelectedOcorrenciaNotificacao({
-                                                                            id: oc.id,
-                                                                            usuarios: unidade.usuarios,
-                                                                        })
-                                                                    }
-                                                                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1 shadow-2xs"
-                                                                >
-                                                                    📧 Notificar
-                                                                </button>
-                                                                <Link
-                                                                    href={`/viagens/${oc.viagemId}`}
-                                                                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors shadow-2xs"
-                                                                >
-                                                                    Viagem →
-                                                                </Link>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        setSelectedOcorrenciaResolucao({
-                                                                            id: oc.id,
-                                                                            placa: oc.viagem.veiculo.placa,
-                                                                            unidadeNome: unidade.nome,
-                                                                        })
-                                                                    }
-                                                                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20"
-                                                                >
-                                                                    ✓ Resolver
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                                unidade={unidade}
+                                onAbrirNotificacao={(id, usuarios) =>
+                                    setSelectedOcorrenciaNotificacao({ id, usuarios })
+                                }
+                                onAbrirResolucao={(id, placa, unidadeNome) =>
+                                    setSelectedOcorrenciaResolucao({ id, placa, unidadeNome })
+                                }
+                            />
                         ))}
                     </div>
                 )}
