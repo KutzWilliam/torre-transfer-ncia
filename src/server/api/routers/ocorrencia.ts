@@ -576,4 +576,94 @@ export const ocorrenciaRouter = createTRPCRouter({
                 },
             });
         }),
+
+    /**
+     * Painel de Gestão para a Torre de Controle:
+     * Agrupa as unidades responsáveis que possuem ocorrências ativas (EM_ATENDIMENTO ou ABERTA com unidade),
+     * incluindo os usuários vinculados à unidade, contatos, ocorrências detalhadas e última telemetria.
+     */
+    painelUnidades: protectedProcedure.query(async ({ ctx }) => {
+        // Busca todas as bases que possuem ocorrências ativas vinculadas
+        const bases = await ctx.db.base.findMany({
+            where: {
+                ocorrenciasResponsavel: {
+                    some: {
+                        status: { in: ["EM_ATENDIMENTO", "ABERTA"] },
+                    },
+                },
+            },
+            orderBy: { nome: "asc" },
+            include: {
+                usuarios: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        role: true,
+                        createdAt: true,
+                    },
+                    orderBy: { name: "asc" },
+                },
+                ocorrenciasResponsavel: {
+                    where: {
+                        status: { in: ["EM_ATENDIMENTO", "ABERTA"] },
+                    },
+                    orderBy: { createdAt: "desc" },
+                    include: {
+                        abertaPor: { select: { id: true, name: true, email: true } },
+                        acionadoPor: { select: { id: true, name: true, email: true } },
+                        viagem: {
+                            include: {
+                                veiculo: true,
+                                baseOrigem: { select: { id: true, nome: true, cidade: true } },
+                                baseDestino: { select: { id: true, nome: true, cidade: true } },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Para cada ocorrência de cada base, busca a última telemetria do veículo
+        const basesComTelemetria = await Promise.all(
+            bases.map(async (base) => {
+                const ocorrenciasComTelemetria = await Promise.all(
+                    base.ocorrenciasResponsavel.map(async (oc) => {
+                        const ultimaTelemetria = await ctx.db.telemetria.findFirst({
+                            where: { veiculoId: oc.viagem.veiculo.id },
+                            orderBy: { dataHoraLocal: "desc" },
+                        });
+                        return {
+                            ...oc,
+                            ultimaTelemetria,
+                        };
+                    })
+                );
+
+                return {
+                    id: base.id,
+                    nome: base.nome,
+                    cidade: base.cidade,
+                    responsavelNome: base.responsavelNome,
+                    responsavelContato: base.responsavelContato,
+                    totalOcorrencias: ocorrenciasComTelemetria.length,
+                    usuarios: base.usuarios,
+                    ocorrencias: ocorrenciasComTelemetria,
+                };
+            })
+        );
+
+        // Também retornamos estatísticas gerais para os KPIs do topo
+        const totalGeralOcorrencias = basesComTelemetria.reduce(
+            (acc, b) => acc + b.totalOcorrencias,
+            0
+        );
+
+        return {
+            unidades: basesComTelemetria,
+            totalUnidadesComOcorrencias: basesComTelemetria.length,
+            totalGeralOcorrencias,
+        };
+    }),
 });
+

@@ -836,7 +836,7 @@ export const viagemRouter = createTRPCRouter({
                     return `${nomes[(parseInt(mes ?? "1") - 1)] ?? mes}/${ano}`;
                 }
                 const [ano, mes, weekStr] = chave.split("-");
-                const weekNum = weekStr.replace("W", "");
+                const weekNum = (weekStr ?? "").replace("W", "");
                 const nomes = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
                 const mesNome = nomes[(parseInt(mes ?? "1") - 1)] ?? mes;
                 return `${weekNum}ª Sem. ${mesNome}/${ano}`;
@@ -851,7 +851,7 @@ export const viagemRouter = createTRPCRouter({
                 const [anoStr, mesStr, weekStr] = chave.split("-");
                 const ano = Number(anoStr);
                 const mes = Number(mesStr) - 1;
-                const weekNum = Number(weekStr.replace("W", ""));
+                const weekNum = Number((weekStr ?? "").replace("W", ""));
                 
                 const firstDay = new Date(ano, mes, 1);
                 const daysToFirstSaturday = 6 - firstDay.getDay();

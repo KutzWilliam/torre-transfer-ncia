@@ -16,11 +16,13 @@ export default function Navbar({ session }: { session: Session | null }) {
     const isAdmin = session?.user?.role === "ADMIN";
 
     const links = [
-        { href: "/dashboard",             label: "Dashboard Operacional" },
-        { href: "/viagens",               label: "Lista de Viagens" },
-        { href: "/analise",               label: "Análise de Atrasos",       highlight: true },
-        { href: "/auditoria-manifesto",   label: "🛡 Auditoria Manifestos",  highlight: true },
-        { href: "/chegadas-unidade",      label: "📦 Chegadas por Unidade",  highlight: true },
+        { href: "/dashboard",                     label: "Dashboard Operacional" },
+        { href: "/ocorrencias",                   label: "🚨 Central de Ocorrências", highlight: true },
+        { href: "/ocorrencias/painel-unidades",   label: "🏭 Ocorrências por Unidade", highlight: true },
+        { href: "/viagens",                       label: "Lista de Viagens" },
+        { href: "/analise",                       label: "Análise de Atrasos",       highlight: true },
+        { href: "/auditoria-manifesto",           label: "🛡 Auditoria Manifestos",  highlight: true },
+        { href: "/chegadas-unidade",              label: "📦 Chegadas por Unidade",  highlight: true },
         ...(isAdmin ? [
             { href: "/viagens/upload", label: "Upload de Planilha" },
             { href: "/admin",          label: "⚙ Administração",  admin: true },

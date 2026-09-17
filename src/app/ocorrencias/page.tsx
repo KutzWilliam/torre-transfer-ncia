@@ -688,6 +688,9 @@ export default function OcorrenciasPage() {
                         <Link href="/dashboard" className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white hover:bg-slate-700 transition-colors">
                             🚛 Dashboard
                         </Link>
+                        <Link href="/ocorrencias/painel-unidades" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition-colors flex items-center gap-1.5 shadow-2xs">
+                            🏭 Por Unidade
+                        </Link>
                         <Link href="/viagens" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
                             📋 Viagens
                         </Link>

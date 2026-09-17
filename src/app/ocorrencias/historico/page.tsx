@@ -496,6 +496,12 @@ export default function HistoricoOcorrenciasPage() {
                             📄 Gerar Relatório
                         </button>
                         <Link
+                            href="/ocorrencias/painel-unidades"
+                            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition-colors flex items-center gap-1.5 shadow-2xs"
+                        >
+                            🏭 Por Unidade
+                        </Link>
+                        <Link
                             href="/ocorrencias"
                             className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors"
                         >
