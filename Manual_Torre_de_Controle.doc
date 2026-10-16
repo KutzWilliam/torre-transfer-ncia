@@ -1,0 +1,415 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'><title>Manual Torre de Controle</title><style>body{font-family:Calibri,Arial;font-size:11pt}h1{color:#14532d}h2{color:#166534;border-bottom:1px solid #999}table{border-collapse:collapse}td,th{border:1px solid #888;padding:4px}th{background:#dcfce7}img{max-width:600px}blockquote{color:#555;border-left:3px solid #999;padding-left:8px}</style></head><body><h1>🚛 Torre de Controle — Manual do Usuário</h1>
+<p>Bem-vindo à <strong>Torre de Controle</strong>, o sistema da <strong>Princesa dos Campos</strong> para acompanhar as viagens de transferência, tratar ocorrências e analisar o desempenho da operação, tudo em um só lugar.</p>
+<blockquote>
+<p>📸 <strong>Imagens:</strong> cada tela tem um espaço <code>![...](imagens/arquivo.png)</code>. Salve o print na pasta <code>imagens/</code> (ao lado deste arquivo) com o nome indicado.</p>
+</blockquote>
+<hr>
+<h2>Índice</h2>
+<ol>
+<li><a href="#1-o-que-%C3%A9-o-sistema">O que é o sistema</a></li>
+<li><a href="#2-como-acessar">Como acessar</a></li>
+<li><a href="#3-menu-de-navega%C3%A7%C3%A3o">Menu de navegação</a></li>
+<li><a href="#4-dashboard-operacional">Dashboard Operacional</a></li>
+<li><a href="#5-painel-de-tv">Painel de TV</a></li>
+<li><a href="#6-lista-de-viagens">Lista de Viagens</a></li>
+<li><a href="#7-detalhe-da-viagem">Detalhe da Viagem</a></li>
+<li><a href="#8-upload-de-planilha-admin">Upload de Planilha</a></li>
+<li><a href="#9-central-de-ocorr%C3%AAncias">Central de Ocorrências</a></li>
+<li><a href="#10-ocorr%C3%AAncias-por-unidade">Ocorrências por Unidade</a></li>
+<li><a href="#11-hist%C3%B3rico-de-ocorr%C3%AAncias">Histórico de Ocorrências</a></li>
+<li><a href="#12-an%C3%A1lise-de-atrasos">Análise de Atrasos</a></li>
+<li><a href="#13-auditoria-de-manifestos">Auditoria de Manifestos</a></li>
+<li><a href="#14-chegadas-por-unidade">Chegadas por Unidade</a></li>
+<li><a href="#15-monitoramento-de-seguro">Monitoramento de Seguro</a></li>
+<li><a href="#16-administra%C3%A7%C3%A3o-admin">Administração</a></li>
+<li><a href="#17-automa%C3%A7%C3%B5es-do-sistema">Automações do sistema</a></li>
+<li><a href="#18-gloss%C3%A1rio-e-d%C3%BAvidas-frequentes">Glossário e dúvidas frequentes</a></li>
+</ol>
+<hr>
+<h2>1. O que é o sistema</h2>
+<p>A Torre de Controle reúne em uma única plataforma:</p>
+<ul>
+<li>📍 <strong>Acompanhamento em tempo real</strong> das viagens, com a posição do veículo vinda do rastreador (Sascar).</li>
+<li>⏱ <strong>Alertas automáticos de atraso</strong>, sem precisar conferir planilhas.</li>
+<li>🚨 <strong>Gestão de ocorrências</strong> (pneu furado, acidente, alarmes da AngelLira etc.), do aviso até a resolução.</li>
+<li>🛡 <strong>Auditoria de manifestos</strong> de alto valor.</li>
+<li>📊 <strong>Análises gerenciais</strong> de pontualidade, rotas e bases.</li>
+<li>📑 <strong>Monitoramento dos cadastros de seguro</strong> (motoristas e veículos na Angel).</li>
+<li>📧 <strong>Relatório semanal</strong> enviado automaticamente aos gerentes.</li>
+</ul>
+<h3>Quem usa</h3>
+<table>
+<thead>
+<tr>
+<th>Perfil</th>
+<th>O que pode fazer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Operador</strong></td>
+<td>Acompanhar viagens e registrar/atender ocorrências</td>
+</tr>
+<tr>
+<td><strong>Gerente</strong></td>
+<td>Tudo do operador + análises, auditoria e seguro</td>
+</tr>
+<tr>
+<td><strong>Administrador</strong></td>
+<td>Tudo + upload da planilha diária e cadastros do sistema</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>2. Como acessar</h2>
+<p><img src="imagens/login.png" alt="Tela de login"></p>
+<ol>
+<li>Abra o endereço do sistema no navegador.</li>
+<li>Informe seu <strong>e-mail</strong> e <strong>senha</strong>.</li>
+<li>Clique em entrar. Você será levado ao Dashboard.</li>
+</ol>
+<p>Se a sessão expirar, o sistema volta ao login e, depois de entrar, retorna à página onde você estava. Para sair, use o botão <strong>Sair</strong> no menu superior.</p>
+<h3>Primeiro acesso (senha inicial)</h3>
+<p>Todo usuário novo é criado com a senha inicial <strong><code>Princesa123</code></strong>. No primeiro login o sistema pede automaticamente que você <strong>crie uma nova senha</strong>:</p>
+<p><img src="imagens/trocar-senha.png" alt="Tela de troca de senha"></p>
+<ol>
+<li>Entre com seu e-mail e a senha inicial <code>Princesa123</code>.</li>
+<li>Na tela <em>Crie sua nova senha</em>, informe a senha atual (inicial), a <strong>nova senha</strong> (mínimo de 8 caracteres, diferente da inicial) e a confirmação.</li>
+<li>Clique em <strong>Salvar nova senha</strong>. Você voltará ao login: entre agora com a nova senha.</li>
+</ol>
+<p>Enquanto a senha inicial não for trocada, nenhuma outra tela do sistema fica disponível.</p>
+<blockquote>
+<p>Esqueceu a senha? Peça a um administrador: ele pode <strong>redefinir</strong> sua senha para <code>Princesa123</code>, e você criará uma nova no próximo acesso.</p>
+</blockquote>
+<hr>
+<h2>3. Menu de navegação</h2>
+<p><img src="imagens/menu.png" alt="Menu superior"></p>
+<p>O menu fica no topo de todas as telas e mostra o seu e-mail logado:</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Para que serve</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Dashboard Operacional</td>
+<td>Acompanhar viagens do dia</td>
+</tr>
+<tr>
+<td>Central de Ocorrências</td>
+<td>Abrir e atender ocorrências</td>
+</tr>
+<tr>
+<td>Ocorrências por Unidade</td>
+<td>Ver pendências de cada filial</td>
+</tr>
+<tr>
+<td>Lista de Viagens</td>
+<td>Consultar viagens por período</td>
+</tr>
+<tr>
+<td>Análise de Atrasos</td>
+<td>Relatórios e indicadores</td>
+</tr>
+<tr>
+<td>Auditoria Manifestos</td>
+<td>Conferir manifestos de alto valor</td>
+</tr>
+<tr>
+<td>Chegadas por Unidade</td>
+<td>Cargas que chegam em cada filial</td>
+</tr>
+<tr>
+<td>Monitoramento de Seguro</td>
+<td>Validade dos cadastros na Angel</td>
+</tr>
+<tr>
+<td>Upload de Planilha <em>(admin)</em></td>
+<td>Importar a programação diária</td>
+</tr>
+<tr>
+<td>Administração <em>(admin)</em></td>
+<td>Cadastros do sistema</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>4. Dashboard Operacional</h2>
+<p><img src="imagens/dashboard.png" alt="Dashboard Operacional"></p>
+<p><strong>Para que serve:</strong> é a tela principal. Mostra todas as viagens do período escolhido e se atualiza sozinha a cada <strong>30 segundos</strong>.</p>
+<h3>O que você vê</h3>
+<ul>
+<li><strong>Tabela de viagens</strong> com: número da viagem, placa, motorista, rota, horários de saída e chegada (<strong>previsto, real e diferença</strong>), próxima parada, alerta e situação.</li>
+<li><strong>Barra de progresso</strong> do percurso, calculada pelo GPS, e a <strong>previsão de chegada</strong> conforme a velocidade atual.</li>
+<li><strong>Selo de chegada antecipada</strong> quando o veículo chega 30 min ou mais antes do previsto.</li>
+<li><strong>Ícone ⚠</strong> nas viagens com ocorrência em andamento.</li>
+</ul>
+<h3>O que você pode fazer</h3>
+<ul>
+<li>Trocar o período: <strong>Hoje, Ontem, Esta Semana, Este Mês</strong> ou uma data específica.</li>
+<li>Filtrar por status, origem, destino ou nível de alerta, e buscar por texto (placa, motorista, rota...).</li>
+<li>Clicar em uma viagem para abrir o detalhe.</li>
+<li><strong>Sincronizar</strong> manualmente os dados do GPS.</li>
+<li>Abrir o <strong>Painel de TV</strong>.</li>
+</ul>
+<h3>Como ler os alertas</h3>
+<table>
+<thead>
+<tr>
+<th>Alerta</th>
+<th>Significado</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>🟢 <strong>Pontual</strong></td>
+<td>Dentro do prazo</td>
+</tr>
+<tr>
+<td>🟡 <strong>Atenção</strong></td>
+<td>1 a 30 min de atraso</td>
+</tr>
+<tr>
+<td>🟠 <strong>Atrasado</strong></td>
+<td>31 a 120 min de atraso</td>
+</tr>
+<tr>
+<td>🔴 <strong>Crítico</strong></td>
+<td>Mais de 120 min de atraso</td>
+</tr>
+<tr>
+<td>⚫ <strong>Sem sinal</strong></td>
+<td>Rastreador sem comunicar há mais de 2 horas</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. Painel de TV</h2>
+<p><img src="imagens/painel-tv.png" alt="Painel de TV"></p>
+<p><strong>Para que serve:</strong> exibir a operação em monitores/TVs da sala de controle, em tela cheia.</p>
+<ul>
+<li><strong>Indicadores no topo:</strong> Em Rota, Atrasadas, Críticas (piscando) e Concluídas.</li>
+<li><strong>Troca de página automática</strong> a cada 60 segundos, com barra de contagem regressiva.</li>
+<li><strong>Filtros rápidos:</strong> Em Rota, Concluídas, Próximas 6h, e período por data.</li>
+<li><strong>Relógio sincronizado com o servidor</strong>, para que a TV nunca mostre hora errada.</li>
+<li><strong>Controle de som (🔊 / 🔇):</strong> no cabeçalho, permite ativar ou silenciar os alertas sonoros da TV.</li>
+<li><strong>Botão Testar:</strong> no cabeçalho, permite simular e demonstrar o alerta na TV.</li>
+<li>Para sair, pressione <strong>ESC</strong> (caso haja um alerta de ocorrência na tela, o primeiro ESC fecha apenas o alerta).</li>
+</ul>
+<h3>🚨 Alerta em Tempo Real de Ocorrências na TV</h3>
+<p>Sempre que ocorrer uma movimentação em ocorrências, o Painel da TV emite um <strong>alerta sonoro automático</strong> e exibe um <strong>modal central</strong> com todas as informações essenciais:</p>
+<p><img src="imagens/painel-tv-alerta.png" alt="Alerta de ocorrência na TV"></p>
+<ol>
+<li><strong>Nova Ocorrência (🚨 Vermelho):</strong> toca bip de atenção urgente repetido e exibe veículo/placa, viagem, motorista, rota (origem → destino), tipo do problema e descrição completa relatada.</li>
+<li><strong>Em Atendimento (⚠️ Âmbar):</strong> toca tom de atenção e atualiza a tela informando quem da Torre assumiu o caso, qual unidade/filial foi acionada e as instruções alinhadas com o motorista.</li>
+<li><strong>Resolução (✅ Verde):</strong> toca tom harmonioso de sucesso confirmando a liberação do veículo, quem concluiu e a descrição da solução aplicada.</li>
+</ol>
+<p>O modal fecha automaticamente após 20 segundos com contagem regressiva em tempo real na tela, ou pode ser dispensado a qualquer momento com a tecla <strong>ESC</strong> ou pelo botão dispensar. Se houver mais de um alerta simultâneo, o painel organiza em fila (ex.: &quot;1 de 2&quot;).</p>
+<p>Abra pelo botão de TV no Dashboard.</p>
+<hr>
+<h2>6. Lista de Viagens</h2>
+<p><img src="imagens/viagens-lista.png" alt="Lista de Viagens"></p>
+<p><strong>Para que serve:</strong> consultar qualquer viagem, passada ou futura, de forma paginada.</p>
+<ul>
+<li>Filtre por <strong>período</strong> e <strong>status</strong> (Programada, Em andamento, Finalizada, Cancelada).</li>
+<li>Clique na viagem para ver todos os detalhes.</li>
+</ul>
+<hr>
+<h2>7. Detalhe da Viagem</h2>
+<p><img src="imagens/viagem-detalhe.png" alt="Detalhe da Viagem"></p>
+<p><strong>Para que serve:</strong> ver tudo sobre uma única viagem.</p>
+<ul>
+<li><strong>Dados gerais:</strong> motorista, veículo, rota, origem e destino, previsto × realizado.</li>
+<li><strong>Linha do tempo das paradas:</strong> chegada e saída previstas e efetivas de cada base.</li>
+<li><strong>Mapa</strong> com a posição do veículo e o trajeto.</li>
+<li><strong>Ocorrências</strong> registradas na viagem.</li>
+<li><strong>Justificativas de atraso</strong> (saída, tempo de parada excedido ou deslocamento) com motivo, minutos e quem registrou.</li>
+</ul>
+<blockquote>
+<p><strong>Transbordo:</strong> se o veículo chega atrasado a uma base intermediária, o sistema recalcula até que horas ele pode sair (<em>nova previsão de saída</em>).</p>
+</blockquote>
+<hr>
+<h2>8. Upload de Planilha <em>(admin)</em></h2>
+<p><img src="imagens/upload.png" alt="Upload de Planilha"></p>
+<p><strong>Para que serve:</strong> importar a programação diária de transferências.</p>
+<p><strong>Passo a passo</strong></p>
+<ol>
+<li>Acesse <strong>Upload de Planilha</strong>.</li>
+<li>Selecione o arquivo Excel (<code>.xlsx</code>) do relatório de viagens.</li>
+<li>Confira o resumo e confirme a importação.</li>
+<li>Acompanhe o resultado (viagens criadas/atualizadas).</li>
+</ol>
+<p><strong>O sistema faz automaticamente:</strong></p>
+<ul>
+<li>Cria a viagem ou atualiza se ela já existir (não duplica).</li>
+<li>Associa a <strong>rota padrão</strong> (mesmo com diferença de acento ou maiúsculas).</li>
+<li>Cadastra bases novas, se necessário.</li>
+<li>Escolhe a placa correta (programada, mobile ou reboque) conforme o rastreador.</li>
+<li>Monta as paradas e horários previstos.</li>
+</ul>
+<hr>
+<h2>9. Central de Ocorrências</h2>
+<p><img src="imagens/ocorrencias.png" alt="Central de Ocorrências"></p>
+<p><strong>Para que serve:</strong> registrar e tratar qualquer problema de uma viagem. Novas ocorrências emitem um <strong>alerta sonoro</strong>.</p>
+<h3>Como uma ocorrência funciona (3 fases)</h3>
+<table>
+<thead>
+<tr>
+<th>Fase</th>
+<th>Quem</th>
+<th>O que acontece</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1. <strong>Abertura</strong></td>
+<td>Torre ou sistema</td>
+<td>Registra tipo e descrição. A localização do veículo é copiada automaticamente.</td>
+</tr>
+<tr>
+<td>2. <strong>Atendimento</strong></td>
+<td>Torre</td>
+<td>Assume o caso, liga ao motorista, anota o que foi combinado e define a <strong>unidade responsável</strong>.</td>
+</tr>
+<tr>
+<td>3. <strong>Resolução</strong></td>
+<td>Unidade</td>
+<td>Registra como foi resolvido. A ocorrência fica como <strong>Resolvida</strong>.</td>
+</tr>
+</tbody></table>
+<h3>Como abrir uma ocorrência</h3>
+<ol>
+<li>Clique para criar nova ocorrência.</li>
+<li>Digite a <strong>placa</strong> — o sistema localiza a viagem.</li>
+<li>Escolha o <strong>tipo</strong> e descreva o problema.</li>
+<li>Salve.</li>
+</ol>
+<p><strong>Tipos:</strong> Pneu Furado, Avaria Mecânica, Acidente, Atraso de Tráfego, Problema com Carga, Combustível, Interdição de Via, Problema com Documentação e Outro.</p>
+<h3>Ocorrências automáticas</h3>
+<p>Alarmes enviados por e-mail pela <strong>AngelLira</strong> (excesso de velocidade, fadiga, parada não autorizada, desvio de rota, perda de sinal etc.) viram ocorrências sozinhos, sem duplicar.</p>
+<h3>Outros recursos</h3>
+<ul>
+<li><strong>Mapa</strong> com o local da ocorrência.</li>
+<li><strong>Notificação por e-mail</strong> ao responsável da unidade.</li>
+<li>Status: 🔴 Aberta → 🟠 Em atendimento → 🟢 Resolvida.</li>
+</ul>
+<hr>
+<h2>10. Ocorrências por Unidade</h2>
+<p><img src="imagens/ocorrencias-unidades.png" alt="Ocorrências por Unidade"></p>
+<p><strong>Para que serve:</strong> mostrar, para cada filial, quais ocorrências estão aguardando ação e <strong>há quanto tempo</strong> (ex.: &quot;há 1h 20m&quot;). Ideal para cobrar respostas.</p>
+<hr>
+<h2>11. Histórico de Ocorrências</h2>
+<p><img src="imagens/ocorrencias-historico.png" alt="Histórico de Ocorrências"></p>
+<p><strong>Para que serve:</strong> consultar o que já aconteceu. Cada ocorrência mostra a linha do tempo: <strong>aberta (por quem/quando) → torre assumiu → resolvida (por quem/quando e como)</strong>.</p>
+<hr>
+<h2>12. Análise de Atrasos</h2>
+<p><img src="imagens/analise.png" alt="Hub de Análises"></p>
+<p><strong>Para que serve:</strong> entender o desempenho da operação. A tela inicial reúne três módulos:</p>
+<h3>📊 Analytics Operacional</h3>
+<p><img src="imagens/analise-operacional.png" alt="Analytics Operacional"></p>
+<p>Indicadores das viagens finalizadas: <strong>pontualidade</strong>, <strong>ranking de rotas</strong>, distribuição de atrasos e tabela detalhada com <strong>exportação para Excel</strong>.</p>
+<h3>🔁 Comparativo por Período</h3>
+<p><img src="imagens/analise-comparativo.png" alt="Comparativo por Período"></p>
+<p>Compara semanas ou meses lado a lado e mostra quantas rotas atrasaram na saída por nível (Pontual → Crítico). Clique em uma rota para ver os detalhes.</p>
+<h3>📍 Atrasos por Origem</h3>
+<p><img src="imagens/analise-origem.png" alt="Atrasos por Origem"></p>
+<p>Ranking das bases de origem com mais atrasos, para direcionar ações nas unidades mais críticas.</p>
+<hr>
+<h2>13. Auditoria de Manifestos</h2>
+<p><img src="imagens/auditoria.png" alt="Auditoria de Manifestos"></p>
+<p><strong>Para que serve:</strong> garantir que toda carga de alto valor tenha uma viagem registrada no sistema.</p>
+<ul>
+<li>Analisa manifestos com valor total acima de <strong>R$ 140.000</strong>.</li>
+<li><strong>✅ OK:</strong> existe viagem correspondente.</li>
+<li><strong>⚠ Alerta:</strong> manifesto sem viagem — precisa de verificação.</li>
+<li>Mostra: total auditado, quantidade com alerta, OK e valor em trânsito.</li>
+<li>Filtros por data, placa e busca; botão para <strong>exportar em Excel</strong>.</li>
+</ul>
+<hr>
+<h2>14. Chegadas por Unidade</h2>
+<p><img src="imagens/chegadas.png" alt="Chegadas por Unidade"></p>
+<p><strong>Para que serve:</strong> cada filial vê quantas cargas <strong>já chegaram</strong>, quantas estão <strong>a caminho</strong> e o total esperado no dia, com barra de progresso.</p>
+<p>Clique em uma unidade para ver os <strong>manifestos e minutas</strong> dela.</p>
+<p><img src="imagens/chegadas-detalhe.png" alt="Detalhe da unidade"></p>
+<hr>
+<h2>15. Monitoramento de Seguro</h2>
+<p><img src="imagens/seguradora.png" alt="Monitoramento de Seguro"></p>
+<p><strong>Para que serve:</strong> controlar se os <strong>motoristas</strong> e <strong>veículos</strong> estão com cadastro válido na gerenciadora de risco <strong>Angel</strong>.</p>
+<ul>
+<li><strong>Importação:</strong> envie os arquivos CSV exportados da Angel (um de motoristas, outro de veículos).</li>
+<li><strong>Aba Motoristas:</strong> nome, CNH/categoria, vigência na Angel e último cadastro.</li>
+<li><strong>Aba Veículos:</strong> placa, modelo/marca, proprietário e vigência.</li>
+<li>Cruza as informações com a operação para destacar cadastros <strong>vencidos ou ausentes</strong>.</li>
+<li>Mostra a data da última importação — mantenha os dados atualizados.</li>
+</ul>
+<hr>
+<h2>16. Administração <em>(admin)</em></h2>
+<p><img src="imagens/admin.png" alt="Painel de Administração"></p>
+<p>Painel com números gerais do sistema e acesso aos cadastros:</p>
+<h3>👥 Usuários</h3>
+<p><img src="imagens/admin-usuarios.png" alt="Usuários"></p>
+<p>Criar, editar e excluir usuários; definir o <strong>papel</strong> (Admin, Gerente, Operador) e a <strong>base</strong>; <strong>redefinir senha</strong> (volta para <code>Princesa123</code> e exige nova troca no próximo acesso); marcar quem recebe o <strong>relatório semanal</strong>. Todo usuário criado recebe a senha inicial <code>Princesa123</code>.</p>
+<h3>🏢 Bases</h3>
+<p><img src="imagens/admin-bases.png" alt="Bases"></p>
+<p>Cadastro das filiais com cidade, responsável, contato e <strong>geocerca</strong> (latitude, longitude e raio em metros). A geocerca é o que permite ao sistema saber quando o veículo chegou ou saiu da base.</p>
+<h3>🛣 Rotas Padrão</h3>
+<p><img src="imagens/admin-rotas.png" alt="Rotas Padrão"></p>
+<p>Cadastro das rotas com paradas na ordem e horários previstos de chegada e saída. É a base para calcular previsões nas viagens importadas.</p>
+<h3>🧑‍💼 Regionais</h3>
+<p><img src="imagens/admin-regionais.png" alt="Regionais"></p>
+<p>Cadastro dos gerentes regionais e dos veículos de cada um (placa, unidade, proprietário, responsável). Usado no relatório semanal.</p>
+<h3>📧 Auditoria de E-mails</h3>
+<p><img src="imagens/admin-emails.png" alt="Auditoria de E-mails"></p>
+<p>Lista as ocorrências criadas automaticamente pelos e-mails da AngelLira, com status, para conferir se tudo está sendo importado.</p>
+<hr>
+<h2>17. Automações do sistema</h2>
+<p>Você não precisa fazer nada, o sistema trabalha sozinho:</p>
+<table>
+<thead>
+<tr>
+<th>Automação</th>
+<th>Quando</th>
+<th>O que faz</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Sincronização do GPS</td>
+<td>Contínua / botão manual</td>
+<td>Atualiza posições e status das viagens</td>
+</tr>
+<tr>
+<td>Leitura de e-mails AngelLira</td>
+<td>A cada 1 minuto</td>
+<td>Cria ocorrências a partir dos alarmes</td>
+</tr>
+<tr>
+<td>Relatório semanal</td>
+<td>Sextas, 08h00</td>
+<td>Envia por e-mail o consolidado de ocorrências a cada gerente</td>
+</tr>
+<tr>
+<td>Notificação de ocorrência</td>
+<td>Ao assumir/resolver</td>
+<td>Avisa por e-mail o responsável da unidade</td>
+</tr>
+</tbody></table>
+<p>O status da viagem muda sozinho: <strong>Programada → Em andamento → Finalizada</strong>, conforme o veículo entra e sai das bases.</p>
+<hr>
+<h2>18. Glossário e dúvidas frequentes</h2>
+<p><strong>Glossário</strong></p>
+<ul>
+<li><strong>Viagem:</strong> transferência de carga entre bases.</li>
+<li><strong>Rota padrão:</strong> modelo de rota com paradas e horários.</li>
+<li><strong>Geocerca:</strong> círculo virtual em volta de uma base.</li>
+<li><strong>Transbordo:</strong> parada intermediária para troca/descarga de carga.</li>
+<li><strong>Manifesto / Minuta:</strong> documentos de carga e seus valores.</li>
+<li><strong>Sascar:</strong> empresa de rastreamento dos veículos.</li>
+<li><strong>AngelLira / Angel:</strong> gerenciadora de risco e seguro.</li>
+</ul>
+<p><strong>Dúvidas frequentes</strong></p>
+<ul>
+<li><strong>A viagem aparece &quot;Sem sinal&quot;.</strong> O rastreador não envia posição há mais de 2 h. Verifique com o motorista/manutenção.</li>
+<li><strong>Uma viagem não aparece no dashboard.</strong> Confirme se a planilha do dia foi importada e se o período do filtro está correto.</li>
+<li><strong>Os dados parecem desatualizados.</strong> Use o botão de sincronizar e aguarde alguns segundos.</li>
+<li><strong>A hora da TV está errada?</strong> O painel usa a hora do servidor, não a do computador.</li>
+<li><strong>Não vejo Upload/Administração no menu.</strong> São exclusivos de administradores.</li>
+<li><strong>Uma ocorrência foi criada sozinha.</strong> Veio de um alarme da AngelLira; veja em Administração → Auditoria de E-mails.</li>
+</ul>
+<hr>
+<p><em>Sistema de uso interno — Princesa dos Campos · Setor de Transferências</em></p>
+</body></html>

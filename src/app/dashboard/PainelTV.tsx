@@ -1,7 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { type RouterOutputs } from "@/trpc/react";
+import { useEffect, useState, useRef } from "react";
+import { api, type RouterOutputs } from "@/trpc/react";
+import { 
+    ModalAlertaOcorrenciaTV, 
+    type ItemAlertaTV, 
+    type TipoEventoAlerta 
+} from "./ModalAlertaOcorrenciaTV";
+import { 
+    tocarAlertaNovaOcorrencia, 
+    tocarAlertaAtendimento, 
+    tocarAlertaResolvida, 
+    desbloquearAudio 
+} from "@/app/ocorrencias/_components/alertaSonoro";
 
 type DadosDashboard = RouterOutputs["viagem"]["obterDashboard"][number];
 type NivelAlerta = "PONTUAL" | "ATENCAO" | "ATRASADO" | "CRITICO" | "SEM_SINAL";
@@ -328,6 +339,158 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
     const [paginaAtual, setPaginaAtual] = useState(0);
     const [animando, setAnimando] = useState(false);
 
+    // ── Sistema de Alertas em Tempo Real na TV ──────────────────────────────────
+    const [alertasPendentes, setAlertasPendentes] = useState<ItemAlertaTV[]>([]);
+    const [indiceAlertaAtual, setIndiceAlertaAtual] = useState(0);
+    const [audioAtivo, setAudioAtivo] = useState(true);
+
+    const snapshotOcorrenciasRef = useRef<Map<string, { status: string; updatedAt: number }>>(new Map());
+    const inicializadoRef = useRef(false);
+
+    // Polling rápido (a cada 10s) para detectar novas ocorrências ou mudanças de status
+    const { data: ocorrenciasRecentes } = api.ocorrencia.obterAlertasRecentesTV.useQuery(undefined, {
+        refetchInterval: 10_000,
+        refetchOnWindowFocus: false,
+    });
+
+    useEffect(() => {
+        if (!ocorrenciasRecentes) return;
+
+        // Na primeira carga, grava o snapshot das ocorrências existentes sem disparar alertas antigos
+        if (!inicializadoRef.current) {
+            const map = new Map<string, { status: string; updatedAt: number }>();
+            ocorrenciasRecentes.forEach((oc) => {
+                map.set(oc.id, {
+                    status: oc.status,
+                    updatedAt: new Date(oc.updatedAt).getTime(),
+                });
+            });
+            snapshotOcorrenciasRef.current = map;
+            inicializadoRef.current = true;
+            return;
+        }
+
+        const novosAlertas: ItemAlertaTV[] = [];
+        const map = snapshotOcorrenciasRef.current;
+        const agoraMs = Date.now();
+
+        for (const oc of ocorrenciasRecentes) {
+            const anterior = map.get(oc.id);
+            const atualizadoEmMs = new Date(oc.updatedAt).getTime();
+            const criadoEmMs = new Date(oc.createdAt).getTime();
+
+            let tipoEvento: TipoEventoAlerta | null = null;
+
+            if (!anterior) {
+                // Nova ocorrência que não existia no snapshot (recente nas últimas 2h)
+                if (agoraMs - criadoEmMs <= 2 * 60 * 60 * 1000) {
+                    if (oc.status === "ABERTA") {
+                        tipoEvento = "NOVA";
+                    } else if (oc.status === "EM_ATENDIMENTO") {
+                        tipoEvento = "ATENDIMENTO";
+                    } else if (oc.status === "RESOLVIDA") {
+                        tipoEvento = "RESOLVIDA";
+                    }
+                }
+            } else if (anterior.status !== oc.status) {
+                // Mudança de status identificada
+                if (oc.status === "EM_ATENDIMENTO") {
+                    tipoEvento = "ATENDIMENTO";
+                } else if (oc.status === "RESOLVIDA") {
+                    tipoEvento = "RESOLVIDA";
+                }
+            }
+
+            if (tipoEvento) {
+                novosAlertas.push({
+                    id: `${oc.id}-${tipoEvento}-${atualizadoEmMs}`,
+                    ocorrenciaId: oc.id,
+                    tipoEvento,
+                    momento: new Date(oc.updatedAt),
+                    tipoOcorrencia: oc.tipoOcorrencia,
+                    descricao: oc.descricao,
+                    origem: oc.origem,
+                    createdAt: new Date(oc.createdAt),
+                    acionadoEm: oc.acionadoEm ? new Date(oc.acionadoEm) : null,
+                    acionadoPorNome: oc.acionadoPor?.name ?? null,
+                    notaTorre: oc.notaTorre,
+                    unidadeResponsavelNome: oc.unidadeResponsavel?.nome ?? null,
+                    unidadeResponsavelCidade: oc.unidadeResponsavel?.cidade ?? null,
+                    resolvidaEm: oc.resolvidaEm ? new Date(oc.resolvidaEm) : null,
+                    resolvidaPorNome: oc.resolvidaPor?.name ?? null,
+                    resolucao: oc.resolucao,
+                    viagemId: oc.viagem.id,
+                    placa: oc.viagem.veiculo.placa,
+                    motorista: oc.viagem.motorista ?? "Não informado",
+                    origemCidade: oc.viagem.baseOrigem.cidade,
+                    destinoCidade: oc.viagem.baseDestino.cidade,
+                    rotaDescricao: oc.viagem.rotaDescricao,
+                });
+            }
+
+            // Atualiza snapshot
+            map.set(oc.id, {
+                status: oc.status,
+                updatedAt: atualizadoEmMs,
+            });
+        }
+
+        if (novosAlertas.length > 0) {
+            // Toca o som temático para o primeiro alerta novo
+            if (audioAtivo) {
+                const primeiro = novosAlertas[0]!;
+                if (primeiro.tipoEvento === "NOVA") tocarAlertaNovaOcorrencia();
+                else if (primeiro.tipoEvento === "ATENDIMENTO") tocarAlertaAtendimento();
+                else if (primeiro.tipoEvento === "RESOLVIDA") tocarAlertaResolvida();
+            }
+
+            setAlertasPendentes((prev) => {
+                const idsExistentes = new Set(prev.map((a) => a.id));
+                const aAdicionar = novosAlertas.filter((a) => !idsExistentes.has(a.id));
+                return [...prev, ...aAdicionar];
+            });
+        }
+    }, [ocorrenciasRecentes, audioAtivo]);
+
+    // Função para simular/testar alerta diretamente na TV
+    const testarAlertaDemonstracao = () => {
+        desbloquearAudio();
+        const tipos: TipoEventoAlerta[] = ["NOVA", "ATENDIMENTO", "RESOLVIDA"];
+        const tipoRandom = tipos[Math.floor(Math.random() * tipos.length)]!;
+        
+        if (tipoRandom === "NOVA") tocarAlertaNovaOcorrencia();
+        else if (tipoRandom === "ATENDIMENTO") tocarAlertaAtendimento();
+        else tocarAlertaResolvida();
+
+        const fakeAlerta: ItemAlertaTV = {
+            id: `teste-${Date.now()}`,
+            ocorrenciaId: "teste",
+            tipoEvento: tipoRandom,
+            momento: new Date(),
+            tipoOcorrencia: tipoRandom === "NOVA" ? "Pneu Furado" : tipoRandom === "ATENDIMENTO" ? "Atraso de Tráfego" : "Avaria Mecânica",
+            descricao: "Veículo reportou necessidade de suporte na rodovia BR-277 km 142. Demonstração de alerta operacional no Painel de TV.",
+            origem: "MANUAL",
+            createdAt: new Date(),
+            acionadoEm: tipoRandom !== "NOVA" ? new Date() : null,
+            acionadoPorNome: "Operador Torre",
+            notaTorre: "Motorista contatado. Borracharia conveniada já acionada para deslocamento ao local.",
+            unidadeResponsavelNome: "Filial Ponta Grossa",
+            unidadeResponsavelCidade: "Ponta Grossa",
+            resolvidaEm: tipoRandom === "RESOLVIDA" ? new Date() : null,
+            resolvidaPorNome: "Plantão Ponta Grossa",
+            resolucao: "Socorro finalizado com sucesso no local. Pneu substituído e veículo seguiu viagem normalmente.",
+            viagemId: "3819402",
+            placa: "BCF2G41",
+            motorista: "Carlos Eduardo da Silva",
+            origemCidade: "Curitiba",
+            destinoCidade: "Cascavel",
+            rotaDescricao: "CURITIBA-PR X CASCAVEL-PR",
+        };
+
+        setAlertasPendentes((prev) => [fakeAlerta, ...prev]);
+        setIndiceAlertaAtual(0);
+    };
+
     // Filtros de status
     const [filtros, setFiltros] = useState<Set<string>>(new Set(["EM_ANDAMENTO", "FINALIZADA", "PROGRAMADA_6H"]));
 
@@ -416,12 +579,25 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
         return () => clearInterval(timer);
     }, [totalPaginas, paginaAtual]);
 
-    // Fecha com ESC
+    // Fecha com ESC (prioriza fechar o modal de alerta se estiver aberto)
     useEffect(() => {
-        const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onFechar(); };
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                if (alertasPendentes.length > 0) {
+                    setAlertasPendentes((prev) => {
+                        const novo = [...prev];
+                        novo.splice(indiceAlertaAtual, 1);
+                        return novo;
+                    });
+                    setIndiceAlertaAtual(0);
+                } else {
+                    onFechar();
+                }
+            }
+        };
         window.addEventListener("keydown", handleKey);
         return () => window.removeEventListener("keydown", handleKey);
-    }, [onFechar]);
+    }, [onFechar, alertasPendentes.length, indiceAlertaAtual]);
 
     // Entra em fullscreen
     useEffect(() => {
@@ -532,6 +708,38 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
                             {agora.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
                         </p>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        {/* Botão de Som da TV */}
+                        <button
+                            onClick={() => {
+                                desbloquearAudio();
+                                setAudioAtivo(prev => !prev);
+                            }}
+                            title={audioAtivo ? "Alertas sonoros ativados (clique para silenciar)" : "Alertas sonoros silenciados (clique para ativar)"}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors ${
+                                audioAtivo
+                                    ? "bg-slate-800 border-blue-500/40 text-blue-300 hover:bg-slate-700"
+                                    : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300"
+                            }`}
+                        >
+                            <span>{audioAtivo ? "🔊" : "🔇"}</span>
+                            <span className="hidden xl:inline text-[10px] uppercase tracking-wider">
+                                {audioAtivo ? "Som Ativo" : "Mudo"}
+                            </span>
+                        </button>
+
+                        {/* Botão de Demonstração / Teste de Alerta */}
+                        <button
+                            onClick={testarAlertaDemonstracao}
+                            title="Testar como o modal de alerta e o som aparecem na tela"
+                            className="hidden lg:flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-slate-400 hover:text-white hover:border-slate-500 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                        >
+                            <span>🔔</span>
+                            <span>Testar</span>
+                        </button>
+                    </div>
+
                     <button
                         onClick={onFechar}
                         title="Fechar painel (ESC)"
@@ -627,6 +835,33 @@ export function PainelTV({ viagens, onFechar, agora }: PainelTVProps) {
                     </span>
                 </div>
             </footer>
+
+            {/* ── Modal de Alerta de Ocorrência em Tempo Real na TV ── */}
+            {alertasPendentes.length > 0 && (
+                <ModalAlertaOcorrenciaTV
+                    alertas={alertasPendentes}
+                    indiceAtual={indiceAlertaAtual}
+                    onFecharAtual={() => {
+                        setAlertasPendentes((prev) => {
+                            const novo = [...prev];
+                            novo.splice(indiceAlertaAtual, 1);
+                            return novo;
+                        });
+                        if (indiceAlertaAtual >= alertasPendentes.length - 1) {
+                            setIndiceAlertaAtual(Math.max(0, alertasPendentes.length - 2));
+                        }
+                    }}
+                    onNavegar={(novoIndice) => setIndiceAlertaAtual(novoIndice)}
+                    onRepetirSom={() => {
+                        const atual = alertasPendentes[indiceAlertaAtual];
+                        if (atual && audioAtivo) {
+                            if (atual.tipoEvento === "NOVA") tocarAlertaNovaOcorrencia();
+                            else if (atual.tipoEvento === "ATENDIMENTO") tocarAlertaAtendimento();
+                            else if (atual.tipoEvento === "RESOLVIDA") tocarAlertaResolvida();
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 }

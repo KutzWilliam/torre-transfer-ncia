@@ -23,6 +23,7 @@ export default function Navbar({ session }: { session: Session | null }) {
         { href: "/analise",                       label: "Análise de Atrasos",       highlight: true },
         { href: "/auditoria-manifesto",           label: "🛡 Auditoria Manifestos",  highlight: true },
         { href: "/chegadas-unidade",              label: "📦 Chegadas por Unidade",  highlight: true },
+        { href: "/seguradora",                    label: "🛡️ Monitoramento de Seguro", highlight: true },
         ...(isAdmin ? [
             { href: "/viagens/upload", label: "Upload de Planilha" },
             { href: "/admin",          label: "⚙ Administração",  admin: true },

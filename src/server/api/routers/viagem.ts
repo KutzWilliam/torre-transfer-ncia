@@ -6,7 +6,7 @@ import {
 import { normalizeString, normalizeCityName } from "@/server/utils/stringUtils";
 import { getPlacaAtivaSascar } from "@/server/utils/sascarUtils";
 import { calcularDistanciaGeocerca } from "@/server/utils/geolocalizacao";
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns";
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, parse } from "date-fns";
 
 // Definimos o formato exato que esperamos receber do frontend (planilha convertida)
 const viagemSchema = z.object({
@@ -54,33 +54,82 @@ export const viagemRouter = createTRPCRouter({
     uploadPlanilha: protectedProcedure
         .input(z.array(viagemSchema))
         .mutation(async ({ ctx, input }) => {
+            const inicioLote = Date.now();
+            console.log(`[UPLOAD-BACKEND] 🚀 Iniciando processamento de lote com ${input.length} viagens...`);
+
+            // Limite de segurança de 15 segundos para queries deste lote (evita travamentos infinitos por locks)
+            try {
+                await ctx.db.$executeRawUnsafe(`SET statement_timeout = '15000'`);
+            } catch (e) {
+                console.warn("[UPLOAD-BACKEND] Aviso ao configurar statement_timeout:", e);
+            }
+
             let viagensCriadas = 0;
             let viagensAtualizadas = 0;
 
-            // Pré-carrega todas as rotas em memória para busca fuzzy rápida e flexível
-            const rotasCadastradas = await ctx.db.rotaPadrao.findMany({
-                include: { paradas: { orderBy: { ordem: "asc" } } }
-            });
+            // 1. Pré-carrega rotas, bases e veículos existentes em memória para reduzir round-trips ao banco
+            const [rotasCadastradas, todasBases, todosVeiculos] = await Promise.all([
+                ctx.db.rotaPadrao.findMany({
+                    include: { paradas: { orderBy: { ordem: "asc" } } }
+                }),
+                ctx.db.base.findMany(),
+                ctx.db.veiculo.findMany()
+            ]);
 
-            for (const item of input) {
+            const basePorNome = new Map<string, typeof todasBases[0]>();
+            const basePorId = new Map<string, typeof todasBases[0]>();
+            for (const b of todasBases) {
+                basePorNome.set(b.nome, b);
+                basePorId.set(b.id, b);
+            }
+
+            const veiculoPorPlaca = new Map<string, typeof todosVeiculos[0]>();
+            for (const v of todosVeiculos) {
+                veiculoPorPlaca.set(v.placa, v);
+            }
+
+            async function getOrCreateBase(nome: string) {
+                let base = basePorNome.get(nome);
+                if (!base) {
+                    base = await ctx.db.base.upsert({
+                        where: { nome },
+                        update: {},
+                        create: { nome, cidade: nome },
+                    });
+                    basePorNome.set(nome, base);
+                    basePorId.set(base.id, base);
+                }
+                return base;
+            }
+
+            async function getOrCreateVeiculo(placa: string) {
+                let veiculo = veiculoPorPlaca.get(placa);
+                if (!veiculo) {
+                    veiculo = await ctx.db.veiculo.upsert({
+                        where: { placa },
+                        update: {},
+                        create: { id: `temp_${placa}`, placa, descricao: "Importado via Planilha" },
+                    });
+                    veiculoPorPlaca.set(placa, veiculo);
+                }
+                return veiculo;
+            }
+
+            for (let idx = 0; idx < input.length; idx++) {
+                const item = input[idx]!;
+                const tViagem0 = Date.now();
                 // 1. Decidir qual placa usar consultado a base da Sascar (Placa Prog, Placa Mobile ou Reboque)
                 const placaSascar = await getPlacaAtivaSascar(item.placa, item.placaMob, item.reboque);
 
-                // 2. Bases Origem e Destino
+                // 2. Bases Origem e Destino com cache
                 const origemNorm = normalizeCityName(item.origem);
-                const baseOrigem = await ctx.db.base.upsert({
-                    where: { nome: origemNorm }, update: {}, create: { nome: origemNorm, cidade: origemNorm },
-                });
+                const baseOrigem = await getOrCreateBase(origemNorm);
 
                 const destinoNorm = normalizeCityName(item.destino);
-                const baseDestino = await ctx.db.base.upsert({
-                    where: { nome: destinoNorm }, update: {}, create: { nome: destinoNorm, cidade: destinoNorm },
-                });
+                const baseDestino = await getOrCreateBase(destinoNorm);
 
-                // 3. Veículo (Agora salvo com a placa correta garantida do Sascar)
-                const veiculo = await ctx.db.veiculo.upsert({
-                    where: { placa: placaSascar }, update: {}, create: { id: `temp_${placaSascar}`, placa: placaSascar, descricao: "Importado via Planilha" },
-                });
+                // 3. Veículo com cache
+                const veiculo = await getOrCreateVeiculo(placaSascar);
 
                 // 4. Procurar a Rota Matriz (com tolerância a acentos, maiúsculas e espaços irregulares)
                 const rotaNomeDescartavel = normalizeString(item.rotaDescricao).replace(/\s+/g, ' ').trim();
@@ -89,48 +138,61 @@ export const viagemRouter = createTRPCRouter({
                 );
 
                 // Quando há rota cadastrada, usa as paradas da rota como origem/destino canônicos
-                // (a planilha pode trazer o destino da carga, não o destino final do trajeto)
                 let baseOrigemFinal = baseOrigem;
                 let baseDestinoFinal = baseDestino;
                 if (rotaPadrao && rotaPadrao.paradas.length > 0) {
                     const primeiraParada = rotaPadrao.paradas[0]!;
                     const ultimaParada = rotaPadrao.paradas[rotaPadrao.paradas.length - 1]!;
-                    baseOrigemFinal = await ctx.db.base.findUnique({ where: { id: primeiraParada.baseId } }) ?? baseOrigem;
-                    baseDestinoFinal = await ctx.db.base.findUnique({ where: { id: ultimaParada.baseId } }) ?? baseDestino;
+                    baseOrigemFinal = basePorId.get(primeiraParada.baseId) ?? baseOrigem;
+                    baseDestinoFinal = basePorId.get(ultimaParada.baseId) ?? baseDestino;
                 }
 
                 // 5. Upsert da Viagem
                 const viagem = await ctx.db.viagem.upsert({
                     where: { id: item.numeroViagem },
                     update: {
-                        status: item.status, motorista: item.motorista, veiculoId: veiculo.id,
-                        prevInicioReal: new Date(item.prevInicio), prevFimReal: new Date(item.prevFim),
+                        status: item.status,
+                        motorista: item.motorista,
+                        veiculoId: veiculo.id,
+                        prevInicioReal: new Date(item.prevInicio),
+                        prevFimReal: new Date(item.prevFim),
                         rotaPadraoId: rotaPadrao?.id,
-                        // Corrige origem/destino com base na rota cadastrada (se disponível)
                         baseOrigemId: baseOrigemFinal.id,
                         baseDestinoId: baseDestinoFinal.id,
-                        // Gravar horários reais vindos do Excel (quando disponíveis)
                         dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
                         dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
                     },
                     create: {
-                        id: item.numeroViagem, motorista: item.motorista, rotaDescricao: item.rotaDescricao,
-                        veiculoId: veiculo.id, baseOrigemId: baseOrigemFinal.id, baseDestinoId: baseDestinoFinal.id,
-                        prevInicioReal: new Date(item.prevInicio), prevFimReal: new Date(item.prevFim),
-                        status: item.status, rotaPadraoId: rotaPadrao?.id,
+                        id: item.numeroViagem,
+                        motorista: item.motorista,
+                        rotaDescricao: item.rotaDescricao,
+                        veiculoId: veiculo.id,
+                        baseOrigemId: baseOrigemFinal.id,
+                        baseDestinoId: baseDestinoFinal.id,
+                        prevInicioReal: new Date(item.prevInicio),
+                        prevFimReal: new Date(item.prevFim),
+                        status: item.status,
+                        rotaPadraoId: rotaPadrao?.id,
                         dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
                         dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
                     },
                 });
 
-                // 6. Clonar e calcular os horários da Matriz
+                // 6. Clonar e calcular os horários da Matriz em lote
                 if (rotaPadrao) {
                     await ctx.db.paradaViagem.deleteMany({ where: { viagemId: viagem.id } });
 
-                    // dataBase = meia-noite do dia da viagem (ancora os horários ao dia correto)
                     const dataBase = new Date(item.prevInicio);
                     dataBase.setHours(0, 0, 0, 0);
                     let dataReferencia = new Date(dataBase);
+
+                    const paradasParaCriar: Array<{
+                        viagemId: string;
+                        baseId: string;
+                        ordem: number;
+                        prevChegada: Date | null;
+                        prevSaida: Date | null;
+                    }> = [];
 
                     for (const parada of rotaPadrao.paradas) {
                         const prevChegadaCalc = calcularDataAbsoluta(dataBase, dataReferencia, parada.prevChegada);
@@ -139,16 +201,20 @@ export const viagemRouter = createTRPCRouter({
                         const prevSaidaCalc = calcularDataAbsoluta(dataBase, dataReferencia, parada.prevSaida);
                         if (prevSaidaCalc) dataReferencia = prevSaidaCalc;
 
-                        // Última parada: garantir que prevChegada existe (usa prevFimReal como fallback)
                         const ehUltimaParada = parada.ordem === rotaPadrao.paradas.length - 1;
                         const prevChegadaFinal = (!prevChegadaCalc && ehUltimaParada) ? new Date(item.prevFim) : prevChegadaCalc;
 
-                        await ctx.db.paradaViagem.create({
-                            data: {
-                                viagemId: viagem.id, baseId: parada.baseId, ordem: parada.ordem,
-                                prevChegada: prevChegadaFinal, prevSaida: prevSaidaCalc
-                            }
+                        paradasParaCriar.push({
+                            viagemId: viagem.id,
+                            baseId: parada.baseId,
+                            ordem: parada.ordem,
+                            prevChegada: prevChegadaFinal,
+                            prevSaida: prevSaidaCalc,
                         });
+                    }
+
+                    if (paradasParaCriar.length > 0) {
+                        await ctx.db.paradaViagem.createMany({ data: paradasParaCriar });
                     }
                 }
 
@@ -156,7 +222,20 @@ export const viagemRouter = createTRPCRouter({
                 else viagensAtualizadas++;
             }
 
-            return { success: true, message: `Planilha processada! ${viagensCriadas} criadas e ${viagensAtualizadas} atualizadas com rotas completas.` };
+            const tempoTotalMs = Date.now() - inicioLote;
+            console.log(`[UPLOAD-BACKEND] ✅ Lote finalizado em ${tempoTotalMs}ms: ${viagensCriadas} criadas, ${viagensAtualizadas} atualizadas.`);
+
+            try {
+                await ctx.db.$executeRawUnsafe(`RESET statement_timeout`);
+            } catch { /* noop */ }
+
+            return {
+                success: true,
+                criadas: viagensCriadas,
+                atualizadas: viagensAtualizadas,
+                tempoMs: tempoTotalMs,
+                message: `Lote processado em ${tempoTotalMs}ms! ${viagensCriadas} criadas e ${viagensAtualizadas} atualizadas.`
+            };
         }),
 
     listar: protectedProcedure
@@ -966,5 +1045,586 @@ export const viagemRouter = createTRPCRouter({
 
             return { periodos, basesDisponiveis: todasBases };
         }),
+
+    // ====================================================================
+    // ====================================================================
+    //  DIAGNÓSTICO ANALÍTICO DE ATRASOS (O Quê, Onde, Quando, Soluções)
+    // ====================================================================
+    getAnaliticoAtrasos: protectedProcedure
+        .input(
+            z.object({
+                dias: z.number().default(30),
+                tipoEvento: z.enum(["TODOS", "SAIDA", "CHEGADA"]).default("TODOS"),
+                baseOrigemNome: z.string().optional(),
+            }).optional()
+        )
+        .query(async ({ ctx, input }) => {
+            const dias = input?.dias ?? 30;
+            const tipoEvento = input?.tipoEvento ?? "TODOS";
+            const sinceDate = new Date(Date.now() - dias * 24 * 3600 * 1000);
+
+            const whereClause: Record<string, unknown> = {
+                prevInicioReal: { gte: sinceDate },
+                OR: [
+                    { dataFimEfetivo: { not: null } },
+                    { dataInicioEfetivo: { not: null } },
+                ],
+            };
+
+            if (input?.baseOrigemNome && input.baseOrigemNome !== "TODAS") {
+                whereClause.baseOrigem = { nome: input.baseOrigemNome };
+            }
+
+            const [viagens, todasBases] = await Promise.all([
+                ctx.db.viagem.findMany({
+                    where: whereClause,
+                    select: {
+                        id: true,
+                        rotaDescricao: true,
+                        prevInicioReal: true,
+                        prevFimReal: true,
+                        dataInicioEfetivo: true,
+                        dataFimEfetivo: true,
+                        baseOrigem: { select: { nome: true, cidade: true } },
+                        baseDestino: { select: { nome: true, cidade: true } },
+                    },
+                    orderBy: { prevInicioReal: "desc" },
+                }),
+                ctx.db.base.findMany({
+                    where: { viagensOrigem: { some: {} } },
+                    select: { nome: true, cidade: true },
+                    orderBy: { nome: "asc" },
+                }),
+            ]);
+
+            // Normalizar deltas calculando diretamente com base nos horários previstos e reais da viagem
+            const logs = viagens
+                .map((v) => {
+                    let deltaSaida: number | null = null;
+                    if (v.dataInicioEfetivo && v.prevInicioReal) {
+                        deltaSaida = Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000);
+                    }
+
+                    let deltaChegada: number | null = null;
+                    if (v.dataFimEfetivo && v.prevFimReal) {
+                        deltaChegada = Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000);
+                    }
+
+                    let delta: number | null = null;
+                    if (tipoEvento === "SAIDA") {
+                        delta = deltaSaida;
+                    } else if (tipoEvento === "CHEGADA") {
+                        delta = deltaChegada;
+                    } else {
+                        delta = deltaChegada ?? deltaSaida;
+                    }
+
+                    if (delta === null) return null;
+
+                    const rota = v.rotaDescricao || `${v.baseOrigem.cidade} -> ${v.baseDestino.cidade}`;
+
+                    return {
+                        id: v.id,
+                        rota,
+                        data: v.prevInicioReal,
+                        deltaMinutos: delta,
+                        deltaSaida,
+                        deltaChegada,
+                    };
+                })
+                .filter((v): v is NonNullable<typeof v> => v !== null);
+
+            const total = logs.length;
+            if (total === 0) {
+                return {
+                    totalViagens: 0,
+                    taxaPontualidade: 0,
+                    atrasoMedioGeral: 0,
+                    atrasoMedioAtrasados: 0,
+                    maiorAtraso: 0,
+                    totalAtrasadas: 0,
+                    totalPontuais: 0,
+                    distribuicao: [
+                        { faixa: "PONTUAL", label: "Pontual (<= 5 min)", count: 0, percent: 0, cor: "#10b981" },
+                        { faixa: "LEVE", label: "Leve (6 - 15 min)", count: 0, percent: 0, cor: "#f59e0b" },
+                        { faixa: "GRAVE", label: "Grave (16 - 30 min)", count: 0, percent: 0, cor: "#f97316" },
+                        { faixa: "CRITICO", label: "Crítico (> 30 min)", count: 0, percent: 0, cor: "#ef4444" },
+                    ],
+                    pioresRotas: [],
+                    porTipoEvento: {
+                        saidas: { total: 0, taxaPontualidade: 0, atrasoMedio: 0 },
+                        chegadas: { total: 0, taxaPontualidade: 0, atrasoMedio: 0 },
+                    },
+                    basesDisponiveis: todasBases,
+                };
+            }
+
+            const pontuais = logs.filter((l) => l.deltaMinutos <= 5);
+            const atrasadas = logs.filter((l) => l.deltaMinutos > 5);
+
+            const pontualCount = pontuais.length;
+            const leveCount = logs.filter((l) => l.deltaMinutos >= 6 && l.deltaMinutos <= 15).length;
+            const graveCount = logs.filter((l) => l.deltaMinutos >= 16 && l.deltaMinutos <= 30).length;
+            const criticoCount = logs.filter((l) => l.deltaMinutos > 30).length;
+
+            const taxaPontualidade = Number(((pontualCount / total) * 100).toFixed(1));
+            const atrasoMedioGeral = Math.round(logs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0) / total);
+            const atrasoMedioAtrasados = atrasadas.length > 0 ? Math.round(atrasadas.reduce((acc, l) => acc + l.deltaMinutos, 0) / atrasadas.length) : 0;
+            const maiorAtraso = logs.length > 0 ? Math.max(0, ...logs.map((l) => l.deltaMinutos)) : 0;
+
+            const distribuicao = [
+                { faixa: "PONTUAL", label: "Pontual (<= 5 min)", count: pontualCount, percent: Number(((pontualCount / total) * 100).toFixed(1)), cor: "#10b981" },
+                { faixa: "LEVE", label: "Leve (6 - 15 min)", count: leveCount, percent: Number(((leveCount / total) * 100).toFixed(1)), cor: "#f59e0b" },
+                { faixa: "GRAVE", label: "Grave (16 - 30 min)", count: graveCount, percent: Number(((graveCount / total) * 100).toFixed(1)), cor: "#f97316" },
+                { faixa: "CRITICO", label: "Crítico (> 30 min)", count: criticoCount, percent: Number(((criticoCount / total) * 100).toFixed(1)), cor: "#ef4444" },
+            ];
+
+            // Agrupar por rota
+            const rotasMap = new Map<string, typeof logs>();
+            for (const log of logs) {
+                const rotaNome = log.rota || "Desconhecida";
+                const list = rotasMap.get(rotaNome) || [];
+                list.push(log);
+                rotasMap.set(rotaNome, list);
+            }
+
+            const pioresRotas = Array.from(rotasMap.entries())
+                .map(([rota, rotaLogs]) => {
+                    const rTotal = rotaLogs.length;
+                    const rPontuais = rotaLogs.filter((l) => l.deltaMinutos <= 5).length;
+                    const rAtrasadas = rotaLogs.filter((l) => l.deltaMinutos > 5).length;
+                    const rTaxaPontualidade = Number(((rPontuais / rTotal) * 100).toFixed(1));
+                    const rAtrasoMedio = Math.round(rotaLogs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0) / rTotal);
+                    const rPiorAtraso = Math.max(0, ...rotaLogs.map((l) => l.deltaMinutos));
+                    const rTotalMinutos = rotaLogs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0);
+
+                    return {
+                        rota,
+                        total: rTotal,
+                        pontuais: rPontuais,
+                        atrasadas: rAtrasadas,
+                        taxaPontualidade: rTaxaPontualidade,
+                        atrasoMedio: rAtrasoMedio,
+                        piorAtraso: rPiorAtraso,
+                        totalMinutosAtraso: rTotalMinutos,
+                    };
+                })
+                .sort((a, b) => b.atrasoMedio - a.atrasoMedio || b.atrasadas - a.atrasadas)
+                .slice(0, 15);
+
+            // Breakdown por tipo de evento
+            const calcTipo = (tipo: "SAIDA" | "CHEGADA") => {
+                const filtered = logs
+                    .map((v) => (tipo === "SAIDA" ? v.deltaSaida : v.deltaChegada))
+                    .filter((d): d is number => d !== null);
+                if (filtered.length === 0) return { total: 0, taxaPontualidade: 0, atrasoMedio: 0 };
+                const pt = filtered.filter((d) => d <= 5).length;
+                return {
+                    total: filtered.length,
+                    taxaPontualidade: Number(((pt / filtered.length) * 100).toFixed(1)),
+                    atrasoMedio: Math.round(filtered.reduce((acc, d) => acc + Math.max(0, d), 0) / filtered.length),
+                };
+            };
+
+            return {
+                totalViagens: total,
+                taxaPontualidade,
+                atrasoMedioGeral,
+                atrasoMedioAtrasados,
+                maiorAtraso,
+                totalAtrasadas: atrasadas.length,
+                totalPontuais: pontualCount,
+                distribuicao,
+                pioresRotas,
+                porTipoEvento: {
+                    saidas: calcTipo("SAIDA"),
+                    chegadas: calcTipo("CHEGADA"),
+                },
+                basesDisponiveis: todasBases,
+            };
+        }),
+
+    getHistoricoTendencia: protectedProcedure
+        .input(
+            z.object({
+                dias: z.number().default(30),
+                tipoEvento: z.enum(["TODOS", "SAIDA", "CHEGADA"]).default("TODOS"),
+                baseOrigemNome: z.string().optional(),
+            }).optional()
+        )
+        .query(async ({ ctx, input }) => {
+            const dias = input?.dias ?? 30;
+            const tipoEvento = input?.tipoEvento ?? "TODOS";
+            const sinceDate = new Date(Date.now() - dias * 24 * 3600 * 1000);
+
+            const whereClause: Record<string, unknown> = {
+                prevInicioReal: { gte: sinceDate },
+                OR: [
+                    { dataFimEfetivo: { not: null } },
+                    { dataInicioEfetivo: { not: null } },
+                ],
+            };
+            if (input?.baseOrigemNome && input.baseOrigemNome !== "TODAS") {
+                whereClause.baseOrigem = { nome: input.baseOrigemNome };
+            }
+
+            const viagens = await ctx.db.viagem.findMany({
+                where: whereClause,
+                select: {
+                    prevInicioReal: true,
+                    prevFimReal: true,
+                    dataInicioEfetivo: true,
+                    dataFimEfetivo: true,
+                },
+                orderBy: { prevInicioReal: "asc" },
+            });
+
+            const logs = viagens
+                .map((v) => {
+                    let delta: number | null = null;
+                    let dataRef = v.prevInicioReal;
+
+                    if (tipoEvento === "SAIDA") {
+                        if (!v.dataInicioEfetivo || !v.prevInicioReal) return null;
+                        delta = Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000);
+                        dataRef = v.prevInicioReal;
+                    } else if (tipoEvento === "CHEGADA") {
+                        if (!v.dataFimEfetivo || !v.prevFimReal) return null;
+                        delta = Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000);
+                        dataRef = v.prevFimReal;
+                    } else {
+                        const deltaChegada = v.dataFimEfetivo && v.prevFimReal
+                            ? Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000)
+                            : null;
+                        const deltaSaida = v.dataInicioEfetivo && v.prevInicioReal
+                            ? Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000)
+                            : null;
+                        delta = deltaChegada ?? deltaSaida;
+                        dataRef = v.prevInicioReal;
+                    }
+
+                    if (delta === null) return null;
+                    return {
+                        data: dataRef,
+                        deltaMinutos: delta,
+                    };
+                })
+                .filter((v): v is NonNullable<typeof v> => v !== null);
+
+            const groupedByDay = new Map<string, typeof logs>();
+            for (const l of logs) {
+                const key = format(l.data, "yyyy-MM-dd");
+                const list = groupedByDay.get(key) || [];
+                list.push(l);
+                groupedByDay.set(key, list);
+            }
+
+            const diasList = Array.from(groupedByDay.entries()).map(([dataIso, dayLogs]) => {
+                const total = dayLogs.length;
+                const pontuais = dayLogs.filter((l) => l.deltaMinutos <= 5).length;
+                const atrasadas = dayLogs.filter((l) => l.deltaMinutos > 5).length;
+                const taxaPontualidade = total > 0 ? Number(((pontuais / total) * 100).toFixed(1)) : 100;
+                const atrasoMedio = total > 0 ? Math.round(dayLogs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0) / total) : 0;
+
+                const parsedDate = parse(dataIso, "yyyy-MM-dd", new Date());
+                const label = format(parsedDate, "dd/MM");
+
+                return {
+                    data: dataIso,
+                    label,
+                    total,
+                    pontuais,
+                    atrasadas,
+                    taxaPontualidade,
+                    atrasoMedio,
+                };
+            });
+
+            return diasList;
+        }),
+
+    getAnaliseHorarios: protectedProcedure
+        .input(
+            z.object({
+                dias: z.number().default(30),
+                tipoEvento: z.enum(["TODOS", "SAIDA", "CHEGADA"]).default("TODOS"),
+                baseOrigemNome: z.string().optional(),
+            }).optional()
+        )
+        .query(async ({ ctx, input }) => {
+            const dias = input?.dias ?? 30;
+            const tipoEvento = input?.tipoEvento ?? "TODOS";
+            const sinceDate = new Date(Date.now() - dias * 24 * 3600 * 1000);
+
+            const whereClause: Record<string, unknown> = {
+                prevInicioReal: { gte: sinceDate },
+                OR: [
+                    { dataFimEfetivo: { not: null } },
+                    { dataInicioEfetivo: { not: null } },
+                ],
+            };
+            if (input?.baseOrigemNome && input.baseOrigemNome !== "TODAS") {
+                whereClause.baseOrigem = { nome: input.baseOrigemNome };
+            }
+
+            const viagens = await ctx.db.viagem.findMany({
+                where: whereClause,
+                select: {
+                    prevInicioReal: true,
+                    prevFimReal: true,
+                    dataInicioEfetivo: true,
+                    dataFimEfetivo: true,
+                },
+            });
+
+            const logs = viagens
+                .map((v) => {
+                    let delta: number | null = null;
+                    let dataRef = v.prevInicioReal;
+
+                    if (tipoEvento === "SAIDA") {
+                        if (!v.dataInicioEfetivo || !v.prevInicioReal) return null;
+                        delta = Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000);
+                        dataRef = v.prevInicioReal;
+                    } else if (tipoEvento === "CHEGADA") {
+                        if (!v.dataFimEfetivo || !v.prevFimReal) return null;
+                        delta = Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000);
+                        dataRef = v.prevFimReal;
+                    } else {
+                        const deltaChegada = v.dataFimEfetivo && v.prevFimReal
+                            ? Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000)
+                            : null;
+                        const deltaSaida = v.dataInicioEfetivo && v.prevInicioReal
+                            ? Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000)
+                            : null;
+                        delta = deltaChegada ?? deltaSaida;
+                        dataRef = v.dataFimEfetivo ? v.prevFimReal : v.prevInicioReal;
+                    }
+
+                    if (delta === null) return null;
+
+                    return {
+                        data: dataRef,
+                        deltaMinutos: delta,
+                    };
+                })
+                .filter((v): v is NonNullable<typeof v> => v !== null);
+
+            const diasSemanaNomes = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+            // 1. Por Hora (0 a 23)
+            const porHora = Array.from({ length: 24 }, (_, h) => {
+                const horaLogs = logs.filter((l) => l.data.getHours() === h);
+                const total = horaLogs.length;
+                const pontuais = horaLogs.filter((l) => l.deltaMinutos <= 5).length;
+                const atrasadas = horaLogs.filter((l) => l.deltaMinutos > 5).length;
+                const taxaPontualidade = total > 0 ? Number(((pontuais / total) * 100).toFixed(1)) : 100;
+                const atrasoMedio = total > 0 ? Math.round(horaLogs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0) / total) : 0;
+
+                return {
+                    hora: h,
+                    label: `${String(h).padStart(2, "0")}:00`,
+                    total,
+                    pontuais,
+                    atrasadas,
+                    taxaPontualidade,
+                    atrasoMedio,
+                };
+            });
+
+            // 2. Por Dia da Semana (0 a 6)
+            const porDiaSemana = Array.from({ length: 7 }, (_, d) => {
+                const diaLogs = logs.filter((l) => l.data.getDay() === d);
+                const total = diaLogs.length;
+                const pontuais = diaLogs.filter((l) => l.deltaMinutos <= 5).length;
+                const atrasadas = diaLogs.filter((l) => l.deltaMinutos > 5).length;
+                const taxaPontualidade = total > 0 ? Number(((pontuais / total) * 100).toFixed(1)) : 100;
+                const atrasoMedio = total > 0 ? Math.round(diaLogs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0) / total) : 0;
+
+                return {
+                    diaSemana: d,
+                    nome: diasSemanaNomes[d] || "",
+                    total,
+                    pontuais,
+                    atrasadas,
+                    taxaPontualidade,
+                    atrasoMedio,
+                };
+            });
+
+            // 3. Heatmap Matriz (DiaSemana x Faixa de Horário)
+            const faixasHorario = [
+                { id: "madrugada", label: "00h - 06h", start: 0, end: 5 },
+                { id: "manha", label: "06h - 12h", start: 6, end: 11 },
+                { id: "tarde", label: "12h - 18h", start: 12, end: 17 },
+                { id: "noite", label: "18h - 24h", start: 18, end: 23 },
+            ];
+
+            const matrizCalor = faixasHorario.map((faixa) => {
+                const diasData = Array.from({ length: 7 }, (_, d) => {
+                    const celLogs = logs.filter((l) => {
+                        const h = l.data.getHours();
+                        return l.data.getDay() === d && h >= faixa.start && h <= faixa.end;
+                    });
+
+                    const total = celLogs.length;
+                    const pontuais = celLogs.filter((l) => l.deltaMinutos <= 5).length;
+                    const atrasadas = celLogs.filter((l) => l.deltaMinutos > 5).length;
+                    const atrasoMedio = total > 0 ? Math.round(celLogs.reduce((acc, l) => acc + Math.max(0, l.deltaMinutos), 0) / total) : 0;
+                    const taxaPontualidade = total > 0 ? Number(((pontuais / total) * 100).toFixed(1)) : 100;
+
+                    return {
+                        diaSemana: d,
+                        diaNome: diasSemanaNomes[d]!,
+                        total,
+                        atrasadas,
+                        atrasoMedio,
+                        taxaPontualidade,
+                    };
+                });
+
+                return {
+                    faixa: faixa.label,
+                    start: faixa.start,
+                    end: faixa.end,
+                    dias: diasData,
+                };
+            });
+
+            return {
+                porHora,
+                porDiaSemana,
+                matrizCalor,
+            };
+        }),
+
+    // ====================================================================
+    //  DETALHAMENTO MODAL DE VIAGENS (Por Rota ou Célula da Matriz)
+    // ====================================================================
+    getViagensModalAnalise: protectedProcedure
+        .input(
+            z.object({
+                dias: z.number().default(30),
+                tipoEvento: z.enum(["TODOS", "SAIDA", "CHEGADA"]).default("TODOS"),
+                baseOrigemNome: z.string().optional(),
+                rota: z.string().optional(),
+                diaSemana: z.number().min(0).max(6).optional(),
+                horaInicio: z.number().min(0).max(23).optional(),
+                horaFim: z.number().min(0).max(23).optional(),
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            const dias = input.dias ?? 30;
+            const tipoEvento = input.tipoEvento ?? "TODOS";
+            const sinceDate = new Date(Date.now() - dias * 24 * 3600 * 1000);
+
+            const whereClause: Record<string, unknown> = {
+                prevInicioReal: { gte: sinceDate },
+                OR: [
+                    { dataFimEfetivo: { not: null } },
+                    { dataInicioEfetivo: { not: null } },
+                ],
+            };
+
+            if (tipoEvento === "SAIDA") {
+                whereClause.dataInicioEfetivo = { not: null };
+                delete whereClause.OR;
+            } else if (tipoEvento === "CHEGADA") {
+                whereClause.dataFimEfetivo = { not: null };
+                delete whereClause.OR;
+            }
+
+            if (input.baseOrigemNome && input.baseOrigemNome !== "TODAS") {
+                whereClause.baseOrigem = { nome: input.baseOrigemNome };
+            }
+
+            if (input.rota) {
+                whereClause.rotaDescricao = input.rota;
+            }
+
+            const viagens = await ctx.db.viagem.findMany({
+                where: whereClause,
+                select: {
+                    id: true,
+                    motorista: true,
+                    rotaDescricao: true,
+                    prevInicioReal: true,
+                    prevFimReal: true,
+                    dataInicioEfetivo: true,
+                    dataFimEfetivo: true,
+                    status: true,
+                    veiculo: { select: { placa: true } },
+                    baseOrigem: { select: { nome: true, cidade: true } },
+                    baseDestino: { select: { nome: true, cidade: true } },
+                },
+                orderBy: { prevInicioReal: "desc" },
+            });
+
+            const result = viagens
+                .map((v) => {
+                    let deltaSaida: number | null = null;
+                    if (v.dataInicioEfetivo && v.prevInicioReal) {
+                        deltaSaida = Math.round((v.dataInicioEfetivo.getTime() - v.prevInicioReal.getTime()) / 60000);
+                    }
+
+                    let deltaChegada: number | null = null;
+                    if (v.dataFimEfetivo && v.prevFimReal) {
+                        deltaChegada = Math.round((v.dataFimEfetivo.getTime() - v.prevFimReal.getTime()) / 60000);
+                    }
+
+                    let delta: number | null = null;
+                    let dataRef = v.prevInicioReal;
+
+                    if (tipoEvento === "SAIDA") {
+                        delta = deltaSaida;
+                        dataRef = v.prevInicioReal;
+                    } else if (tipoEvento === "CHEGADA") {
+                        delta = deltaChegada;
+                        dataRef = v.prevFimReal;
+                    } else {
+                        delta = deltaChegada ?? deltaSaida;
+                        dataRef = v.dataFimEfetivo ? v.prevFimReal : v.prevInicioReal;
+                    }
+
+                    if (delta === null) return null;
+
+                    // Filtro por dia da semana (0=Dom, 1=Seg, ..., 6=Sáb)
+                    if (input.diaSemana !== undefined && dataRef.getDay() !== input.diaSemana) {
+                        return null;
+                    }
+
+                    // Filtro por faixa horária
+                    if (input.horaInicio !== undefined && input.horaFim !== undefined) {
+                        const h = dataRef.getHours();
+                        if (h < input.horaInicio || h > input.horaFim) {
+                            return null;
+                        }
+                    }
+
+                    return {
+                        id: v.id,
+                        motorista: v.motorista,
+                        placa: v.veiculo.placa,
+                        rotaDescricao: v.rotaDescricao || `${v.baseOrigem.cidade} -> ${v.baseDestino.cidade}`,
+                        origem: v.baseOrigem.cidade || v.baseOrigem.nome,
+                        destino: v.baseDestino.cidade || v.baseDestino.nome,
+                        prevInicioReal: v.prevInicioReal,
+                        prevFimReal: v.prevFimReal,
+                        dataInicioEfetivo: v.dataInicioEfetivo,
+                        dataFimEfetivo: v.dataFimEfetivo,
+                        deltaSaida,
+                        deltaChegada,
+                        delta,
+                        status: v.status,
+                    };
+                })
+                .filter((v): v is NonNullable<typeof v> => v !== null)
+                .sort((a, b) => b.delta - a.delta);
+
+            return result;
+        }),
 });
+
+
+
 

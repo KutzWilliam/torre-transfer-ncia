@@ -9,6 +9,7 @@ declare module "next-auth" {
       id: string;
       role: "ADMIN" | "GERENTE" | "OPERADOR";
       baseId: string | null;
+      precisaTrocarSenha: boolean;
     } & DefaultSession["user"];
   }
 }
@@ -35,6 +36,7 @@ export const authConfig = {
               senhaHash: true,
               role: true,
               baseId: true,
+              precisaTrocarSenha: true,
             }
           });
 
@@ -56,6 +58,7 @@ export const authConfig = {
             name: user.name,
             role: user.role,
             baseId: user.baseId,
+            precisaTrocarSenha: user.precisaTrocarSenha,
           };
         } catch (error) {
           console.error("Erro interno no authorize do NextAuth (Banco de dados fora ar ou outro erro):", error);
@@ -78,6 +81,8 @@ export const authConfig = {
         token.role = user.role;
         // @ts-expect-error
         token.baseId = user.baseId;
+        // @ts-expect-error
+        token.precisaTrocarSenha = user.precisaTrocarSenha ?? false;
       }
       return token;
     },
@@ -89,6 +94,7 @@ export const authConfig = {
           id: token.id as string,
           role: token.role as "ADMIN" | "GERENTE" | "OPERADOR",
           baseId: token.baseId as string | null,
+          precisaTrocarSenha: (token.precisaTrocarSenha as boolean | undefined) ?? false,
         },
       };
     },

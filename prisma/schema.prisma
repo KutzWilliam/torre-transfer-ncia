@@ -88,6 +88,9 @@ model User {
 
   // Relatório semanal: se true, recebe o e-mail de relatório toda sexta
   recebeRelatorioSemanal Boolean @default(false)
+
+  // Primeiro acesso: se true, o usuário é obrigado a trocar a senha inicial antes de usar o sistema
+  precisaTrocarSenha Boolean @default(false)
 }
 
 model Veiculo {
@@ -191,7 +194,6 @@ model Telemetria {
   createdAt       DateTime @default(now())
 
   @@index([veiculoId, dataHoraLocal(sort: Desc)]) // Índice crucial para buscar a última posição rápido
-  @@index([viagemId])
 }
 // ================= MATRIZ DE ROTAS =================
 
@@ -324,3 +326,37 @@ model VeiculoRegional {
 
   @@index([regionalId])
 }
+
+// ================= GERENCIADORA ANGEL (SEGUROS) =================
+
+model CadastroAngelMotorista {
+  id             String    @id @default(cuid())
+  nome           String
+  cpf            String    @unique // CPF normalizado (11 dígitos, apenas números)
+  cpfOriginal    String?   // CPF como veio no arquivo (ex: "098.302.039-64")
+  tipo           String?   @default("Padrão")
+  validadeDias   Int?      // Dias de validade informados pela Angel
+  ultimoCadastro DateTime? // Data do último cadastro na Angel
+  vigencia       DateTime? // Data de vigência do seguro na Angel
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([nome])
+}
+
+model CadastroAngelVeiculo {
+  id             String    @id @default(cuid())
+  placa          String    @unique // Placa normalizada (sem traço/espaço, em maiúsculas)
+  placaOriginal  String?   // Placa original como veio no CSV
+  proprietario   String?
+  cnpjCpf        String?
+  validadeDias   Int?      // Dias de validade informados pela Angel
+  ultimoCadastro DateTime?
+  vigencia       DateTime?
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([placa])
+}

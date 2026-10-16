@@ -9,8 +9,12 @@ export async function getPlacaAtivaSascar(placaProg: string, placaMob: string, r
     }
 
     if (!sascarPlacasCache) {
+        let client: Client | null = null;
         try {
-            const client = new Client({ connectionString: process.env.TELEMETRIA_DB_URL });
+            client = new Client({
+                connectionString: process.env.TELEMETRIA_DB_URL,
+                connectionTimeoutMillis: 3000,
+            });
             await client.connect();
             const res = await client.query('SELECT "placa" FROM veiculos_sascar WHERE "placa" IS NOT NULL');
             sascarPlacasCache = new Set(
@@ -18,7 +22,12 @@ export async function getPlacaAtivaSascar(placaProg: string, placaMob: string, r
             );
             await client.end();
         } catch (e) {
-            console.error("Erro ao conectar no banco da Sascar para cache de placas:", e);
+            console.error("Erro ao conectar no banco da Sascar para cache de placas (usando placas da planilha como fallback):", e);
+            if (client) {
+                try { await client.end(); } catch { /* noop */ }
+            }
+            // Inicializa com Set vazio para evitar tentar reconectar a cada linha da planilha
+            sascarPlacasCache = new Set();
             return placaProg || placaMob;
         }
     }

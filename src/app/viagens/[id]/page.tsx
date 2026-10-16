@@ -13,6 +13,9 @@ const MapaViagem = dynamic(() => import("./MapaViagem"), {
     loading: () => <div className="h-[450px] w-full bg-gray-100 animate-pulse rounded-lg flex items-center justify-center text-gray-400">A carregar mapa e rota...</div>
 });
 
+// Telemetria (posições GPS) é mantida apenas pelos últimos N dias no banco.
+const DIAS_RETENCAO_TELEMETRIA = 15;
+
 export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
@@ -178,10 +181,32 @@ export default function ViagemDetalhesPage({ params }: { params: Promise<{ id: s
                     </div>
                 </div>
 
-                {/* Mapa Panorâmico */}
-                <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-200 mb-8">
-                    <MapaViagem paradas={viagem.paradasRota} telemetrias={viagem.telemetrias} />
-                </div>
+                {/* Mapa Panorâmico (ou aviso de retenção de telemetria) */}
+                {(() => {
+                    const fimViagem = new Date(viagem.dataFimEfetivo ?? viagem.prevFimReal);
+                    const limiteRetencao = Date.now() - DIAS_RETENCAO_TELEMETRIA * 24 * 60 * 60 * 1000;
+                    const viagemAntiga = fimViagem.getTime() < limiteRetencao;
+                    if (viagemAntiga && viagem.telemetrias.length === 0) {
+                        return (
+                            <div id="aviso-retencao-telemetria" className="mb-8 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                                <span className="text-2xl" aria-hidden="true">🗺️</span>
+                                <div>
+                                    <p className="font-bold text-amber-900">O desenho da viagem não será gerado</p>
+                                    <p className="mt-1 text-sm text-amber-800">
+                                        Esta viagem ocorreu há mais de {DIAS_RETENCAO_TELEMETRIA} dias. Por política de armazenamento, as posições de GPS (telemetria)
+                                        são mantidas apenas pelos últimos {DIAS_RETENCAO_TELEMETRIA} dias, portanto o trajeto no mapa não está mais disponível.
+                                        Os horários de saída e chegada, status, ocorrências e justificativas continuam registrados normalmente.
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    }
+                    return (
+                        <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-200 mb-8">
+                            <MapaViagem paradas={viagem.paradasRota} telemetrias={viagem.telemetrias} />
+                        </div>
+                    );
+                })()}
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Card Resumo */}

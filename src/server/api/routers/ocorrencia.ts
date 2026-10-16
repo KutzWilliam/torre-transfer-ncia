@@ -665,5 +665,53 @@ export const ocorrenciaRouter = createTRPCRouter({
             totalGeralOcorrencias,
         };
     }),
+
+    /**
+     * Consulta otimizada para o Painel de TV:
+     * Retorna ocorrências criadas ou atualizadas nas últimas 24 horas para alimentar
+     * o modal de alerta em tempo real e avisos sonoros (novas, em atendimento ou resolvidas).
+     */
+    obterAlertasRecentesTV: protectedProcedure.query(async ({ ctx }) => {
+        const limiteHoras = 24;
+        const desde = new Date(Date.now() - limiteHoras * 60 * 60 * 1000);
+
+        return ctx.db.ocorrencia.findMany({
+            where: {
+                updatedAt: { gte: desde },
+            },
+            orderBy: { updatedAt: "desc" },
+            take: 40,
+            select: {
+                id: true,
+                viagemId: true,
+                tipoOcorrencia: true,
+                descricao: true,
+                latOcorrencia: true,
+                lngOcorrencia: true,
+                status: true,
+                origem: true,
+                notaTorre: true,
+                acionadoEm: true,
+                resolucao: true,
+                resolvidaEm: true,
+                createdAt: true,
+                updatedAt: true,
+                abertaPor: { select: { id: true, name: true } },
+                acionadoPor: { select: { id: true, name: true } },
+                resolvidaPor: { select: { id: true, name: true } },
+                unidadeResponsavel: { select: { id: true, nome: true, cidade: true } },
+                viagem: {
+                    select: {
+                        id: true,
+                        motorista: true,
+                        rotaDescricao: true,
+                        veiculo: { select: { id: true, placa: true } },
+                        baseOrigem: { select: { id: true, nome: true, cidade: true } },
+                        baseDestino: { select: { id: true, nome: true, cidade: true } },
+                    },
+                },
+            },
+        });
+    }),
 });
 

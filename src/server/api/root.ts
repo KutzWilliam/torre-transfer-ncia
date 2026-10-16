@@ -5,6 +5,8 @@ import { adminRouter } from "./routers/admin";
 import { ocorrenciaRouter } from "./routers/ocorrencia";
 import { manifestoRouter } from "./routers/manifesto";
 import { regionalRouter } from "./routers/regional";
+import { seguradoraRouter } from "./routers/seguradora";
+import { contaRouter } from "./routers/conta";
 
 export const appRouter = createTRPCRouter({
   post: postRouter,
@@ -13,6 +15,8 @@ export const appRouter = createTRPCRouter({
   ocorrencia: ocorrenciaRouter,
   manifesto: manifestoRouter,
   regional: regionalRouter,
+  seguradora: seguradoraRouter,
+  conta: contaRouter,
 });
 
 // export type definition of API

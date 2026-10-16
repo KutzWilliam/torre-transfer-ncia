@@ -38,32 +38,27 @@ export async function GET() {
             const porPlaca = await db.veiculo.findUnique({ where: { placa: placaLimpa } });
 
             if (porPlaca && porPlaca.id !== idNovo) {
-                // Existe pela placa mas com ID errado (temp_XXXX). Migrar via raw SQL.
                 const idVelho = porPlaca.id;
-                console.log(`[SYNC] Migrando veículo: placa=${placaLimpa} (raw: ${placaRaw}), id_antigo=${idVelho} → id_novo=${idNovo}`);
-                if (porId) {
-                    // Já existe um registro com o ID novo e outro com a placa duplicada (id temporário).
-                    // ORDEM: primeiro redirecionar as FKs dos filhos (Viagem/Telemetria) para o id definitivo,
-                    //        depois apagar o veículo duplicado (temp_*).
-                    // Executado em transação para garantir atomicidade e evitar violações de FK parciais.
-                    await db.$transaction([
-                        db.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho),
-                        db.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho),
-                        db.$executeRawUnsafe(`DELETE FROM "Veiculo" WHERE "id" = $1`, idVelho),
-                        db.$executeRawUnsafe(`UPDATE "Veiculo" SET "placa" = $1, "descricao" = $2, "updatedAt" = NOW() WHERE "id" = $3`, placaLimpa, row.descricao, idNovo),
-                    ]);
-                    console.log(`[SYNC]   → Merge realizado (apagado id_antigo=${idVelho})`);
-                } else {
-                    // idNovo NÃO existe ainda em Veiculo — precisamos renomear o id do registro existente.
-                    // Executado em transação para garantir atomicidade: se o UPDATE de Viagem falhar,
-                    // o Veiculo não fica com ID novo sem os filhos atualizados (o que causaria FK órfã).
-                    await db.$transaction([
-                        db.$executeRawUnsafe(`UPDATE "Veiculo" SET "id" = $1, "descricao" = $2, "updatedAt" = NOW() WHERE "id" = $3`, idNovo, row.descricao, idVelho),
-                        db.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho),
-                        db.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho),
-                    ]);
-                    console.log(`[SYNC]   → ID migrado de ${idVelho} → ${idNovo}`);
-                }
+                console.log(`[SYNC] Migrando veículo de forma segura: placa=${placaLimpa} (${idVelho} → ${idNovo})`);
+                await db.$transaction(async (tx) => {
+                    // 1. Libera a placa do registro antigo para não colidir com o unique constraint
+                    await tx.$executeRawUnsafe(`UPDATE "Veiculo" SET "placa" = $1 WHERE "id" = $2`, `_MIG_${idVelho}`, idVelho);
+
+                    // 2. Insere/garante o veículo com o id definitivo da Sascar
+                    await tx.$executeRawUnsafe(`
+                        INSERT INTO "Veiculo" ("id", "placa", "descricao", "createdAt", "updatedAt")
+                        VALUES ($1, $2, $3, NOW(), NOW())
+                        ON CONFLICT ("id") DO UPDATE SET "placa" = EXCLUDED."placa", "descricao" = EXCLUDED."descricao", "updatedAt" = NOW()
+                    `, idNovo, placaLimpa, row.descricao ?? "Importado Sascar");
+
+                    // 3. Redireciona viagens e telemetrias do id temporário para o id definitivo
+                    await tx.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
+                    await tx.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
+
+                    // 4. Remove o registro temporário antigo
+                    await tx.$executeRawUnsafe(`DELETE FROM "Veiculo" WHERE "id" = $1`, idVelho);
+                }, { timeout: 120000, maxWait: 15000 });
+                console.log(`[SYNC]   → Migração segura concluída (${idVelho} → ${idNovo})`);
                 veiculosMigrados.push(`${placaLimpa}(${idVelho}→${idNovo})`);
             } else if (!porPlaca && !porId) {
                 // Novo veículo
@@ -160,12 +155,41 @@ export async function GET() {
             
             const dadosFiltrados = dadosParaInserir.filter(d => idsValidos.has(d.veiculoId));
 
-            if (dadosFiltrados.length > 0) {
+            // ⚡ OTIMIZAÇÃO: Amostragem inteligente (1 ponto/minuto ou mudança de ignição)
+            // Evita encher o banco com pontos a cada 3 segundos, reduzindo o volume em ~90%
+            const ultimasPosicoes = new Map<string, { ignicao: boolean; timestamp: number }>();
+            const dadosOtimizados = dadosFiltrados.filter(d => {
+                const anterior = ultimasPosicoes.get(d.veiculoId);
+                const tempoAtual = d.dataHoraUtc.getTime();
+
+                // Primeiro ponto do lote para este veículo -> mantém
+                if (!anterior) {
+                    ultimasPosicoes.set(d.veiculoId, { ignicao: d.ignicao, timestamp: tempoAtual });
+                    return true;
+                }
+
+                // Houve mudança no status de ignição (ligou ou desligou) -> mantém
+                if (anterior.ignicao !== d.ignicao) {
+                    ultimasPosicoes.set(d.veiculoId, { ignicao: d.ignicao, timestamp: tempoAtual });
+                    return true;
+                }
+
+                // Passou pelo menos 60 segundos desde a última posição gravada -> mantém
+                if (tempoAtual - anterior.timestamp >= 60 * 1000) {
+                    ultimasPosicoes.set(d.veiculoId, { ignicao: d.ignicao, timestamp: tempoAtual });
+                    return true;
+                }
+
+                // Ponto redundante em intervalo inferior a 60s -> descarta
+                return false;
+            });
+
+            if (dadosOtimizados.length > 0) {
                 await db.telemetria.createMany({
-                    data: dadosFiltrados,
+                    data: dadosOtimizados,
                     skipDuplicates: true,
                 });
-                telemetriasInseridas = dadosFiltrados.length;
+                telemetriasInseridas = dadosOtimizados.length;
             } else {
                 telemetriasInseridas = 0;
             }
@@ -173,6 +197,16 @@ export async function GET() {
 
         // 4. Processar chegadas nas bases e atualizar status das viagens
         const viagensBaixadas = await processarStatusViagens();
+
+        // 5. ⚡ Limpeza Contínua: purga telemetrias com mais de 15 dias para o banco nunca voltar a crescer descontroladamente
+        try {
+            const limite15Dias = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+            await db.telemetria.deleteMany({
+                where: { dataHoraLocal: { lt: limite15Dias } }
+            });
+        } catch (purgeErr) {
+            console.error("Aviso: falha na limpeza de telemetrias antigas:", purgeErr);
+        }
 
         isSyncing = false;
         return NextResponse.json({

@@ -31,6 +31,15 @@ export default auth((req) => {
         return NextResponse.redirect(loginUrl);
     }
 
+    // Primeiro acesso: obriga a troca da senha inicial antes de usar o sistema
+    const precisaTrocar = req.auth.user?.precisaTrocarSenha === true;
+    if (precisaTrocar && pathname !== "/trocar-senha" && !pathname.startsWith("/api/trpc")) {
+        return NextResponse.redirect(new URL("/trocar-senha", req.url));
+    }
+    if (!precisaTrocar && pathname === "/trocar-senha") {
+        return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+
     return NextResponse.next({ request: { headers: requestHeaders } });
 });
 

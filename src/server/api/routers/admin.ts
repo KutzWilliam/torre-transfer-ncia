@@ -3,6 +3,9 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 
+// Senha inicial de todo usuário novo (ou redefinido). Troca obrigatória no primeiro acesso.
+export const SENHA_INICIAL = "Princesa123";
+
 // Middleware de segurança: bloqueia qualquer acesso que não seja de ADMIN
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
     if (ctx.session.user.role !== "ADMIN") {
@@ -29,7 +32,6 @@ const usuariosRouter = createTRPCRouter({
         .input(z.object({
             name: z.string().min(2, "Nome obrigatório"),
             email: z.string().email("Email inválido"),
-            senha: z.string().min(6, "Senha deve ter ao menos 6 caracteres"),
             role: z.enum(["ADMIN", "GERENTE", "OPERADOR"]),
             baseId: z.string().optional().nullable(),
         }))
@@ -37,9 +39,9 @@ const usuariosRouter = createTRPCRouter({
             const existing = await ctx.db.user.findUnique({ where: { email: input.email } });
             if (existing) throw new TRPCError({ code: "CONFLICT", message: "Já existe um usuário com este email." });
 
-            const senhaHash = await bcrypt.hash(input.senha, 10);
+            const senhaHash = await bcrypt.hash(SENHA_INICIAL, 10);
             return ctx.db.user.create({
-                data: { name: input.name, email: input.email, senhaHash, role: input.role, baseId: input.baseId ?? null },
+                data: { name: input.name, email: input.email, senhaHash, precisaTrocarSenha: true, role: input.role, baseId: input.baseId ?? null },
             });
         }),
 
@@ -57,11 +59,12 @@ const usuariosRouter = createTRPCRouter({
             });
         }),
 
+    // Redefine a senha do usuário para a senha inicial padrão e exige nova troca no próximo login
     alterarSenha: adminProcedure
-        .input(z.object({ id: z.string(), novaSenha: z.string().min(6) }))
+        .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const senhaHash = await bcrypt.hash(input.novaSenha, 10);
-            return ctx.db.user.update({ where: { id: input.id }, data: { senhaHash } });
+            const senhaHash = await bcrypt.hash(SENHA_INICIAL, 10);
+            return ctx.db.user.update({ where: { id: input.id }, data: { senhaHash, precisaTrocarSenha: true } });
         }),
 
     excluir: adminProcedure

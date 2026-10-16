@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "@/trpc/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { tocarAlertaSonoroOcorrencia, desbloquearAudio } from "./_components/alertaSonoro";
 
 const MapaOcorrencias = dynamic(() => import("./_components/MapaOcorrencias"), {
     ssr: false,
@@ -637,14 +638,110 @@ function FormNovaOcorrencia({ onCriada }: { onCriada: () => void }) {
 
 export default function OcorrenciasPage() {
     const [isMounted, setIsMounted] = useState(false);
-    useEffect(() => { setIsMounted(true); }, []);
-
     const [filtroPlaca, setFiltroPlaca] = useState("");
+    const [somAtivo, setSomAtivo] = useState(true);
+    const [tocandoTeste, setTocandoTeste] = useState(false);
+    const [toastNovaOcorrencia, setToastNovaOcorrencia] = useState<{
+        id: string;
+        placa: string;
+        tipo: string;
+        quantidade: number;
+    } | null>(null);
+
+    const ocorrenciasIdsRef = useRef<Set<string>>(new Set());
+    const isPrimeiraCargaRef = useRef(true);
+
+    useEffect(() => {
+        setIsMounted(true);
+        const somSalvo = localStorage.getItem("alerta_ocorrencias_som");
+        if (somSalvo !== null) {
+            setSomAtivo(somSalvo === "true");
+        }
+
+        // Desbloqueia contexto de áudio na primeira interação do usuário na página
+        const desbloquear = () => {
+            desbloquearAudio();
+        };
+        window.addEventListener("pointerdown", desbloquear, { once: true });
+        window.addEventListener("keydown", desbloquear, { once: true });
+        return () => {
+            window.removeEventListener("pointerdown", desbloquear);
+            window.removeEventListener("keydown", desbloquear);
+        };
+    }, []);
 
     const { data: ocorrencias, isLoading, refetch } = api.ocorrencia.listarAbertas.useQuery(undefined, {
-        refetchInterval: 30000,
+        refetchInterval: 15000,
         refetchOnWindowFocus: true,
     });
+
+    // Monitora novas ocorrências recebidas pelo polling/refetch
+    useEffect(() => {
+        if (!ocorrencias) return;
+
+        // Na primeira carga após abrir a página, apenas armazena os IDs existentes sem tocar alarme
+        if (isPrimeiraCargaRef.current) {
+            ocorrenciasIdsRef.current = new Set(ocorrencias.map(o => o.id));
+            isPrimeiraCargaRef.current = false;
+            return;
+        }
+
+        // Verifica se existem ocorrências que não estavam no conjunto de IDs conhecidos
+        const novas = ocorrencias.filter(o => !ocorrenciasIdsRef.current.has(o.id));
+
+        if (novas.length > 0) {
+            // Atualiza o conjunto de IDs conhecidos
+            novas.forEach(o => ocorrenciasIdsRef.current.add(o.id));
+
+            // Dispara o alerta sonoro se estiver ativado
+            if (somAtivo) {
+                tocarAlertaSonoroOcorrencia();
+            }
+
+            // Exibe notificação toast na tela
+            const primeiraNova = novas[0];
+            if (primeiraNova) {
+                setToastNovaOcorrencia({
+                    id: primeiraNova.id,
+                    placa: primeiraNova.viagem.veiculo.placa,
+                    tipo: primeiraNova.tipoOcorrencia,
+                    quantidade: novas.length,
+                });
+            }
+
+            // Altera temporariamente o título da aba do navegador para alertar o operador
+            const tituloOriginal = typeof document !== "undefined" ? document.title : "";
+            if (typeof document !== "undefined") {
+                document.title = `🚨 NOVA OCORRÊNCIA (${novas.length}) - Central Torre`;
+            }
+            const timer = setTimeout(() => {
+                if (typeof document !== "undefined") {
+                    document.title = tituloOriginal || "Central de Ocorrências";
+                }
+            }, 12000);
+
+            return () => clearTimeout(timer);
+        }
+    }, [ocorrencias, somAtivo]);
+
+    function alternarSom() {
+        setSomAtivo(prev => {
+            const novoValor = !prev;
+            localStorage.setItem("alerta_ocorrencias_som", String(novoValor));
+            if (novoValor) {
+                desbloquearAudio();
+                tocarAlertaSonoroOcorrencia();
+            }
+            return novoValor;
+        });
+    }
+
+    function testarSom() {
+        desbloquearAudio();
+        setTocandoTeste(true);
+        tocarAlertaSonoroOcorrencia();
+        setTimeout(() => setTocandoTeste(false), 900);
+    }
 
     // Filtra por placa (client-side)
     const ocorrenciasFiltradas = useMemo(() => {
@@ -674,7 +771,63 @@ export default function OcorrenciasPage() {
     }, [ocorrencias]);
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div className="min-h-screen bg-slate-50 relative">
+            {/* Toast Flutuante de Nova Ocorrência com Alerta Visual */}
+            {toastNovaOcorrencia && (
+                <div className="fixed top-20 right-6 z-50 max-w-sm w-full bg-white rounded-2xl shadow-2xl border-2 border-red-500 overflow-hidden transition-all duration-300 transform translate-y-0 animate-in fade-in slide-in-from-top-4">
+                    <div className="bg-red-600 px-4 py-3 flex items-center justify-between text-white">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xl animate-bounce">🚨</span>
+                            <span className="font-extrabold text-sm tracking-wide uppercase">
+                                Nova Ocorrência Detectada!
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setToastNovaOcorrencia(null)}
+                            className="text-white/80 hover:text-white text-lg font-bold leading-none p-1 cursor-pointer"
+                            title="Fechar alerta"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    <div className="p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <span className="font-mono text-base font-extrabold text-red-600 bg-red-50 px-2.5 py-1 rounded-lg border border-red-100">
+                                {toastNovaOcorrencia.placa}
+                            </span>
+                            {toastNovaOcorrencia.quantidade > 1 && (
+                                <span className="text-xs font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                                    +{toastNovaOcorrencia.quantidade - 1} outra(s)
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-sm font-semibold text-slate-800">
+                            ⚠️ {toastNovaOcorrencia.tipo}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                            Alerta emitido agora. O registro já está disponível na lista abaixo.
+                        </p>
+                        <div className="pt-2 flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setFiltroPlaca(toastNovaOcorrencia.placa);
+                                    setToastNovaOcorrencia(null);
+                                }}
+                                className="text-xs font-bold text-red-700 hover:text-red-800 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-200 transition-colors cursor-pointer"
+                            >
+                                Filtrar Placa →
+                            </button>
+                            <button
+                                onClick={() => setToastNovaOcorrencia(null)}
+                                className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-sm shadow-sm">
                 <div className="mx-auto max-w-[1600px] flex items-center justify-between px-6 py-3">
@@ -685,6 +838,41 @@ export default function OcorrenciasPage() {
                         <p className="text-xs text-slate-500">Torre de Controle — Gestão de Incidentes em Viagens</p>
                     </div>
                     <div className="flex items-center gap-3">
+                        {/* Controle de Alerta Sonoro */}
+                        <div className="flex items-center gap-1.5 bg-slate-100/90 rounded-xl p-1 border border-slate-200 shadow-2xs">
+                            <button
+                                type="button"
+                                onClick={alternarSom}
+                                title={somAtivo ? "Alerta sonoro ativado (clique para silenciar)" : "Alerta sonoro silenciado (clique para ativar)"}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                    somAtivo
+                                        ? "bg-emerald-600 text-white shadow-xs hover:bg-emerald-700"
+                                        : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                                }`}
+                            >
+                                <span>{somAtivo ? "🔔" : "🔕"}</span>
+                                <span>{somAtivo ? "Alerta Sonoro: LIGADO" : "Alerta Sonoro: DESLIGADO"}</span>
+                                {somAtivo && (
+                                    <span className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                                    </span>
+                                )}
+                            </button>
+                            {somAtivo && (
+                                <button
+                                    type="button"
+                                    onClick={testarSom}
+                                    disabled={tocandoTeste}
+                                    title="Clique para testar o som do alarme"
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-white hover:text-slate-900 transition-colors flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                                >
+                                    <span>{tocandoTeste ? "🔊" : "▶️"}</span>
+                                    <span>{tocandoTeste ? "Tocando..." : "Testar"}</span>
+                                </button>
+                            )}
+                        </div>
+
                         <Link href="/dashboard" className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-white hover:bg-slate-700 transition-colors">
                             🚛 Dashboard
                         </Link>
@@ -697,7 +885,7 @@ export default function OcorrenciasPage() {
                         <Link href="/ocorrencias/historico" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors">
                             📂 Histórico
                         </Link>
-                        <button onClick={() => refetch()} className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors">
+                        <button onClick={() => refetch()} className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors cursor-pointer">
                             ↻ Atualizar
                         </button>
                     </div>

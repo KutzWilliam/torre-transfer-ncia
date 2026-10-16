@@ -19,7 +19,7 @@ const ROLE_COLORS: Record<Role, string> = {
 };
 
 const EMPTY_USER = { name: "", email: "", senha: "", role: "OPERADOR" as Role, baseId: "" };
-const EMPTY_SENHA = { id: "", novaSenha: "" };
+const EMPTY_SENHA = { id: "" };
 
 export default function AdminUsuariosPage() {
     const utils = api.useUtils();
@@ -145,7 +145,7 @@ export default function AdminUsuariosPage() {
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
                                                 <button onClick={() => abrirEditar(u)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-md hover:bg-blue-50 transition">Editar</button>
-                                                <button onClick={() => { setSenhaForm({ id: u.id, novaSenha: "" }); setError(""); setShowModal("senha"); }} className="text-xs font-semibold text-amber-600 hover:text-amber-800 px-3 py-1.5 rounded-md hover:bg-amber-50 transition">Senha</button>
+                                                <button onClick={() => { setSenhaForm({ id: u.id }); setError(""); setShowModal("senha"); }} className="text-xs font-semibold text-amber-600 hover:text-amber-800 px-3 py-1.5 rounded-md hover:bg-amber-50 transition">Senha</button>
                                                 <button onClick={() => setConfirmDeleteId(u.id)} className="text-xs font-semibold text-red-600 hover:text-red-800 px-3 py-1.5 rounded-md hover:bg-red-50 transition">Excluir</button>
                                             </div>
                                         </td>
@@ -176,10 +176,9 @@ export default function AdminUsuariosPage() {
                                             <label className="block text-sm font-semibold text-gray-700 mb-1">Email</label>
                                             <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-princesa-green" required />
                                         </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-gray-700 mb-1">Senha Temporária</label>
-                                            <input type="password" value={form.senha} onChange={e => setForm(f => ({ ...f, senha: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-princesa-green" required minLength={6} />
-                                        </div>
+                                        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                            🔑 O usuário será criado com a senha inicial <strong>Princesa123</strong> e precisará criar uma nova senha no primeiro acesso.
+                                        </p>
                                     </>
                                 )}
                                 <div>
@@ -217,10 +216,9 @@ export default function AdminUsuariosPage() {
                                 <h2 className="text-lg font-bold text-amber-700">Redefinir Senha</h2>
                             </div>
                             <form onSubmit={(e) => { e.preventDefault(); senhaMutation.mutate(senhaForm); }} className="p-6 space-y-4">
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nova Senha</label>
-                                    <input type="password" value={senhaForm.novaSenha} onChange={e => setSenhaForm(f => ({ ...f, novaSenha: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-princesa-green" required minLength={6} />
-                                </div>
+                                <p className="text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                    A senha deste usuário voltará para a senha inicial <strong>Princesa123</strong> e ele precisará criar uma nova senha no próximo acesso.
+                                </p>
                                 {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
                                 <div className="flex gap-3 pt-2">
                                     <button type="button" onClick={() => setShowModal(null)} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancelar</button>
