@@ -16,6 +16,8 @@ interface ManifestoComValorRow {
     origem: string | null;
     destino: string | null;
     tipo_manifesto: string | null;
+    status_id: string | null;
+    status_descricao: string | null;
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -52,7 +54,9 @@ export const manifestoRouter = createTRPCRouter({
                     COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0)      AS valor_total,
                     ao.aeroporto                                              AS origem,
                     ad.aeroporto                                              AS destino,
-                    mt.tipo                                                   AS tipo_manifesto
+                    mt.tipo                                                   AS tipo_manifesto,
+                    m.status::text                                            AS status_id,
+                    ms.descricao                                              AS status_descricao
                 FROM manifesto m
                 LEFT JOIN unidades      u  ON u.id_unidade::text   = m.base::text
                 LEFT JOIN veiculos      v  ON v.id_veiculo::text   = m.veiculo::text
@@ -61,13 +65,14 @@ export const manifestoRouter = createTRPCRouter({
                 LEFT JOIN aero          ao ON ao.id_aero::text      = m.transf_origem::text
                 LEFT JOIN aero          ad ON ad.id_aero::text      = m.transf_destino::text
                 LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text     = m.tipo::text
+                LEFT JOIN manifesto_status ms ON ms.id_status::text = m.status::text
                 WHERE m.prev_saida_data::text NOT LIKE '0000%'
                   AND LEFT(m.prev_saida_data::text, 10) = $1
                   AND m.veiculo IS NOT NULL
                 GROUP BY
                     m.id_manifesto, m.prev_saida_data, m.prev_saida_hora,
                     u.fantasia, m.base, v.placa, m.veiculo,
-                    ao.aeroporto, ad.aeroporto, mt.tipo
+                    ao.aeroporto, ad.aeroporto, mt.tipo, m.status, ms.descricao
                 HAVING COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0) > 140000
                 ORDER BY valor_total DESC
             `, [input.data]);
@@ -77,6 +82,48 @@ export const manifestoRouter = createTRPCRouter({
             if (manifestos.length === 0) {
                 return { itens: [], totalManifestos: 0, comAlerta: 0, semAlerta: 0 };
             }
+
+            // ── 1b. Métricas de minutas/volumes/bipagens (consultas em lote) ──
+            // Usa os índices existentes: manifesto_list.id_manifesto, minuta.pkey,
+            // historico_volume.manifesto. Evita N+1.
+            const idsManifesto = manifestos.map(m => m.id_manifesto);
+
+            // DISTINCT por (manifesto, minuta): a mesma minuta não é contada 2x no mesmo manifesto.
+            const minutasVolumesQuery = await telemetriaDb.query<{
+                id_manifesto: string; qtd_minutas: string; total_volumes: string;
+            }>(`
+                SELECT
+                    x.id_manifesto::text                         AS id_manifesto,
+                    COUNT(*)::text                               AS qtd_minutas,
+                    COALESCE(SUM(mn.total_volumes), 0)::text     AS total_volumes
+                FROM (
+                    SELECT DISTINCT ml.id_manifesto, ml.minuta
+                    FROM manifesto_list ml
+                    WHERE ml.id_manifesto = ANY($1::bigint[])
+                ) x
+                LEFT JOIN minuta mn ON mn.id_minuta = x.minuta
+                GROUP BY x.id_manifesto
+            `, [idsManifesto]);
+
+            // Bipagens: tipo 1 = embarque, tipo 2 = desembarque (volumes distintos).
+            const bipagensQuery = await telemetriaDb.query<{
+                manifesto: string; embarcados: string; desembarcados: string;
+            }>(`
+                SELECT
+                    hv.manifesto::bigint::text                                        AS manifesto,
+                    COUNT(DISTINCT hv.id_volume) FILTER (WHERE hv.tipo = 1)::text AS embarcados,
+                    COUNT(DISTINCT hv.id_volume) FILTER (WHERE hv.tipo = 2)::text AS desembarcados
+                FROM historico_volume hv
+                WHERE hv.manifesto = ANY($1::float8[])
+                  AND hv.tipo IN (1, 2)
+                GROUP BY hv.manifesto
+            `, [idsManifesto]);
+
+            const mapaMinutas = new Map(minutasVolumesQuery.rows.map(r => [r.id_manifesto, r]));
+            const mapaBipagens = new Map(bipagensQuery.rows.map(r => [r.manifesto, r]));
+
+            // Status 10 (FINALIZADO / ENCERRADO) e 12 (ENCERRADO) = manifesto finalizado
+            const STATUS_FINALIZADOS = new Set(["10", "12"]);
 
             // ── 2. Verifica viagem no sistema para cada manifesto (em paralelo) ──
             const resultados = await Promise.all(manifestos.map(async (m) => {
@@ -162,8 +209,19 @@ export const manifestoRouter = createTRPCRouter({
                     }
                 }
 
+                const mv = mapaMinutas.get(m.id_manifesto);
+                const bp = mapaBipagens.get(m.id_manifesto);
+                const finalizado = STATUS_FINALIZADOS.has(m.status_id ?? "");
+
                 return {
                     idManifesto:  parseInt(m.id_manifesto, 10),
+                    statusManifesto: m.status_descricao ?? "—",
+                    finalizado,
+                    qtdMinutas:   mv ? parseInt(mv.qtd_minutas, 10) : 0,
+                    totalVolumes: mv ? parseInt(mv.total_volumes, 10) : 0,
+                    volumesEmbarcados: bp ? parseInt(bp.embarcados, 10) : 0,
+                    // Desembarque só é considerado se o manifesto estiver finalizado
+                    volumesDesembarcados: finalizado ? (bp ? parseInt(bp.desembarcados, 10) : 0) : null,
                     prevSaidaData: dataParte,
                     prevSaidaHora: m.prev_saida_hora ?? null,
                     unidade:   m.unidade ?? "—",

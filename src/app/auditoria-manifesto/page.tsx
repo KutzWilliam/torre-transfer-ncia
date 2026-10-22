@@ -25,6 +25,12 @@ type StatusItem = "OK" | "ALERTA";
 
 interface AuditoriaItem {
     idManifesto: number;
+    statusManifesto: string;
+    finalizado: boolean;
+    qtdMinutas: number;
+    totalVolumes: number;
+    volumesEmbarcados: number;
+    volumesDesembarcados: number | null;
     prevSaidaData: string;
     prevSaidaHora: string | null;
     unidade: string;
@@ -204,6 +210,11 @@ export default function AuditoriaManifestoPage() {
                 "Hora Saída": item.prevSaidaHora ? String(item.prevSaidaHora).substring(0, 5) : "—",
                 "Nº Manifesto": item.idManifesto,
                 "Tipo Manifesto": item.tipoManifesto,
+                "Status Manifesto": item.statusManifesto,
+                "Qtd. Minutas": item.qtdMinutas,
+                "Qtd. Volumes": item.totalVolumes,
+                "Volumes Embarcados": item.volumesEmbarcados,
+                "Volumes Desembarcados": item.volumesDesembarcados ?? "—",
                 "Unidade de Origem": item.unidade,
                 "Placa": item.placa,
                 "Origem": item.origem ?? "—",
@@ -218,7 +229,8 @@ export default function AuditoriaManifestoPage() {
 
             // Larguras das colunas
             ws["!cols"] = [
-                { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 22 },
+                { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 26 },
+                { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 22 },
                 { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 10 },
                 { wch: 22 }, { wch: 14 },
             ];
@@ -531,6 +543,11 @@ export default function AuditoriaManifestoPage() {
                                                 {[
                                                     "Nº Manifesto",
                                                     "Tipo",
+                                                    "Status Manifesto",
+                                                    "Minutas",
+                                                    "Volumes",
+                                                    "Embarcados",
+                                                    "Desembarcados",
                                                     "Data / Hora Saída",
                                                     "Unidade de Origem",
                                                     "Origem → Destino",
@@ -571,6 +588,57 @@ export default function AuditoriaManifestoPage() {
                                                         <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
                                                             {item.tipoManifesto}
                                                         </span>
+                                                    </td>
+
+                                                    {/* Status do Manifesto */}
+                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                        <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                                                            item.finalizado
+                                                                ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                                                : "bg-slate-50 text-slate-600 border-slate-200"
+                                                        }`}>
+                                                            {item.statusManifesto}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Qtd. Minutas */}
+                                                    <td className="px-4 py-3 whitespace-nowrap text-center">
+                                                        <span className="text-sm font-bold text-slate-800 tabular-nums">{item.qtdMinutas}</span>
+                                                    </td>
+
+                                                    {/* Qtd. Volumes */}
+                                                    <td className="px-4 py-3 whitespace-nowrap text-center">
+                                                        <span className="text-sm font-bold text-slate-800 tabular-nums">{item.totalVolumes}</span>
+                                                    </td>
+
+                                                    {/* Volumes Embarcados */}
+                                                    <td className="px-4 py-3 whitespace-nowrap text-center">
+                                                        <span className={`text-sm font-bold tabular-nums ${
+                                                            item.volumesEmbarcados >= item.totalVolumes && item.totalVolumes > 0
+                                                                ? "text-emerald-600"
+                                                                : item.volumesEmbarcados === 0
+                                                                ? "text-red-600"
+                                                                : "text-amber-600"
+                                                        }`}>
+                                                            {item.volumesEmbarcados}
+                                                            <span className="text-slate-400 font-normal"> / {item.totalVolumes}</span>
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Volumes Desembarcados (apenas manifesto finalizado) */}
+                                                    <td className="px-4 py-3 whitespace-nowrap text-center">
+                                                        {item.volumesDesembarcados === null ? (
+                                                            <span className="text-xs text-slate-400" title="Disponível apenas para manifestos finalizados">—</span>
+                                                        ) : (
+                                                            <span className={`text-sm font-bold tabular-nums ${
+                                                                item.volumesDesembarcados >= item.totalVolumes && item.totalVolumes > 0
+                                                                    ? "text-emerald-600"
+                                                                    : "text-red-600"
+                                                            }`}>
+                                                                {item.volumesDesembarcados}
+                                                                <span className="text-slate-400 font-normal"> / {item.totalVolumes}</span>
+                                                            </span>
+                                                        )}
                                                     </td>
 
                                                     {/* Data/Hora */}
