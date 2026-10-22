@@ -1,5 +1,6 @@
 import { auth } from "@/server/auth";
 import { NextResponse } from "next/server";
+import { syncUserSession } from "@/lib/monitor";
 
 // Rotas públicas que NÃO precisam de autenticação
 const PUBLIC_ROUTES = ["/login"];
@@ -8,7 +9,7 @@ const PUBLIC_ROUTES = ["/login"];
 // /api/sync           → chamado internamente pelo cliente
 const PUBLIC_PREFIXES = ["/api/auth", "/api/process-emails", "/api/sync", "/api/relatorio-semanal", "/_next", "/favicon", "/logo", "/cropped"];
 
-export default auth((req) => {
+export default auth(async (req) => {
     const { pathname } = req.nextUrl;
 
     // Injeta o pathname como header para o layout poder ler
@@ -29,6 +30,37 @@ export default auth((req) => {
         // Usa apenas o pathname (não a URL completa) para evitar redirect para localhost
         loginUrl.searchParams.set("callbackUrl", pathname);
         return NextResponse.redirect(loginUrl);
+    }
+
+    // ── Integração Torre de Monitoria: Sincronização de Presença & Deslogue Remoto ──
+    const user = req.auth.user;
+    if (user) {
+        const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || undefined;
+        const sessionId = (user as any).loginSessionId || user.id || user.email || "sessao-transferencia";
+
+        const monitorStatus = await syncUserSession({
+            sessionId,
+            userRef: user.email || user.id,
+            userName: user.name || user.email || "Usuário Transferência",
+            userRole: user.role,
+            ip,
+        });
+
+        // Se a sessão foi revogada remotamente pelo painel da monitoria:
+        if (monitorStatus.revoked) {
+            const revokedUrl = new URL("/login", req.url);
+            const res = NextResponse.redirect(revokedUrl);
+            const cookieOptions = { path: "/", maxAge: 0, expires: new Date(0) };
+            res.cookies.set("authjs.session-token", "", cookieOptions);
+            res.cookies.set("__Secure-authjs.session-token", "", cookieOptions);
+            res.cookies.set("next-auth.session-token", "", cookieOptions);
+            res.cookies.set("__Secure-next-auth.session-token", "", cookieOptions);
+            res.cookies.delete("authjs.session-token");
+            res.cookies.delete("__Secure-authjs.session-token");
+            res.cookies.delete("next-auth.session-token");
+            res.cookies.delete("__Secure-next-auth.session-token");
+            return res;
+        }
     }
 
     // Primeiro acesso: obriga a troca da senha inicial antes de usar o sistema

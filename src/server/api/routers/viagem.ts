@@ -57,185 +57,186 @@ export const viagemRouter = createTRPCRouter({
             const inicioLote = Date.now();
             console.log(`[UPLOAD-BACKEND] 🚀 Iniciando processamento de lote com ${input.length} viagens...`);
 
-            // Limite de segurança de 15 segundos para queries deste lote (evita travamentos infinitos por locks)
+            // Limite de segurança de 60 segundos para queries deste lote
             try {
-                await ctx.db.$executeRawUnsafe(`SET statement_timeout = '15000'`);
+                await ctx.db.$executeRawUnsafe(`SET statement_timeout = '60000'`);
             } catch (e) {
                 console.warn("[UPLOAD-BACKEND] Aviso ao configurar statement_timeout:", e);
             }
 
-            let viagensCriadas = 0;
-            let viagensAtualizadas = 0;
-
-            // 1. Pré-carrega rotas, bases e veículos existentes em memória para reduzir round-trips ao banco
-            const [rotasCadastradas, todasBases, todosVeiculos] = await Promise.all([
-                ctx.db.rotaPadrao.findMany({
-                    include: { paradas: { orderBy: { ordem: "asc" } } }
-                }),
-                ctx.db.base.findMany(),
-                ctx.db.veiculo.findMany()
-            ]);
-
-            const basePorNome = new Map<string, typeof todasBases[0]>();
-            const basePorId = new Map<string, typeof todasBases[0]>();
-            for (const b of todasBases) {
-                basePorNome.set(b.nome, b);
-                basePorId.set(b.id, b);
-            }
-
-            const veiculoPorPlaca = new Map<string, typeof todosVeiculos[0]>();
-            for (const v of todosVeiculos) {
-                veiculoPorPlaca.set(v.placa, v);
-            }
-
-            async function getOrCreateBase(nome: string) {
-                let base = basePorNome.get(nome);
-                if (!base) {
-                    base = await ctx.db.base.upsert({
-                        where: { nome },
-                        update: {},
-                        create: { nome, cidade: nome },
-                    });
-                    basePorNome.set(nome, base);
-                    basePorId.set(base.id, base);
-                }
-                return base;
-            }
-
-            async function getOrCreateVeiculo(placa: string) {
-                let veiculo = veiculoPorPlaca.get(placa);
-                if (!veiculo) {
-                    veiculo = await ctx.db.veiculo.upsert({
-                        where: { placa },
-                        update: {},
-                        create: { id: `temp_${placa}`, placa, descricao: "Importado via Planilha" },
-                    });
-                    veiculoPorPlaca.set(placa, veiculo);
-                }
-                return veiculo;
-            }
-
-            for (let idx = 0; idx < input.length; idx++) {
-                const item = input[idx]!;
-                const tViagem0 = Date.now();
-                // 1. Decidir qual placa usar consultado a base da Sascar (Placa Prog, Placa Mobile ou Reboque)
-                const placaSascar = await getPlacaAtivaSascar(item.placa, item.placaMob, item.reboque);
-
-                // 2. Bases Origem e Destino com cache
-                const origemNorm = normalizeCityName(item.origem);
-                const baseOrigem = await getOrCreateBase(origemNorm);
-
-                const destinoNorm = normalizeCityName(item.destino);
-                const baseDestino = await getOrCreateBase(destinoNorm);
-
-                // 3. Veículo com cache
-                const veiculo = await getOrCreateVeiculo(placaSascar);
-
-                // 4. Procurar a Rota Matriz (com tolerância a acentos, maiúsculas e espaços irregulares)
-                const rotaNomeDescartavel = normalizeString(item.rotaDescricao).replace(/\s+/g, ' ').trim();
-                const rotaPadrao = rotasCadastradas.find(r => 
-                    normalizeString(r.nome).replace(/\s+/g, ' ').trim() === rotaNomeDescartavel
-                );
-
-                // Quando há rota cadastrada, usa as paradas da rota como origem/destino canônicos
-                let baseOrigemFinal = baseOrigem;
-                let baseDestinoFinal = baseDestino;
-                if (rotaPadrao && rotaPadrao.paradas.length > 0) {
-                    const primeiraParada = rotaPadrao.paradas[0]!;
-                    const ultimaParada = rotaPadrao.paradas[rotaPadrao.paradas.length - 1]!;
-                    baseOrigemFinal = basePorId.get(primeiraParada.baseId) ?? baseOrigem;
-                    baseDestinoFinal = basePorId.get(ultimaParada.baseId) ?? baseDestino;
-                }
-
-                // 5. Upsert da Viagem
-                const viagem = await ctx.db.viagem.upsert({
-                    where: { id: item.numeroViagem },
-                    update: {
-                        status: item.status,
-                        motorista: item.motorista,
-                        veiculoId: veiculo.id,
-                        prevInicioReal: new Date(item.prevInicio),
-                        prevFimReal: new Date(item.prevFim),
-                        rotaPadraoId: rotaPadrao?.id,
-                        baseOrigemId: baseOrigemFinal.id,
-                        baseDestinoId: baseDestinoFinal.id,
-                        dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
-                        dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
-                    },
-                    create: {
-                        id: item.numeroViagem,
-                        motorista: item.motorista,
-                        rotaDescricao: item.rotaDescricao,
-                        veiculoId: veiculo.id,
-                        baseOrigemId: baseOrigemFinal.id,
-                        baseDestinoId: baseDestinoFinal.id,
-                        prevInicioReal: new Date(item.prevInicio),
-                        prevFimReal: new Date(item.prevFim),
-                        status: item.status,
-                        rotaPadraoId: rotaPadrao?.id,
-                        dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
-                        dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
-                    },
-                });
-
-                // 6. Clonar e calcular os horários da Matriz em lote
-                if (rotaPadrao) {
-                    await ctx.db.paradaViagem.deleteMany({ where: { viagemId: viagem.id } });
-
-                    const dataBase = new Date(item.prevInicio);
-                    dataBase.setHours(0, 0, 0, 0);
-                    let dataReferencia = new Date(dataBase);
-
-                    const paradasParaCriar: Array<{
-                        viagemId: string;
-                        baseId: string;
-                        ordem: number;
-                        prevChegada: Date | null;
-                        prevSaida: Date | null;
-                    }> = [];
-
-                    for (const parada of rotaPadrao.paradas) {
-                        const prevChegadaCalc = calcularDataAbsoluta(dataBase, dataReferencia, parada.prevChegada);
-                        if (prevChegadaCalc) dataReferencia = prevChegadaCalc;
-
-                        const prevSaidaCalc = calcularDataAbsoluta(dataBase, dataReferencia, parada.prevSaida);
-                        if (prevSaidaCalc) dataReferencia = prevSaidaCalc;
-
-                        const ehUltimaParada = parada.ordem === rotaPadrao.paradas.length - 1;
-                        const prevChegadaFinal = (!prevChegadaCalc && ehUltimaParada) ? new Date(item.prevFim) : prevChegadaCalc;
-
-                        paradasParaCriar.push({
-                            viagemId: viagem.id,
-                            baseId: parada.baseId,
-                            ordem: parada.ordem,
-                            prevChegada: prevChegadaFinal,
-                            prevSaida: prevSaidaCalc,
-                        });
-                    }
-
-                    if (paradasParaCriar.length > 0) {
-                        await ctx.db.paradaViagem.createMany({ data: paradasParaCriar });
-                    }
-                }
-
-                if (viagem.createdAt.getTime() === viagem.updatedAt.getTime()) viagensCriadas++;
-                else viagensAtualizadas++;
-            }
-
-            const tempoTotalMs = Date.now() - inicioLote;
-            console.log(`[UPLOAD-BACKEND] ✅ Lote finalizado em ${tempoTotalMs}ms: ${viagensCriadas} criadas, ${viagensAtualizadas} atualizadas.`);
-
             try {
-                await ctx.db.$executeRawUnsafe(`RESET statement_timeout`);
-            } catch { /* noop */ }
+                let viagensCriadas = 0;
+                let viagensAtualizadas = 0;
 
-            return {
-                success: true,
-                criadas: viagensCriadas,
-                atualizadas: viagensAtualizadas,
-                tempoMs: tempoTotalMs,
-                message: `Lote processado em ${tempoTotalMs}ms! ${viagensCriadas} criadas e ${viagensAtualizadas} atualizadas.`
-            };
+                // 1. Pré-carrega rotas, bases e veículos existentes em memória para reduzir round-trips ao banco
+                const [rotasCadastradas, todasBases, todosVeiculos] = await Promise.all([
+                    ctx.db.rotaPadrao.findMany({
+                        include: { paradas: { orderBy: { ordem: "asc" } } }
+                    }),
+                    ctx.db.base.findMany(),
+                    ctx.db.veiculo.findMany()
+                ]);
+
+                const basePorNome = new Map<string, typeof todasBases[0]>();
+                const basePorId = new Map<string, typeof todasBases[0]>();
+                for (const b of todasBases) {
+                    basePorNome.set(b.nome, b);
+                    basePorId.set(b.id, b);
+                }
+
+                const veiculoPorPlaca = new Map<string, typeof todosVeiculos[0]>();
+                for (const v of todosVeiculos) {
+                    veiculoPorPlaca.set(v.placa, v);
+                }
+
+                async function getOrCreateBase(nome: string) {
+                    let base = basePorNome.get(nome);
+                    if (!base) {
+                        base = await ctx.db.base.upsert({
+                            where: { nome },
+                            update: {},
+                            create: { nome, cidade: nome },
+                        });
+                        basePorNome.set(nome, base);
+                        basePorId.set(base.id, base);
+                    }
+                    return base;
+                }
+
+                async function getOrCreateVeiculo(placa: string) {
+                    let veiculo = veiculoPorPlaca.get(placa);
+                    if (!veiculo) {
+                        veiculo = await ctx.db.veiculo.upsert({
+                            where: { placa },
+                            update: {},
+                            create: { id: `temp_${placa}`, placa, descricao: "Importado via Planilha" },
+                        });
+                        veiculoPorPlaca.set(placa, veiculo);
+                    }
+                    return veiculo;
+                }
+
+                for (let idx = 0; idx < input.length; idx++) {
+                    const item = input[idx]!;
+                    // 1. Decidir qual placa usar consultado a base da Sascar (Placa Prog, Placa Mobile ou Reboque)
+                    const placaSascar = await getPlacaAtivaSascar(item.placa, item.placaMob, item.reboque);
+
+                    // 2. Bases Origem e Destino com cache
+                    const origemNorm = normalizeCityName(item.origem);
+                    const baseOrigem = await getOrCreateBase(origemNorm);
+
+                    const destinoNorm = normalizeCityName(item.destino);
+                    const baseDestino = await getOrCreateBase(destinoNorm);
+
+                    // 3. Veículo com cache
+                    const veiculo = await getOrCreateVeiculo(placaSascar);
+
+                    // 4. Procurar a Rota Matriz (com tolerância a acentos, maiúsculas e espaços irregulares)
+                    const rotaNomeDescartavel = normalizeString(item.rotaDescricao).replace(/\s+/g, ' ').trim();
+                    const rotaPadrao = rotasCadastradas.find(r => 
+                        normalizeString(r.nome).replace(/\s+/g, ' ').trim() === rotaNomeDescartavel
+                    );
+
+                    // Quando há rota cadastrada, usa as paradas da rota como origem/destino canônicos
+                    let baseOrigemFinal = baseOrigem;
+                    let baseDestinoFinal = baseDestino;
+                    if (rotaPadrao && rotaPadrao.paradas.length > 0) {
+                        const primeiraParada = rotaPadrao.paradas[0]!;
+                        const ultimaParada = rotaPadrao.paradas[rotaPadrao.paradas.length - 1]!;
+                        baseOrigemFinal = basePorId.get(primeiraParada.baseId) ?? baseOrigem;
+                        baseDestinoFinal = basePorId.get(ultimaParada.baseId) ?? baseDestino;
+                    }
+
+                    // 5. Upsert da Viagem
+                    const viagem = await ctx.db.viagem.upsert({
+                        where: { id: item.numeroViagem },
+                        update: {
+                            status: item.status,
+                            motorista: item.motorista,
+                            veiculoId: veiculo.id,
+                            prevInicioReal: new Date(item.prevInicio),
+                            prevFimReal: new Date(item.prevFim),
+                            rotaPadraoId: rotaPadrao?.id,
+                            baseOrigemId: baseOrigemFinal.id,
+                            baseDestinoId: baseDestinoFinal.id,
+                            dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
+                            dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
+                        },
+                        create: {
+                            id: item.numeroViagem,
+                            motorista: item.motorista,
+                            rotaDescricao: item.rotaDescricao,
+                            veiculoId: veiculo.id,
+                            baseOrigemId: baseOrigemFinal.id,
+                            baseDestinoId: baseDestinoFinal.id,
+                            prevInicioReal: new Date(item.prevInicio),
+                            prevFimReal: new Date(item.prevFim),
+                            status: item.status,
+                            rotaPadraoId: rotaPadrao?.id,
+                            dataInicioEfetivo: item.dataInicioEfetivo ? new Date(item.dataInicioEfetivo) : undefined,
+                            dataFimEfetivo: item.dataFimEfetivo ? new Date(item.dataFimEfetivo) : undefined,
+                        },
+                    });
+
+                    // 6. Clonar e calcular os horários da Matriz em lote
+                    if (rotaPadrao) {
+                        await ctx.db.paradaViagem.deleteMany({ where: { viagemId: viagem.id } });
+
+                        const dataBase = new Date(item.prevInicio);
+                        dataBase.setHours(0, 0, 0, 0);
+                        let dataReferencia = new Date(dataBase);
+
+                        const paradasParaCriar: Array<{
+                            viagemId: string;
+                            baseId: string;
+                            ordem: number;
+                            prevChegada: Date | null;
+                            prevSaida: Date | null;
+                        }> = [];
+
+                        for (const parada of rotaPadrao.paradas) {
+                            const prevChegadaCalc = calcularDataAbsoluta(dataBase, dataReferencia, parada.prevChegada);
+                            if (prevChegadaCalc) dataReferencia = prevChegadaCalc;
+
+                            const prevSaidaCalc = calcularDataAbsoluta(dataBase, dataReferencia, parada.prevSaida);
+                            if (prevSaidaCalc) dataReferencia = prevSaidaCalc;
+
+                            const ehUltimaParada = parada.ordem === rotaPadrao.paradas.length - 1;
+                            const prevChegadaFinal = (!prevChegadaCalc && ehUltimaParada) ? new Date(item.prevFim) : prevChegadaCalc;
+
+                            paradasParaCriar.push({
+                                viagemId: viagem.id,
+                                baseId: parada.baseId,
+                                ordem: parada.ordem,
+                                prevChegada: prevChegadaFinal,
+                                prevSaida: prevSaidaCalc,
+                            });
+                        }
+
+                        if (paradasParaCriar.length > 0) {
+                            await ctx.db.paradaViagem.createMany({ data: paradasParaCriar });
+                        }
+                    }
+
+                    if (viagem.createdAt.getTime() === viagem.updatedAt.getTime()) viagensCriadas++;
+                    else viagensAtualizadas++;
+                }
+
+                const tempoTotalMs = Date.now() - inicioLote;
+                console.log(`[UPLOAD-BACKEND] ✅ Lote finalizado em ${tempoTotalMs}ms: ${viagensCriadas} criadas, ${viagensAtualizadas} atualizadas.`);
+
+                return {
+                    success: true,
+                    criadas: viagensCriadas,
+                    atualizadas: viagensAtualizadas,
+                    tempoMs: tempoTotalMs,
+                    message: `Lote processado em ${tempoTotalMs}ms! ${viagensCriadas} criadas e ${viagensAtualizadas} atualizadas.`
+                };
+            } finally {
+                try {
+                    await ctx.db.$executeRawUnsafe(`RESET statement_timeout`);
+                } catch { /* noop */ }
+            }
         }),
 
     listar: protectedProcedure

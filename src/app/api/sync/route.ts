@@ -21,25 +21,54 @@ export async function GET() {
             WHERE "placa" IS NOT NULL AND "idVeiculo" IS NOT NULL
         `);
 
+        // Deduplicar placas para priorizar placas canônicas de 7 caracteres (ignora sufixos como -1, -2 de sub-dispositivos)
+        const veiculosSascarMap = new Map<string, { idVeiculo: string; placa: string; descricao: string | null }>();
+        for (const row of resultVeiculos.rows) {
+            if (!row.placa) continue;
+            const placaRaw = String(row.placa).trim();
+            const placaLimpa = placaRaw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().substring(0, 7);
+            if (!placaLimpa || placaLimpa.length < 7) continue;
+
+            const existing = veiculosSascarMap.get(placaLimpa);
+            if (!existing) {
+                veiculosSascarMap.set(placaLimpa, {
+                    idVeiculo: String(row.idVeiculo),
+                    placa: placaLimpa,
+                    descricao: row.descricao ?? null,
+                });
+            } else {
+                // Se a linha atual tiver placa exata (sem traço/sufixo extra), ela tem precedência
+                const rawLimpaAtual = placaRaw.replace(/[^a-zA-Z0-9]/g, "");
+                const rawLimpaExistente = String(existing.placa).replace(/[^a-zA-Z0-9]/g, "");
+                if (rawLimpaAtual.length === 7 && rawLimpaExistente.length !== 7) {
+                    veiculosSascarMap.set(placaLimpa, {
+                        idVeiculo: String(row.idVeiculo),
+                        placa: placaLimpa,
+                        descricao: row.descricao ?? null,
+                    });
+                }
+            }
+        }
+
         let veiculosAtualizados = 0;
         const veiculosMigrados: string[] = [];
         const veiculosCriados: string[] = [];
         const veiculosTemporarios: string[] = [];
 
-        for (const row of resultVeiculos.rows) {
-            if (!row.placa) continue;
-            const placaRaw = String(row.placa);
-            const placaLimpa = placaRaw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().substring(0, 7);
-            const idNovo = String(row.idVeiculo);
+        for (const [placaLimpa, vSascar] of veiculosSascarMap.entries()) {
+            const idNovo = vSascar.idVeiculo;
 
             // Verificar se já existe pelo ID real
             const porId = await db.veiculo.findUnique({ where: { id: idNovo } });
-            // Verificar se existe pela placa (pode estar com um ID temporário)
+            // Verificar se existe pela placa (pode estar com um ID temporário 'temp_')
             const porPlaca = await db.veiculo.findUnique({ where: { placa: placaLimpa } });
 
-            if (porPlaca && porPlaca.id !== idNovo) {
+            // REGRA CRÍTICA: Somente migrar se o registro existente for TEMPORÁRIO ('temp_')!
+            // Veículos definitivos já vinculados a Sascar nunca devem sofrer migração interativa,
+            // pois atualizar centenas de milhares de telemetrias bloqueia todo o banco de dados.
+            if (porPlaca && porPlaca.id.startsWith("temp_")) {
                 const idVelho = porPlaca.id;
-                console.log(`[SYNC] Migrando veículo de forma segura: placa=${placaLimpa} (${idVelho} → ${idNovo})`);
+                console.log(`[SYNC] Migrando veículo temporário: placa=${placaLimpa} (${idVelho} → ${idNovo})`);
                 await db.$transaction(async (tx) => {
                     // 1. Libera a placa do registro antigo para não colidir com o unique constraint
                     await tx.$executeRawUnsafe(`UPDATE "Veiculo" SET "placa" = $1 WHERE "id" = $2`, `_MIG_${idVelho}`, idVelho);
@@ -49,25 +78,25 @@ export async function GET() {
                         INSERT INTO "Veiculo" ("id", "placa", "descricao", "createdAt", "updatedAt")
                         VALUES ($1, $2, $3, NOW(), NOW())
                         ON CONFLICT ("id") DO UPDATE SET "placa" = EXCLUDED."placa", "descricao" = EXCLUDED."descricao", "updatedAt" = NOW()
-                    `, idNovo, placaLimpa, row.descricao ?? "Importado Sascar");
+                    `, idNovo, placaLimpa, vSascar.descricao ?? "Importado Sascar");
 
-                    // 3. Redireciona viagens e telemetrias do id temporário para o id definitivo
+                    // 3. Redireciona viagens (e telemetrias se houver) do id temporário para o id definitivo
                     await tx.$executeRawUnsafe(`UPDATE "Viagem" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
                     await tx.$executeRawUnsafe(`UPDATE "Telemetria" SET "veiculoId" = $1 WHERE "veiculoId" = $2`, idNovo, idVelho);
 
                     // 4. Remove o registro temporário antigo
                     await tx.$executeRawUnsafe(`DELETE FROM "Veiculo" WHERE "id" = $1`, idVelho);
-                }, { timeout: 120000, maxWait: 15000 });
-                console.log(`[SYNC]   → Migração segura concluída (${idVelho} → ${idNovo})`);
+                }, { timeout: 30000, maxWait: 10000 });
+                console.log(`[SYNC]   → Migração temporária concluída (${idVelho} → ${idNovo})`);
                 veiculosMigrados.push(`${placaLimpa}(${idVelho}→${idNovo})`);
             } else if (!porPlaca && !porId) {
                 // Novo veículo
-                await db.veiculo.create({ data: { id: idNovo, placa: placaLimpa, descricao: row.descricao } });
+                await db.veiculo.create({ data: { id: idNovo, placa: placaLimpa, descricao: vSascar.descricao } });
                 veiculosCriados.push(`${placaLimpa}(${idNovo})`);
             } else if (porId && !porPlaca) {
-                // ID existe mas placa errada — só atualizar placa
-                console.log(`[SYNC] Atualizando placa do veículo id=${idNovo}: ${porId.placa} → ${placaLimpa} (raw Sascar: ${placaRaw})`);
-                await db.veiculo.update({ where: { id: idNovo }, data: { placa: placaLimpa, descricao: row.descricao } });
+                // ID existe mas placa desatualizada
+                console.log(`[SYNC] Atualizando placa do veículo id=${idNovo}: ${porId.placa} → ${placaLimpa}`);
+                await db.veiculo.update({ where: { id: idNovo }, data: { placa: placaLimpa, descricao: vSascar.descricao } });
             }
             veiculosAtualizados++;
         }

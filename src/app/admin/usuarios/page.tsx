@@ -210,20 +210,22 @@ export default function AdminUsuariosPage() {
 
                 {/* Modal Alterar Senha */}
                 {showModal === "senha" && (
-                    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-                            <div className="p-6 border-b border-gray-200">
-                                <h2 className="text-lg font-bold text-amber-700">Redefinir Senha</h2>
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm relative overflow-hidden">
+                            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-600 via-amber-500 to-amber-700" />
+                            <div className="p-6 border-b border-gray-100">
+                                <h2 className="text-lg font-bold text-gray-900">Redefinir Senha</h2>
+                                <p className="text-xs text-gray-500 mt-0.5">Restauração para a senha padrão de acesso</p>
                             </div>
                             <form onSubmit={(e) => { e.preventDefault(); senhaMutation.mutate(senhaForm); }} className="p-6 space-y-4">
-                                <p className="text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                    A senha deste usuário voltará para a senha inicial <strong>Princesa123</strong> e ele precisará criar uma nova senha no próximo acesso.
-                                </p>
-                                {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                                <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
+                                    A senha deste usuário será redefinida para a senha padrão <strong>Princesa123</strong> e ele deverá alterá-la no próximo login.
+                                </div>
+                                {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3">{error}</p>}
                                 <div className="flex gap-3 pt-2">
-                                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancelar</button>
-                                    <button type="submit" disabled={senhaMutation.isPending} className="flex-1 bg-amber-600 text-white rounded-lg py-2 text-sm font-semibold hover:opacity-90 transition disabled:opacity-50">
-                                        {senhaMutation.isPending ? "Salvando..." : "Redefinir"}
+                                    <button type="button" onClick={() => setShowModal(null)} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancelar</button>
+                                    <button type="submit" disabled={senhaMutation.isPending} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white rounded-xl py-2.5 text-sm font-semibold transition disabled:opacity-50 shadow-sm">
+                                        {senhaMutation.isPending ? "Salvando..." : "Redefinir Senha"}
                                     </button>
                                 </div>
                             </form>

@@ -27,8 +27,19 @@ export const authConfig = {
 
         try {
           // Forçando o Prisma a trazer exatamente os campos que a nossa regra de negócio precisa
-          const user = await db.user.findUnique({
-            where: { email: credentials.email as string },
+          const rawLogin = (credentials.email as string).trim();
+          const hasAt = rawLogin.includes("@");
+
+          // Busca por e-mail exato ou pelo prefixo antes do @ se o usuário digitou só o login
+          const user = await db.user.findFirst({
+            where: hasAt
+              ? { email: { equals: rawLogin, mode: "insensitive" } }
+              : {
+                  OR: [
+                    { email: { equals: rawLogin, mode: "insensitive" } },
+                    { email: { startsWith: `${rawLogin}@`, mode: "insensitive" } },
+                  ],
+                },
             select: {
               id: true,
               name: true,
@@ -37,7 +48,7 @@ export const authConfig = {
               role: true,
               baseId: true,
               precisaTrocarSenha: true,
-            }
+            },
           });
 
           if (!user || !user.senhaHash) {
@@ -77,6 +88,7 @@ export const authConfig = {
     jwt: ({ token, user }) => {
       if (user) {
         token.id = user.id;
+        token.loginSessionId = `${user.id}_${Date.now()}`;
         // @ts-expect-error - ignorando tipagem customizada
         token.role = user.role;
         // @ts-expect-error
@@ -92,6 +104,7 @@ export const authConfig = {
         user: {
           ...session.user,
           id: token.id as string,
+          loginSessionId: (token.loginSessionId as string) || (token.id as string),
           role: token.role as "ADMIN" | "GERENTE" | "OPERADOR",
           baseId: token.baseId as string | null,
           precisaTrocarSenha: (token.precisaTrocarSenha as boolean | undefined) ?? false,

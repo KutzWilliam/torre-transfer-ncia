@@ -41,6 +41,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.61.0",
     "mailparser": "^3.9.12",
     "next": "^15.2.3",
     "next-auth": "5.0.0-beta.25",

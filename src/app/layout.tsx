@@ -7,7 +7,7 @@ import { TRPCReactProvider } from "@/trpc/react";
 export const metadata: Metadata = {
   title: "Transferência - Princesa",
   description: "Monitoramento em tempo real de viagens e frotas",
-  icons: [{ rel: "icon", url: "/cropped-icon.png" }],
+  icons: [{ rel: "icon", url: "/logo.png" }],
 };
 
 import { auth } from "@/server/auth";

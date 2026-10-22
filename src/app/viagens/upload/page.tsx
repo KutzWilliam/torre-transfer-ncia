@@ -216,8 +216,8 @@ export default function UploadViagensPage() {
                     return;
                 }
 
-                // Divisão em lotes (chunks) de 50
-                const CHUNK_SIZE = 50;
+                // Divisão em lotes (chunks) de 25 para processamento ágil e seguro
+                const CHUNK_SIZE = 25;
                 const lotes: (typeof dadosValidos)[] = [];
                 for (let i = 0; i < dadosValidos.length; i += CHUNK_SIZE) {
                     lotes.push(dadosValidos.slice(i, i + CHUNK_SIZE));
@@ -229,7 +229,7 @@ export default function UploadViagensPage() {
                 let criadasAcumulado = 0;
                 let atualizadasAcumulado = 0;
 
-                // Processar cada lote com Timeout de 25 segundos
+                // Processar cada lote com Timeout de 60 segundos
                 for (let index = 0; index < lotes.length; index++) {
                     const lote = lotes[index]!;
                     const processadosAteAgora = Math.min((index + 1) * CHUNK_SIZE, dadosValidos.length);
@@ -251,7 +251,7 @@ export default function UploadViagensPage() {
                     const ultimaViagem = lote[lote.length - 1]?.numeroViagem ?? "";
                     addLog("info", `Enviando Lote ${index + 1}/${lotes.length} (${lote.length} viagens: #${primeiraViagem} a #${ultimaViagem})...`);
 
-                    const TIMEOUT_MS = 25000;
+                    const TIMEOUT_MS = 60000;
                     const timeoutPromise = new Promise<never>((_, reject) => {
                         setTimeout(() => {
                             reject(new Error(`Timeout de ${TIMEOUT_MS / 1000}s excedido no Lote ${index + 1}. O servidor demorou para responder (possível lentidão ou lock no banco de dados).`));
