@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import {
   Lock,
   Eye,
@@ -10,6 +11,8 @@ import {
   CheckCircle2,
   X,
   LogOut,
+  Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { api } from "@/trpc/react";
@@ -28,9 +31,9 @@ export function TrocarSenhaModal({
   isOpen = true,
   onClose,
   onSuccess,
-  isModal = true,
-  title = "Criar Nova Senha",
-  subtitle = "Por segurança, substitua a senha inicial no primeiro acesso",
+  isModal = false,
+  title = "Transferência",
+  subtitle = "Crie sua nova senha para continuar o acesso",
 }: TrocarSenhaModalProps) {
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
@@ -75,6 +78,10 @@ export function TrocarSenhaModal({
       setError("A nova senha deve ter no mínimo 8 caracteres.");
       return;
     }
+    if (novaSenha.toLowerCase() === "princesa123") {
+      setError("A nova senha não pode ser a senha padrão inicial.");
+      return;
+    }
     if (novaSenha !== confirmar) {
       setError("A confirmação não confere com a nova senha digitada.");
       return;
@@ -88,9 +95,9 @@ export function TrocarSenhaModal({
     window.location.href = "/login";
   };
 
-  const content = (
+  const cardContent = (
     <div
-      className={styles.modalCard}
+      className={styles.loginCard}
       onClick={(e) => isModal && e.stopPropagation()}
     >
       <div className={styles.topAccentBar} />
@@ -106,21 +113,23 @@ export function TrocarSenhaModal({
         </button>
       )}
 
-      <div className={styles.header}>
-        <div className={styles.logoWrapper}>
-          <img
-            src="/cropped-icon.png"
-            alt="Princesa dos Campos"
-            className={styles.logo}
-          />
-        </div>
-        <h2 className={styles.title}>{title}</h2>
-        <p className={styles.subtitle}>{subtitle}</p>
+      {/* Cabeçalho com Logo idêntico ao Login */}
+      <div className={styles.brandHeader}>
+        <Image
+          src="/logo.png"
+          alt="Princesa dos Campos"
+          width={80}
+          height={80}
+          className={styles.logoImage}
+          priority
+        />
+        <h2 className={styles.systemTitle}>{title}</h2>
+        <p className={styles.systemSubtitle}>{subtitle}</p>
       </div>
 
       {error && (
         <div className={styles.alertError}>
-          <AlertCircle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
+          <AlertCircle size={18} className={styles.alertIcon} />
           <span>{error}</span>
         </div>
       )}
@@ -134,6 +143,16 @@ export function TrocarSenhaModal({
 
       {!success && (
         <form onSubmit={handleSubmit} className={styles.form}>
+          <div className={styles.firstAccessBanner}>
+            <div className={styles.firstAccessTitle}>
+              <ShieldCheck size={18} />
+              <span>Primeiro Acesso Detectado</span>
+            </div>
+            <p className={styles.firstAccessText}>
+              Por segurança, sua senha padrão precisa ser alterada por uma nova senha pessoal antes de continuar.
+            </p>
+          </div>
+
           <div className={styles.inputGroup}>
             <label className={styles.label} htmlFor="modal-senha-atual">
               Senha Atual (Inicial)
@@ -144,7 +163,7 @@ export function TrocarSenhaModal({
                 id="modal-senha-atual"
                 type={showSenhaAtual ? "text" : "password"}
                 autoComplete="current-password"
-                className={`${styles.input} ${styles.inputWithToggle}`}
+                className={styles.input}
                 placeholder="Ex: Princesa123"
                 value={senhaAtual}
                 onChange={(e) => setSenhaAtual(e.target.value)}
@@ -173,7 +192,7 @@ export function TrocarSenhaModal({
                 id="modal-nova-senha"
                 type={showNovaSenha ? "text" : "password"}
                 autoComplete="new-password"
-                className={`${styles.input} ${styles.inputWithToggle}`}
+                className={styles.input}
                 placeholder="Mínimo 8 caracteres"
                 value={novaSenha}
                 onChange={(e) => setNovaSenha(e.target.value)}
@@ -203,7 +222,7 @@ export function TrocarSenhaModal({
                 id="modal-confirmar-senha"
                 type={showConfirmar ? "text" : "password"}
                 autoComplete="new-password"
-                className={`${styles.input} ${styles.inputWithToggle}`}
+                className={styles.input}
                 placeholder="Repita a nova senha"
                 value={confirmar}
                 onChange={(e) => setConfirmar(e.target.value)}
@@ -228,7 +247,10 @@ export function TrocarSenhaModal({
             disabled={trocar.isPending}
           >
             {trocar.isPending ? (
-              "Atualizando..."
+              <>
+                <Loader2 size={18} className={styles.spinner} />
+                <span>Atualizando...</span>
+              </>
             ) : (
               <>
                 <span>Atualizar Senha</span>
@@ -253,14 +275,14 @@ export function TrocarSenhaModal({
   if (isModal) {
     return (
       <div className={styles.overlay} onClick={onClose}>
-        {content}
+        {cardContent}
       </div>
     );
   }
 
   return (
-    <div className={styles.pageContainer}>
-      {content}
+    <div className={styles.container}>
+      {cardContent}
     </div>
   );
 }

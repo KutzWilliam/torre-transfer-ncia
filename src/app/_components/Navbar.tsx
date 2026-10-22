@@ -10,8 +10,8 @@ export default function Navbar({ session }: { session: Session | null }) {
     const [menuAberto, setMenuAberto] = useState(false);
     const pathname = usePathname();
 
-    // Não renderiza nada se não há sessão OU se está na página de login
-    if (!session || pathname === "/login") return null;
+    // Não renderiza nada se não há sessão OU se está na página de login ou troca de senha
+    if (!session || pathname === "/login" || pathname === "/trocar-senha") return null;
 
     const isAdmin = session?.user?.role === "ADMIN";
 
