@@ -42,67 +42,111 @@ interface ManifestoBrudamRow {
     soma_impostos: string | null;
     tipo_manifesto_id: string | null;
     tipo_manifesto_descricao: string | null;
+    tipo_veiculo_banco: string | null;
 }
 
 function inferirCapacidadeVeiculo(
     rotaContratual: RotaContratual | null,
     rawCapacidadeKg: string | null,
     rawCapacidadeM3: string | null,
-    modeloVeiculo: string | null
-): { tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4"; capacidadeKg: number; capacidadeM3: number } {
-    // 1. Se tem rota contratual na planilha oficial, ela é soberana
-    if (rotaContratual) {
+    modeloVeiculo: string | null,
+    tipoVeiculoBanco: string | null
+): { tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4" | "ONIBUS"; capacidadeKg: number; capacidadeM3: number; modalidade: "CAMINHAO" | "ONIBUS" } {
+    const isOnibus = tipoVeiculoBanco === "5";
+    const modalidade: "CAMINHAO" | "ONIBUS" = isOnibus ? "ONIBUS" : "CAMINHAO";
+
+    if (isOnibus) {
+        let pesoKg = Number(rawCapacidadeKg) || 0;
+        if (pesoKg <= 0 || pesoKg === 999.99 || pesoKg > 10000) {
+            pesoKg = 3000; // Padrão bagageiro ônibus (3 toneladas)
+        }
+        let m3 = Number(rawCapacidadeM3) || 0;
+        if (m3 <= 0 || m3 > 30) {
+            m3 = 8; // Padrão bagageiro ônibus (8 m³)
+        }
         return {
-            tipoVeiculo: rotaContratual.tipoVeiculo === "CAVALO MECANICO" ? "CAVALO MECANICO" : "TRUCK",
-            capacidadeKg: rotaContratual.pesoKg,
-            capacidadeM3: rotaContratual.cubagemM3,
+            tipoVeiculo: "ONIBUS",
+            capacidadeKg: pesoKg,
+            capacidadeM3: m3,
+            modalidade: "ONIBUS",
         };
     }
-
     const mod = (modeloVeiculo || "").toUpperCase();
-    const isCavalo = mod.includes("AXOR") || mod.includes("ACTROS") || mod.includes("SCANIA") ||
+    const isCavaloMod = mod.includes("AXOR") || mod.includes("ACTROS") || mod.includes("SCANIA") ||
                      mod.includes("FH") || mod.includes("R124") || mod.includes("R440") ||
-                     mod.includes("TGX") || mod.includes("STRIS") || mod.includes("T113") ||
-                     mod.includes("CAVALO") || mod.includes("CARRETA") || mod.includes("RANDON");
+                     mod.includes("TGX") || mod.includes("STRIS") || mod.includes("STRALIS") ||
+                     mod.includes("T113") || mod.includes("CAVALO") || mod.includes("CARRETA") ||
+                     mod.includes("RANDON") || mod.includes("19320") || mod.includes("2540") ||
+                     mod.includes("2536") || mod.includes("2646") || mod.includes("2544") ||
+                     mod.includes("CONSTELLATION 19");
 
-    const isLeve = mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
+    const isLeveMod = mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
                    mod.includes("DAILY") || mod.includes("SPRINTER") || mod.includes("HR") ||
-                   mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4");
+                   mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4") ||
+                   mod.includes("STRADA") || mod.includes("DUCATO");
 
-    const tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4" = isCavalo ? "CAVALO MECANICO" : (isLeve ? "VUC / 3/4" : "TRUCK");
+    // 1. Analisa capacidade bruta do banco de dados
+    let pesoKgBanco = Number(rawCapacidadeKg) || 0;
+    let temCapacidadeRealBanco = false;
 
-    // 2. Normalização de Peso (kg)
-    let pesoKg = Number(rawCapacidadeKg) || 0;
-
-    // Se cadastrado em TONELADAS no Brudam (ex: 10, 15.25, 16, 16.57, 30.36, 32)
-    if (pesoKg > 0 && pesoKg <= 60) {
-        pesoKg = Math.round(pesoKg * 1000);
+    if (pesoKgBanco > 0 && pesoKgBanco !== 999.99 && pesoKgBanco < 999999) {
+        if (pesoKgBanco <= 60) {
+            // Cadastrado em TONELADAS no Brudam (ex: 16.57 -> 16570 kg, 23 -> 23000 kg, 30 -> 30000 kg)
+            pesoKgBanco = Math.round(pesoKgBanco * 1000);
+            temCapacidadeRealBanco = true;
+        } else if (pesoKgBanco > 60 && pesoKgBanco < 3500 && (isCavaloMod || !isLeveMod)) {
+            // Erro clássico de digitação de 1 zero a menos no Brudam (ex: 1400 -> 14000 kg)
+            pesoKgBanco = Math.round(pesoKgBanco * 10);
+            temCapacidadeRealBanco = true;
+        } else if (pesoKgBanco >= 3500 && pesoKgBanco <= 60000) {
+            // Valor em kg válido e explícito cadastrado no veículo (ex: 12000, 16090, 23000, 30000)
+            temCapacidadeRealBanco = true;
+        }
     }
-    // Erro de digitação clássico de 1 zero a menos no Brudam em Truck/Cavalo (ex: 1213 -> 12130, 1400 -> 14000)
-    else if (pesoKg > 60 && pesoKg < 3500 && (tipoVeiculo === "TRUCK" || tipoVeiculo === "CAVALO MECANICO")) {
-        pesoKg = Math.round(pesoKg * 10);
-    }
-    // Valores dummy (ex: 999.99, 9999999.99) ou zerados
-    else if (pesoKg <= 0 || pesoKg === 999.99 || pesoKg > 60000) {
-        pesoKg = tipoVeiculo === "CAVALO MECANICO" ? 24000 : (tipoVeiculo === "VUC / 3/4" ? 4000 : 14000);
-    }
 
-    // 3. Normalização de Cubagem (m3)
-    let m3 = Number(rawCapacidadeM3) || 0;
-
-    // Se valor dummy ou irreal para veículo de transferência de linha
-    if (tipoVeiculo === "CAVALO MECANICO") {
-        if (m3 < 70 || m3 > 140) m3 = 100;
-    } else if (tipoVeiculo === "TRUCK") {
-        if (m3 < 35 || m3 > 75) m3 = 50;
+    // 2. Determina o tipo de veículo real utilizado
+    let tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4";
+    if (isCavaloMod || (temCapacidadeRealBanco && pesoKgBanco >= 19000)) {
+        tipoVeiculo = "CAVALO MECANICO";
+    } else if (isLeveMod || (temCapacidadeRealBanco && pesoKgBanco <= 6000)) {
+        tipoVeiculo = "VUC / 3/4";
+    } else if (rotaContratual) {
+        tipoVeiculo = rotaContratual.tipoVeiculo === "CAVALO MECANICO" ? "CAVALO MECANICO" : "TRUCK";
     } else {
-        if (m3 < 15 || m3 > 35) m3 = 25;
+        tipoVeiculo = "TRUCK";
+    }
+
+    // 3. Define capacidade em Kg (Prioridade: Banco de Dados do Veículo > Rota Contratual da Planilha > Padrão)
+    let capacidadeKg: number;
+    if (temCapacidadeRealBanco) {
+        capacidadeKg = pesoKgBanco;
+    } else if (rotaContratual && rotaContratual.pesoKg > 0 && rotaContratual.tipoVeiculo === tipoVeiculo) {
+        capacidadeKg = rotaContratual.pesoKg;
+    } else {
+        capacidadeKg = tipoVeiculo === "CAVALO MECANICO" ? 24000 : (tipoVeiculo === "VUC / 3/4" ? 4000 : 14000);
+    }
+
+    // 4. Define capacidade em m3 (baú)
+    let m3 = Number(rawCapacidadeM3) || 0;
+    let m3Valido = false;
+
+    if (tipoVeiculo === "CAVALO MECANICO" && m3 >= 70 && m3 <= 140) m3Valido = true;
+    if (tipoVeiculo === "TRUCK" && m3 >= 35 && m3 <= 75) m3Valido = true;
+    if (tipoVeiculo === "VUC / 3/4" && m3 >= 15 && m3 <= 35) m3Valido = true;
+
+    if (!m3Valido) {
+        if (rotaContratual && rotaContratual.cubagemM3 > 0 && rotaContratual.tipoVeiculo === tipoVeiculo) {
+            m3 = rotaContratual.cubagemM3;
+        } else {
+            m3 = tipoVeiculo === "CAVALO MECANICO" ? 100 : (tipoVeiculo === "TRUCK" ? 50 : 25);
+        }
     }
 
     return {
         tipoVeiculo,
-        capacidadeKg: pesoKg,
+        capacidadeKg,
         capacidadeM3: m3,
+        modalidade: "CAMINHAO",
     };
 }
 
@@ -113,6 +157,7 @@ export const aproveitamentoRouter = createTRPCRouter({
             dataFim: z.string(),    // "yyyy-MM-dd"
             parceiro: z.string().optional(),
             tipoVeiculo: z.string().optional(),
+            modalidade: z.enum(["TODAS", "CAMINHAO", "ONIBUS"]).optional().default("TODAS"),
             statusManifesto: z.string().optional(),
             tipoManifesto: z.string().optional(),
             statusOcupacao: z.enum(["TODAS", "CRITICA", "ATENCAO", "IDEAL"]).optional().default("TODAS"),
@@ -209,7 +254,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     ma.soma_custo_seguro::text,
                     ma.soma_impostos::text,
                     m.tipo::text as tipo_manifesto_id,
-                    COALESCE(mt.tipo, 'Outro') as tipo_manifesto_descricao
+                    COALESCE(mt.tipo, 'Outro') as tipo_manifesto_descricao,
+                    COALESCE(v.tipo_veiculo::text, t.tipo_ve::text) as tipo_veiculo_banco
                 FROM manifesto m
                 LEFT JOIN manifesto_status ms ON ms.id_status = m.status
                 LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text = m.tipo::text
@@ -241,11 +287,12 @@ export const aproveitamentoRouter = createTRPCRouter({
                 const rotaContratual = encontrarRotaCompativel(parceiroIdentificado, origem, destino, rotasContratuais);
 
                 // Define capacidade oficial com normalização inteligente (Planilha > Brudam saneado > Padrão)
-                const { tipoVeiculo, capacidadeKg, capacidadeM3 } = inferirCapacidadeVeiculo(
+                const { tipoVeiculo, capacidadeKg, capacidadeM3, modalidade } = inferirCapacidadeVeiculo(
                     rotaContratual,
                     r.capacidade_veiculo_kg,
                     r.capacidade_veiculo_m3,
-                    r.modelo_veiculo
+                    r.modelo_veiculo,
+                    r.tipo_veiculo_banco
                 );
 
                 // Custo: Planilha ou Lançado no Brudam
@@ -295,6 +342,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                     origem,
                     destino,
                     rotaDescricao: `${origem} ➔ ${destino}`,
+                    modalidade,
                     tipoVeiculo,
                     capacidadeKg,
                     capacidadeM3,
@@ -329,6 +377,7 @@ export const aproveitamentoRouter = createTRPCRouter({
 
             // 3. Aplicação dos filtros do usuário
             const viagensFiltradas = viagensProcessadas.filter((v) => {
+                if (input.modalidade && input.modalidade !== "TODAS" && v.modalidade !== input.modalidade) return false;
                 if (input.parceiro && v.parceiro.toLowerCase() !== input.parceiro.toLowerCase()) return false;
                 if (input.tipoVeiculo && v.tipoVeiculo !== input.tipoVeiculo) return false;
                 if (input.statusManifesto && v.statusDescricao.toLowerCase() !== input.statusManifesto.toLowerCase()) return false;

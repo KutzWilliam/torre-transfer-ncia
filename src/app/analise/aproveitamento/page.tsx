@@ -77,6 +77,7 @@ export default function AproveitamentoFrotaPage() {
 
     const [parceiroFiltro, setParceiroFiltro] = useState<string>("");
     const [tipoVeiculoFiltro, setTipoVeiculoFiltro] = useState<string>("");
+    const [modalidadeFiltro, setModalidadeFiltro] = useState<"TODAS" | "CAMINHAO" | "ONIBUS">("TODAS");
     const [statusManifestoFiltro, setStatusManifestoFiltro] = useState<string>("");
     const [tipoManifestoFiltro, setTipoManifestoFiltro] = useState<string>("");
     const [ocupacaoFiltro, setOcupacaoFiltro] = useState<NivelOcupacaoFiltro>("TODAS");
@@ -131,6 +132,7 @@ export default function AproveitamentoFrotaPage() {
             dataFim,
             parceiro: parceiroFiltro || undefined,
             tipoVeiculo: tipoVeiculoFiltro || undefined,
+            modalidade: modalidadeFiltro,
             statusManifesto: statusManifestoFiltro || undefined,
             tipoManifesto: tipoManifestoFiltro || undefined,
             statusOcupacao: ocupacaoFiltro,
@@ -172,6 +174,7 @@ export default function AproveitamentoFrotaPage() {
                 "Parceiro": v.parceiro,
                 "Transportadora": v.fornecedorRazao,
                 "Rota": v.rotaDescricao,
+                "Modalidade": v.modalidade === "ONIBUS" ? "Ônibus" : "Caminhão",
                 "Placa": v.placa,
                 "Tipo Veículo": v.tipoVeiculo,
                 "Peso Carregado (kg)": v.pesoCarregadoKg,
@@ -318,18 +321,33 @@ export default function AproveitamentoFrotaPage() {
                         </select>
                     </div>
 
+                    {/* Filtro Modalidade (Caminhão vs Ônibus) */}
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Modalidade</p>
+                        <select
+                            value={modalidadeFiltro}
+                            onChange={(e) => setModalidadeFiltro(e.target.value as "TODAS" | "CAMINHAO" | "ONIBUS")}
+                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 min-w-[155px]"
+                        >
+                            <option value="TODAS">Todos (Caminhão & Ônibus)</option>
+                            <option value="CAMINHAO">🚛 Caminhão</option>
+                            <option value="ONIBUS">🚌 Ônibus</option>
+                        </select>
+                    </div>
+
                     {/* Filtro Tipo Veículo */}
                     <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Veículo</p>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Porte / Tipo</p>
                         <select
                             value={tipoVeiculoFiltro}
                             onChange={(e) => setTipoVeiculoFiltro(e.target.value)}
                             className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 min-w-[140px]"
                         >
-                            <option value="">Todos</option>
+                            <option value="">Todos os Portes</option>
                             <option value="TRUCK">Truck (12t a 16t / 50m³)</option>
                             <option value="CAVALO MECANICO">Cavalo (24t a 30t / 100m³)</option>
                             <option value="VUC / 3/4">VUC / 3/4 (4t / 25m³)</option>
+                            <option value="ONIBUS">🚌 Ônibus (Bagageiro 2t a 4.5t)</option>
                         </select>
                     </div>
 
@@ -810,8 +828,14 @@ export default function AproveitamentoFrotaPage() {
 
                                                         {/* Tipo */}
                                                         <td className="px-4 py-3 whitespace-nowrap">
-                                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${v.tipoVeiculo === "CAVALO MECANICO" ? "bg-purple-50 text-purple-700" : (v.tipoVeiculo === "VUC / 3/4" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700")}`}>
-                                                                {v.tipoVeiculo === "CAVALO MECANICO" ? "Cavalo" : (v.tipoVeiculo === "VUC / 3/4" ? "VUC / 3/4" : "Truck")}
+                                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                                v.tipoVeiculo === "CAVALO MECANICO" ? "bg-purple-50 text-purple-700 border border-purple-200" :
+                                                                (v.tipoVeiculo === "ONIBUS" ? "bg-amber-50 text-amber-800 border border-amber-200" :
+                                                                (v.tipoVeiculo === "VUC / 3/4" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-blue-50 text-blue-700 border border-blue-200"))
+                                                            }`}>
+                                                                {v.tipoVeiculo === "CAVALO MECANICO" ? "Cavalo" :
+                                                                 (v.tipoVeiculo === "ONIBUS" ? "🚌 Ônibus" :
+                                                                 (v.tipoVeiculo === "VUC / 3/4" ? "VUC / 3/4" : "Truck"))}
                                                             </span>
                                                         </td>
 
