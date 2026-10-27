@@ -248,6 +248,9 @@ export default function AnaliseOperacionalPage() {
                         <p className="text-xs text-slate-500 mt-0.5">Página de análise gerencial das viagens finalizadas • {labelPeriodo}</p>
                     </div>
                     <div className="flex items-center gap-3 flex-wrap">
+                        <Link href="/analise/aproveitamento" className="rounded-lg bg-orange-50 border border-orange-200 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100 transition-colors">
+                            🚛 Aproveitamento de Frota →
+                        </Link>
                         <Link href="/analise/origem" className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
                             Atrasos por Origem →
                         </Link>

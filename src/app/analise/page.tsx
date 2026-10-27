@@ -27,6 +27,18 @@ const modulos = [
     novidade: true,
   },
   {
+    href: "/analise/aproveitamento",
+    titulo: "Aproveitamento de Frota",
+    descricao:
+      "Aproveitamento da capacidade dos veículos (peso e cubagem), faturamento vs custo de terceiros, identificação de gargalos e rotas deficitárias para tomada de decisão.",
+    icon: "🚛",
+    cor: "from-amber-500 to-orange-700",
+    borda: "border-orange-500/30",
+    badge: "Estratégico",
+    badgeCor: "bg-orange-500/20 text-orange-700",
+    novidade: true,
+  },
+  {
     href: "/analise/origem",
     titulo: "Atrasos por Origem",
     descricao:

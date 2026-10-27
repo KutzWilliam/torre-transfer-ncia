@@ -1,0 +1,648 @@
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { telemetriaDb } from "@/server/db-telemetria";
+import {
+    obterRotasContratuais,
+    identificarParceiroBrudam,
+    encontrarRotaCompativel,
+    type RotaContratual
+} from "@/server/services/capacidadeFornecedores";
+
+interface ManifestoBrudamRow {
+    id_manifesto: string;
+    prev_saida_data: string;
+    saida_efetiva_data: string | null;
+    status: string;
+    status_descricao: string | null;
+    placa: string | null;
+    modelo_veiculo: string | null;
+    capacidade_veiculo_kg: string | null;
+    capacidade_veiculo_m3: string | null;
+    fornecedor_nome: string | null;
+    fornecedor_cnpj: string | null;
+    origem_aero: string | null;
+    destino_aero: string | null;
+    origem_unidade: string | null;
+    destino_unidade: string | null;
+    custo_motorista: string | null;
+    valor_total_km: string | null;
+    pedagio: string | null;
+    total_minutas: string;
+    soma_peso_kg: string | null;
+    soma_peso_cubado_kg: string | null;
+    soma_peso_taxado_kg: string | null;
+    soma_cubo_m3: string | null;
+    soma_volumes: string | null;
+    soma_nf_valor: string | null;
+    soma_frete_bruto: string | null;
+    soma_frete_rateado: string | null;
+    soma_custo_coleta: string | null;
+    soma_custo_entrega: string | null;
+    soma_custo_seguro: string | null;
+    soma_impostos: string | null;
+    tipo_manifesto_id: string | null;
+    tipo_manifesto_descricao: string | null;
+}
+
+function inferirCapacidadeVeiculo(
+    rotaContratual: RotaContratual | null,
+    rawCapacidadeKg: string | null,
+    rawCapacidadeM3: string | null,
+    modeloVeiculo: string | null
+): { tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4"; capacidadeKg: number; capacidadeM3: number } {
+    // 1. Se tem rota contratual na planilha oficial, ela é soberana
+    if (rotaContratual) {
+        return {
+            tipoVeiculo: rotaContratual.tipoVeiculo === "CAVALO MECANICO" ? "CAVALO MECANICO" : "TRUCK",
+            capacidadeKg: rotaContratual.pesoKg,
+            capacidadeM3: rotaContratual.cubagemM3,
+        };
+    }
+
+    const mod = (modeloVeiculo || "").toUpperCase();
+    const isCavalo = mod.includes("AXOR") || mod.includes("ACTROS") || mod.includes("SCANIA") ||
+                     mod.includes("FH") || mod.includes("R124") || mod.includes("R440") ||
+                     mod.includes("TGX") || mod.includes("STRIS") || mod.includes("T113") ||
+                     mod.includes("CAVALO") || mod.includes("CARRETA") || mod.includes("RANDON");
+
+    const isLeve = mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
+                   mod.includes("DAILY") || mod.includes("SPRINTER") || mod.includes("HR") ||
+                   mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4");
+
+    const tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4" = isCavalo ? "CAVALO MECANICO" : (isLeve ? "VUC / 3/4" : "TRUCK");
+
+    // 2. Normalização de Peso (kg)
+    let pesoKg = Number(rawCapacidadeKg) || 0;
+
+    // Se cadastrado em TONELADAS no Brudam (ex: 10, 15.25, 16, 16.57, 30.36, 32)
+    if (pesoKg > 0 && pesoKg <= 60) {
+        pesoKg = Math.round(pesoKg * 1000);
+    }
+    // Erro de digitação clássico de 1 zero a menos no Brudam em Truck/Cavalo (ex: 1213 -> 12130, 1400 -> 14000)
+    else if (pesoKg > 60 && pesoKg < 3500 && (tipoVeiculo === "TRUCK" || tipoVeiculo === "CAVALO MECANICO")) {
+        pesoKg = Math.round(pesoKg * 10);
+    }
+    // Valores dummy (ex: 999.99, 9999999.99) ou zerados
+    else if (pesoKg <= 0 || pesoKg === 999.99 || pesoKg > 60000) {
+        pesoKg = tipoVeiculo === "CAVALO MECANICO" ? 24000 : (tipoVeiculo === "VUC / 3/4" ? 4000 : 14000);
+    }
+
+    // 3. Normalização de Cubagem (m3)
+    let m3 = Number(rawCapacidadeM3) || 0;
+
+    // Se valor dummy ou irreal para veículo de transferência de linha
+    if (tipoVeiculo === "CAVALO MECANICO") {
+        if (m3 < 70 || m3 > 140) m3 = 100;
+    } else if (tipoVeiculo === "TRUCK") {
+        if (m3 < 35 || m3 > 75) m3 = 50;
+    } else {
+        if (m3 < 15 || m3 > 35) m3 = 25;
+    }
+
+    return {
+        tipoVeiculo,
+        capacidadeKg: pesoKg,
+        capacidadeM3: m3,
+    };
+}
+
+export const aproveitamentoRouter = createTRPCRouter({
+    obterAnaliseAproveitamento: protectedProcedure
+        .input(z.object({
+            dataInicio: z.string(), // "yyyy-MM-dd"
+            dataFim: z.string(),    // "yyyy-MM-dd"
+            parceiro: z.string().optional(),
+            tipoVeiculo: z.string().optional(),
+            statusManifesto: z.string().optional(),
+            tipoManifesto: z.string().optional(),
+            statusOcupacao: z.enum(["TODAS", "CRITICA", "ATENCAO", "IDEAL"]).optional().default("TODAS"),
+            statusMargem: z.enum(["TODAS", "LUCRO", "PREJUIZO"]).optional().default("TODAS"),
+            search: z.string().optional(),
+        }))
+        .query(async ({ input }) => {
+            const rotasContratuais = obterRotasContratuais();
+
+            // 1. Query otimizada no Brudam
+            // - Filtra intervalo de datas
+            // - Pega transferências (tipo 1, 2, 4) e status não cancelado (status != 3)
+            // - Agrega totais de peso, cubagem, receita rateada e custos operacionais das pontas (coleta, entrega, seguro, impostos)
+            const queryResult = await telemetriaDb.query<ManifestoBrudamRow>(`
+                WITH manifestos_filtrados AS (
+                    SELECT id_manifesto
+                    FROM manifesto m
+                    WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                      AND LEFT(m.prev_saida_data::text, 10) >= $1
+                      AND LEFT(m.prev_saida_data::text, 10) <= $2
+                      AND m.status != 3
+                ),
+                minutas_envolvidas AS (
+                    SELECT DISTINCT ml.minuta
+                    FROM manifesto_list ml
+                    JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                ),
+                rateio_minuta AS (
+                    SELECT 
+                        ml.minuta,
+                        COUNT(DISTINCT ml.id_manifesto) as total_trechos
+                    FROM manifesto_list ml
+                    JOIN minutas_envolvidas me ON me.minuta = ml.minuta
+                    JOIN manifesto m ON m.id_manifesto = ml.id_manifesto
+                    WHERE m.status != 3 AND m.tipo IN (1, 2, 4)
+                    GROUP BY ml.minuta
+                ),
+                manifesto_agregado AS (
+                    SELECT 
+                        ml.id_manifesto,
+                        COUNT(DISTINCT ml.minuta) as total_minutas,
+                        COALESCE(SUM(mn.total_peso), 0) as soma_peso_kg,
+                        COALESCE(SUM(mn.total_cubo), 0) as soma_peso_cubado_kg,
+                        COALESCE(SUM(mn.total_taxado), 0) as soma_peso_taxado_kg,
+                        COALESCE(SUM(CASE 
+                            WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                            WHEN mn.total_cubo > 0 THEN mn.total_cubo / 250.0 
+                            ELSE 0 
+                        END), 0) as soma_cubo_m3,
+                        COALESCE(SUM(mn.total_volumes), 0) as soma_volumes,
+                        COALESCE(SUM(mn.total_nf_valor), 0) as soma_nf_valor,
+                        COALESCE(SUM(mn.frete_total), 0) as soma_frete_bruto,
+                        COALESCE(SUM(mn.frete_total / GREATEST(rm.total_trechos, 1)), 0) as soma_frete_rateado,
+                        COALESCE(SUM(COALESCE(mn.coleta_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_coleta,
+                        COALESCE(SUM(COALESCE(mn.entrega_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_entrega,
+                        COALESCE(SUM((COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0)) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_seguro,
+                        COALESCE(SUM((COALESCE(mn.frete_total, 0) * 0.0925) / GREATEST(rm.total_trechos, 1)), 0) as soma_impostos
+                    FROM manifesto_list ml
+                    JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                    JOIN minuta mn ON mn.id_minuta = ml.minuta
+                    LEFT JOIN rateio_minuta rm ON rm.minuta = ml.minuta
+                    GROUP BY ml.id_manifesto
+                )
+                SELECT 
+                    m.id_manifesto::text,
+                    LEFT(m.prev_saida_data::text, 10) as prev_saida_data,
+                    LEFT(m.saida_efetiva_data::text, 10) as saida_efetiva_data,
+                    m.status::text,
+                    ms.descricao as status_descricao,
+                    COALESCE(v.placa, t.ve_placa) as placa,
+                    COALESCE(v.modelo, t.ve_modelo) as modelo_veiculo,
+                    COALESCE(v.capacidade::text, t.ve_capacidade::text) as capacidade_veiculo_kg,
+                    COALESCE(v."capM3"::text, t."capM3"::text) as capacidade_veiculo_m3,
+                    COALESCE(fv.fantasia, ft.fantasia) as fornecedor_nome,
+                    COALESCE(fv.cnpj, ft.cnpj) as fornecedor_cnpj,
+                    ao.aeroporto as origem_aero,
+                    ad.aeroporto as destino_aero,
+                    uo.fantasia as origem_unidade,
+                    ud.fantasia as destino_unidade,
+                    m.custo_motorista::text,
+                    m.valor_total_km::text,
+                    m.pedagio::text,
+                    COALESCE(ma.total_minutas, 0)::text as total_minutas,
+                    ma.soma_peso_kg::text,
+                    ma.soma_peso_cubado_kg::text,
+                    ma.soma_peso_taxado_kg::text,
+                    ma.soma_cubo_m3::text,
+                    ma.soma_volumes::text,
+                    ma.soma_nf_valor::text,
+                    ma.soma_frete_bruto::text,
+                    ma.soma_frete_rateado::text,
+                    ma.soma_custo_coleta::text,
+                    ma.soma_custo_entrega::text,
+                    ma.soma_custo_seguro::text,
+                    ma.soma_impostos::text,
+                    m.tipo::text as tipo_manifesto_id,
+                    COALESCE(mt.tipo, 'Outro') as tipo_manifesto_descricao
+                FROM manifesto m
+                LEFT JOIN manifesto_status ms ON ms.id_status = m.status
+                LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text = m.tipo::text
+                LEFT JOIN veiculos v ON v.id_veiculo = m.veiculo
+                LEFT JOIN fornecedores fv ON v.proprietario::text = fv.id_local::text
+                LEFT JOIN terceiros t ON t.id_terceiro = m.veiculo_terceiro
+                LEFT JOIN fornecedores ft ON t.fornecedor::text = ft.id_local::text
+                LEFT JOIN aero ao ON ao.id_aero::text = m.transf_origem::text
+                LEFT JOIN aero ad ON ad.id_aero::text = m.transf_destino::text
+                LEFT JOIN unidades uo ON uo.id_unidade::text = m.base::text
+                LEFT JOIN unidades ud ON ud.id_unidade::text = m.destino::text
+                LEFT JOIN manifesto_agregado ma ON ma.id_manifesto = m.id_manifesto
+                WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                  AND LEFT(m.prev_saida_data::text, 10) >= $1
+                  AND LEFT(m.prev_saida_data::text, 10) <= $2
+                  AND m.status != 3
+                  AND (ma.total_minutas > 0 OR m.veiculo IS NOT NULL OR m.veiculo_terceiro IS NOT NULL)
+                ORDER BY m.id_manifesto DESC;
+            `, [input.dataInicio, input.dataFim]);
+
+            const rows = queryResult.rows;
+
+            // 2. Processa cada viagem cruzando com as regras da planilha de capacidade
+            const viagensProcessadas = rows.map((r) => {
+                const parceiroIdentificado = identificarParceiroBrudam(r.fornecedor_nome) || "Outros / Próprio";
+                const origem = r.origem_aero || r.origem_unidade || "Origem não inf.";
+                const destino = r.destino_aero || r.destino_unidade || "Destino não inf.";
+
+                const rotaContratual = encontrarRotaCompativel(parceiroIdentificado, origem, destino, rotasContratuais);
+
+                // Define capacidade oficial com normalização inteligente (Planilha > Brudam saneado > Padrão)
+                const { tipoVeiculo, capacidadeKg, capacidadeM3 } = inferirCapacidadeVeiculo(
+                    rotaContratual,
+                    r.capacidade_veiculo_kg,
+                    r.capacidade_veiculo_m3,
+                    r.modelo_veiculo
+                );
+
+                // Custo: Planilha ou Lançado no Brudam
+                const custoBrudam = (Number(r.custo_motorista) || 0) + (Number(r.valor_total_km) || 0) + (Number(r.pedagio) || 0);
+                const custoViagem = (custoBrudam > 0) ? custoBrudam : (rotaContratual?.valorTotal || 0);
+
+                const pesoCarregadoKg = Number(r.soma_peso_kg) || 0;
+                const cuboCarregadoM3 = Number(r.soma_cubo_m3) || 0;
+                const totalVolumes = Number(r.soma_volumes) || 0;
+                const valorMercadoriaNf = Number(r.soma_nf_valor) || 0;
+                
+                // Receitas e Custos Operacionais das Pontas
+                const receitaRateada = Number(r.soma_frete_rateado) || 0; // Frete bruto rateado
+                const receitaBrutaMinutas = Number(r.soma_frete_bruto) || 0;
+                const custoColetaRateado = Number(r.soma_custo_coleta) || 0;
+                const custoEntregaRateado = Number(r.soma_custo_entrega) || 0;
+                const custoSeguroRateado = Number(r.soma_custo_seguro) || 0;
+                const impostosRateados = Number(r.soma_impostos) || 0; // 9,25% PIS/COFINS
+                const custoPontasRateado = custoColetaRateado + custoEntregaRateado + custoSeguroRateado + impostosRateados;
+
+                // Receita Líquida disponível para cobrir a transferência
+                const receitaLiquidaRateada = Math.max(0, receitaRateada - custoPontasRateado);
+
+                // Cálculos de ocupação
+                const ocupacaoPesoPct = capacidadeKg > 0 ? Math.round((pesoCarregadoKg / capacidadeKg) * 100) : 0;
+                const ocupacaoCuboPct = capacidadeM3 > 0 ? Math.round((cuboCarregadoM3 / capacidadeM3) * 100) : 0;
+                const ocupacaoGeralPct = Math.max(ocupacaoPesoPct, ocupacaoCuboPct);
+                const gargalo = ocupacaoPesoPct >= ocupacaoCuboPct ? "PESO" : "VOLUME";
+
+                const nivelOcupacao: "CRITICA" | "ATENCAO" | "IDEAL" = 
+                    ocupacaoGeralPct < 50 ? "CRITICA" : (ocupacaoGeralPct < 75 ? "ATENCAO" : "IDEAL");
+
+                // Cálculos de Lucro Líquido Real (Receita Líquida - Custo do Parceiro)
+                const margemFinanceira = receitaLiquidaRateada - custoViagem;
+                const margemPercentual = receitaLiquidaRateada > 0 ? Math.round((margemFinanceira / receitaLiquidaRateada) * 100) : (custoViagem > 0 ? -100 : 0);
+                const resultadoFinanceiro: "LUCRO" | "PREJUIZO" = margemFinanceira >= 0 ? "LUCRO" : "PREJUIZO";
+
+                return {
+                    idManifesto: r.id_manifesto,
+                    data: r.prev_saida_data,
+                    saidaEfetiva: r.saida_efetiva_data,
+                    statusDescricao: r.status_descricao || "Encerrado",
+                    parceiro: parceiroIdentificado,
+                    fornecedorRazao: r.fornecedor_nome || "—",
+                    placa: r.placa || "—",
+                    modelo: r.modelo_veiculo || "—",
+                    origem,
+                    destino,
+                    rotaDescricao: `${origem} ➔ ${destino}`,
+                    tipoVeiculo,
+                    capacidadeKg,
+                    capacidadeM3,
+                    pesoCarregadoKg,
+                    cuboCarregadoM3,
+                    totalVolumes,
+                    totalMinutas: Number(r.total_minutas) || 0,
+                    valorMercadoriaNf,
+                    ocupacaoPesoPct,
+                    ocupacaoCuboPct,
+                    ocupacaoGeralPct,
+                    gargalo,
+                    nivelOcupacao,
+                    custoViagem,
+                    receitaRateada,
+                    receitaBrutaMinutas,
+                    custoPontasRateado,
+                    custoColetaRateado,
+                    custoEntregaRateado,
+                    custoSeguroRateado,
+                    impostosRateados,
+                    receitaLiquidaRateada,
+                    margemFinanceira,
+                    margemPercentual,
+                    resultadoFinanceiro,
+                    tipoManifestoId: r.tipo_manifesto_id,
+                    tipoManifestoDescricao: r.tipo_manifesto_descricao || "Outro",
+                    rotaContratualLinha: rotaContratual?.linha || null,
+                    distanciaKm: rotaContratual?.totalKm || 0,
+                };
+            });
+
+            // 3. Aplicação dos filtros do usuário
+            const viagensFiltradas = viagensProcessadas.filter((v) => {
+                if (input.parceiro && v.parceiro.toLowerCase() !== input.parceiro.toLowerCase()) return false;
+                if (input.tipoVeiculo && v.tipoVeiculo !== input.tipoVeiculo) return false;
+                if (input.statusManifesto && v.statusDescricao.toLowerCase() !== input.statusManifesto.toLowerCase()) return false;
+                if (input.tipoManifesto && v.tipoManifestoDescricao.toLowerCase() !== input.tipoManifesto.toLowerCase() && v.tipoManifestoId !== input.tipoManifesto) return false;
+                if (input.statusOcupacao !== "TODAS" && v.nivelOcupacao !== input.statusOcupacao) return false;
+                if (input.statusMargem !== "TODAS" && v.resultadoFinanceiro !== input.statusMargem) return false;
+
+                if (input.search) {
+                    const q = input.search.toLowerCase();
+                    const match = v.idManifesto.includes(q) ||
+                        v.placa.toLowerCase().includes(q) ||
+                        v.origem.toLowerCase().includes(q) ||
+                        v.destino.toLowerCase().includes(q) ||
+                        v.parceiro.toLowerCase().includes(q) ||
+                        v.fornecedorRazao.toLowerCase().includes(q) ||
+                        v.statusDescricao.toLowerCase().includes(q) ||
+                        v.tipoManifestoDescricao.toLowerCase().includes(q);
+                    if (!match) return false;
+                }
+                return true;
+            });
+
+            // 4. Agregações para KPIs Globais
+            const totalViagens = viagensFiltradas.length;
+            const somaPesoCarregado = viagensFiltradas.reduce((acc, v) => acc + v.pesoCarregadoKg, 0);
+            const somaCapacidadePeso = viagensFiltradas.reduce((acc, v) => acc + v.capacidadeKg, 0);
+            const somaCuboCarregado = viagensFiltradas.reduce((acc, v) => acc + v.cuboCarregadoM3, 0);
+            const somaCapacidadeCubo = viagensFiltradas.reduce((acc, v) => acc + v.capacidadeM3, 0);
+
+            const taxaMediaOcupacaoPeso = somaCapacidadePeso > 0 ? Math.round((somaPesoCarregado / somaCapacidadePeso) * 100) : 0;
+            const taxaMediaOcupacaoCubo = somaCapacidadeCubo > 0 ? Math.round((somaCuboCarregado / somaCapacidadeCubo) * 100) : 0;
+
+            const receitaTotalRateada = viagensFiltradas.reduce((acc, v) => acc + v.receitaRateada, 0);
+            const receitaLiquidaTotalRateada = viagensFiltradas.reduce((acc, v) => acc + v.receitaLiquidaRateada, 0);
+            const custoPontasTotal = viagensFiltradas.reduce((acc, v) => acc + v.custoPontasRateado, 0);
+            const custoTotalParceiros = viagensFiltradas.reduce((acc, v) => acc + v.custoViagem, 0);
+            const margemTotal = receitaLiquidaTotalRateada - custoTotalParceiros;
+            const margemTotalPct = receitaLiquidaTotalRateada > 0 ? Math.round((margemTotal / receitaLiquidaTotalRateada) * 100) : 0;
+
+            const capacidadeOciosaKg = Math.max(0, somaCapacidadePeso - somaPesoCarregado);
+            const capacidadeOciosaM3 = Math.max(0, somaCapacidadeCubo - somaCuboCarregado);
+
+            const qtdSubutilizadas = viagensFiltradas.filter(v => v.nivelOcupacao === "CRITICA").length;
+            const qtdPrejuizo = viagensFiltradas.filter(v => v.resultadoFinanceiro === "PREJUIZO").length;
+
+            // 5. Agregações por Parceiro (Ranking)
+            const mapaParceiros = new Map<string, {
+                parceiro: string;
+                viagens: number;
+                somaPeso: number;
+                somaCapPeso: number;
+                somaCubo: number;
+                somaCapCubo: number;
+                receitaBruta: number;
+                receitaLiquida: number;
+                custo: number;
+                margem: number;
+            }>();
+
+            for (const v of viagensFiltradas) {
+                const item = mapaParceiros.get(v.parceiro) || {
+                    parceiro: v.parceiro,
+                    viagens: 0,
+                    somaPeso: 0,
+                    somaCapPeso: 0,
+                    somaCubo: 0,
+                    somaCapCubo: 0,
+                    receitaBruta: 0,
+                    receitaLiquida: 0,
+                    custo: 0,
+                    margem: 0,
+                };
+                item.viagens++;
+                item.somaPeso += v.pesoCarregadoKg;
+                item.somaCapPeso += v.capacidadeKg;
+                item.somaCubo += v.cuboCarregadoM3;
+                item.somaCapCubo += v.capacidadeM3;
+                item.receitaBruta += v.receitaRateada;
+                item.receitaLiquida += v.receitaLiquidaRateada;
+                item.custo += v.custoViagem;
+                item.margem += v.margemFinanceira;
+                mapaParceiros.set(v.parceiro, item);
+            }
+
+            const rankingParceiros = Array.from(mapaParceiros.values()).map(p => ({
+                parceiro: p.parceiro,
+                viagens: p.viagens,
+                ocupacaoMediaPeso: p.somaCapPeso > 0 ? Math.round((p.somaPeso / p.somaCapPeso) * 100) : 0,
+                ocupacaoMediaCubo: p.somaCapCubo > 0 ? Math.round((p.somaCubo / p.somaCapCubo) * 100) : 0,
+                ocupacaoGeral: Math.max(
+                    p.somaCapPeso > 0 ? Math.round((p.somaPeso / p.somaCapPeso) * 100) : 0,
+                    p.somaCapCubo > 0 ? Math.round((p.somaCubo / p.somaCapCubo) * 100) : 0
+                ),
+                receitaTotal: p.receitaBruta,
+                receitaLiquidaTotal: p.receitaLiquida,
+                custoTotal: p.custo,
+                margemTotal: p.margem,
+                margemPct: p.receitaLiquida > 0 ? Math.round((p.margem / p.receitaLiquida) * 100) : 0,
+            })).sort((a, b) => b.viagens - a.viagens);
+
+            // 6. Ranking de Rotas Subutilizadas (Menor ocupação)
+            const mapaRotas = new Map<string, { rota: string; viagens: number; ocupacaoSoma: number; prejuizoSoma: number; custoTotal: number; receitaTotal: number; receitaLiquidaTotal: number; margemTotal: number }>();
+            for (const v of viagensFiltradas) {
+                const item = mapaRotas.get(v.rotaDescricao) || { rota: v.rotaDescricao, viagens: 0, ocupacaoSoma: 0, prejuizoSoma: 0, custoTotal: 0, receitaTotal: 0, receitaLiquidaTotal: 0, margemTotal: 0 };
+                item.viagens++;
+                item.ocupacaoSoma += v.ocupacaoGeralPct;
+                item.custoTotal += v.custoViagem;
+                item.receitaTotal += v.receitaRateada;
+                item.receitaLiquidaTotal += v.receitaLiquidaRateada;
+                item.margemTotal += v.margemFinanceira;
+                if (v.resultadoFinanceiro === "PREJUIZO") item.prejuizoSoma++;
+                mapaRotas.set(v.rotaDescricao, item);
+            }
+
+            const rotasAnalise = Array.from(mapaRotas.values()).map(r => ({
+                rota: r.rota,
+                viagens: r.viagens,
+                ocupacaoMedia: Math.round(r.ocupacaoSoma / r.viagens),
+                prejuizoQtd: r.prejuizoSoma,
+                receitaTotal: r.receitaTotal,
+                receitaLiquidaTotal: r.receitaLiquidaTotal,
+                custoTotal: r.custoTotal,
+                margemTotal: r.margemTotal,
+            }));
+
+            const rotasPiorOcupacao = [...rotasAnalise]
+                .filter(r => r.viagens >= 2)
+                .sort((a, b) => a.ocupacaoMedia - b.ocupacaoMedia)
+                .slice(0, 8);
+
+            const rotasMaiorMovimento = [...rotasAnalise]
+                .sort((a, b) => b.receitaLiquidaTotal - a.receitaLiquidaTotal)
+                .slice(0, 8);
+
+            // 7. Distribuição das viagens
+            const distribuicaoOcupacao = {
+                IDEAL: viagensFiltradas.filter(v => v.nivelOcupacao === "IDEAL").length,
+                ATENCAO: viagensFiltradas.filter(v => v.nivelOcupacao === "ATENCAO").length,
+                CRITICA: viagensFiltradas.filter(v => v.nivelOcupacao === "CRITICA").length,
+            };
+
+            const distribuicaoGargalo = {
+                PESO: viagensFiltradas.filter(v => v.gargalo === "PESO").length,
+                VOLUME: viagensFiltradas.filter(v => v.gargalo === "VOLUME").length,
+            };
+
+            return {
+                kpis: {
+                    totalViagens,
+                    taxaMediaOcupacaoPeso,
+                    taxaMediaOcupacaoCubo,
+                    taxaMediaGeral: Math.max(taxaMediaOcupacaoPeso, taxaMediaOcupacaoCubo),
+                    receitaTotalRateada,
+                    receitaLiquidaTotalRateada,
+                    custoPontasTotal,
+                    custoTotalParceiros,
+                    margemTotal,
+                    margemTotalPct,
+                    capacidadeOciosaKg,
+                    capacidadeOciosaM3,
+                    qtdSubutilizadas,
+                    qtdPrejuizo,
+                },
+                rankingParceiros,
+                rotasPiorOcupacao,
+                rotasMaiorMovimento,
+                distribuicaoOcupacao,
+                distribuicaoGargalo,
+                viagens: viagensFiltradas,
+                parceirosDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.parceiro))).sort(),
+                statusDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.statusDescricao))).filter(Boolean).sort(),
+                tiposManifestoDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.tipoManifestoDescricao))).filter(Boolean).sort(),
+            };
+        }),
+
+    obterMinutasManifesto: protectedProcedure
+        .input(z.object({
+            idManifesto: z.string()
+        }))
+        .query(async ({ input }) => {
+            // 1. Busca os custos totais do manifesto para rateio de transferência por peso taxado
+            const manifestoRes = await telemetriaDb.query(`
+                SELECT 
+                    m.id_manifesto,
+                    COALESCE(m.custo_motorista, 0) as custo_motorista,
+                    COALESCE(m.valor_total_km, 0) as valor_total_km,
+                    COALESCE(m.pedagio, 0) as pedagio,
+                    (SELECT COALESCE(SUM(mn2.total_taxado), 0) FROM manifesto_list ml2 JOIN minuta mn2 ON mn2.id_minuta = ml2.minuta WHERE ml2.id_manifesto = m.id_manifesto) as soma_taxado
+                FROM manifesto m
+                WHERE m.id_manifesto = $1;
+            `, [input.idManifesto]);
+
+            const mRow = manifestoRes.rows[0];
+            const custoTotalManifesto = mRow ? (Number(mRow.custo_motorista) + Number(mRow.valor_total_km) + Number(mRow.pedagio)) : 0;
+            const somaTaxadoManifesto = mRow ? Math.max(Number(mRow.soma_taxado), 1) : 1;
+
+            // 2. Busca todas as minutas vinculadas com seus dados operacionais, fiscais e histórico completo de transferências
+            const minutasQuery = await telemetriaDb.query(`
+                WITH minutas_manif AS (
+                    SELECT DISTINCT ml.minuta
+                    FROM manifesto_list ml
+                    WHERE ml.id_manifesto = $1
+                ),
+                todos_manifestos_minuta AS (
+                    SELECT 
+                        ml2.minuta,
+                        ml2.id_manifesto,
+                        COALESCE(m2.custo_motorista, 0) as custo_motorista,
+                        COALESCE(m2.valor_total_km, 0) as valor_total_km,
+                        COALESCE(m2.pedagio, 0) as pedagio,
+                        (SELECT COALESCE(SUM(COALESCE(mn3.total_taxado, mn3.total_peso)), 1) 
+                         FROM manifesto_list ml3 
+                         JOIN minuta mn3 ON mn3.id_minuta = ml3.minuta 
+                         WHERE ml3.id_manifesto = ml2.id_manifesto) as peso_manifesto
+                    FROM manifesto_list ml2
+                    JOIN minutas_manif mm ON mm.minuta = ml2.minuta
+                    JOIN manifesto m2 ON m2.id_manifesto = ml2.id_manifesto
+                    WHERE m2.status != 3 AND m2.tipo IN (1, 2, 4)
+                ),
+                resumo_transf_minuta AS (
+                    SELECT 
+                        tmm.minuta,
+                        COUNT(DISTINCT tmm.id_manifesto) as total_manifestos_real,
+                        SUM( (COALESCE(mn.total_taxado, mn.total_peso) / GREATEST(tmm.peso_manifesto, 1)) * (tmm.custo_motorista + tmm.valor_total_km + tmm.pedagio) ) as soma_custo_transferencias
+                    FROM todos_manifestos_minuta tmm
+                    JOIN minuta mn ON mn.id_minuta = tmm.minuta
+                    GROUP BY tmm.minuta
+                )
+                SELECT 
+                    mn.id_minuta::text,
+                    mn.total_volumes::int,
+                    mn.total_peso::float,
+                    mn.total_cubo::float,
+                    COALESCE(mn.total_taxado, mn.total_peso)::float as total_taxado,
+                    CASE 
+                        WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
+                        WHEN mn.total_cubo > 0 THEN (mn.total_cubo / 250.0)::float 
+                        ELSE 0 
+                    END as volume_m3,
+                    mn.total_nf_valor::float,
+                    mn.frete_total::float,
+                    COALESCE(mn.coleta_custo, 0)::float as coleta_custo,
+                    COALESCE(mn.entrega_custo, 0)::float as entrega_custo,
+                    (COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0))::float as seguro,
+                    mn.origem,
+                    mn.destino,
+                    mn.chave,
+                    mn.cte_numero::text,
+                    COALESCE(rtm.total_manifestos_real, 1)::int as total_manifestos,
+                    COALESCE(rtm.soma_custo_transferencias, 0)::float as soma_todas_transf
+                FROM manifesto_list ml
+                JOIN minuta mn ON mn.id_minuta = ml.minuta
+                LEFT JOIN resumo_transf_minuta rtm ON rtm.minuta = ml.minuta
+                WHERE ml.id_manifesto = $1
+                ORDER BY mn.total_peso DESC;
+            `, [input.idManifesto]);
+
+            return minutasQuery.rows.map(m => {
+                const freteTotal = Number(m.frete_total) || 0;
+                const coletaCusto = Number(m.coleta_custo) || 0;
+                const entregaCusto = Number(m.entrega_custo) || 0;
+                const seguro = Number(m.seguro) || 0;
+                const pesoTaxado = Number(m.total_taxado) || 0;
+                const totalManifestos = Math.max(Number(m.total_manifestos) || 1, 1);
+                const somaTodasTransf = Number(m.soma_todas_transf) || 0;
+
+                // 1. Custo de transferência DESTE manifesto (esta perna da viagem)
+                const custoTransfTrecho = (pesoTaxado / somaTaxadoManifesto) * custoTotalManifesto;
+
+                // 2. Lucro Real Global da Minuta (conforme cálculo exato do Brudam)
+                const custoTotalOperacionalMinuta = somaTodasTransf + coletaCusto + entregaCusto + seguro;
+                const impostoTotal = freteTotal * 0.0925;
+                const lucroGlobalMinuta = freteTotal - custoTotalOperacionalMinuta - impostoTotal;
+                const margemGlobalMinutaPct = freteTotal > 0 ? (lucroGlobalMinuta / freteTotal) * 100 : 0;
+
+                // 3. Apropriação proporcional deste Trecho / Manifesto (Alinhado 100% à query da tabela principal)
+                const freteRateadoTrecho = freteTotal / totalManifestos;
+                const impostoTrecho = impostoTotal / totalManifestos;
+                const seguroTrecho = seguro / totalManifestos;
+                const coletaTrecho = coletaCusto / totalManifestos;
+                const entregaTrecho = entregaCusto / totalManifestos;
+                const custoPontasTrecho = seguroTrecho + coletaTrecho + entregaTrecho;
+                const receitaLiquidaTrecho = freteRateadoTrecho - custoPontasTrecho - impostoTrecho;
+                const resultadoLucroTrecho = receitaLiquidaTrecho - custoTransfTrecho;
+                const custoOperacionalTrecho = custoTransfTrecho + custoPontasTrecho;
+
+                return {
+                    idMinuta: m.id_minuta,
+                    volumes: m.total_volumes,
+                    pesoKg: m.total_peso,
+                    pesoCubadoKg: m.total_cubo,
+                    pesoTaxadoKg: pesoTaxado,
+                    cuboM3: Number(m.volume_m3) || 0,
+                    valorNf: m.total_nf_valor,
+                    freteTotal,
+                    freteRateado: freteRateadoTrecho,
+                    receitaLiquida: receitaLiquidaTrecho,
+                    custoTransf: custoTransfTrecho,
+                    custoOperacionalTotal: custoOperacionalTrecho,
+                    resultadoLucro: resultadoLucroTrecho,
+                    coletaCusto: coletaTrecho,
+                    entregaCusto: entregaTrecho,
+                    seguro: seguroTrecho,
+                    imposto: impostoTrecho,
+                    // Dados consolidados da carga (padrão Brudam)
+                    lucroGlobalMinuta,
+                    margemGlobalMinutaPct,
+                    somaTodasTransf,
+                    totalManifestos,
+                    origem: m.origem,
+                    destino: m.destino,
+                    chave: m.chave,
+                    cteNumero: m.cte_numero,
+                };
+            });
+        }),
+});
