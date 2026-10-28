@@ -87,10 +87,18 @@ function inferirCapacidadeVeiculo(
                        mod.includes("ATEGO 24") || mod.includes("VM 330") || mod.includes("VM 270") ||
                        mod.includes("TECTOR") || mod.includes("16170");
 
-    const isLeveMod = mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
+    // Caminhões médios / trucks de transferência (ex: VW Delivery, Ford Cargo, Atego, Constellation)
+    const isTruckMod = isTruckPesado || mod.includes("DELIVERY") || mod.includes("CARGO") ||
+                      mod.includes("1719") || mod.includes("1723") || mod.includes("1726") || mod.includes("1729") ||
+                      mod.includes("11.180") || mod.includes("13.180") || mod.includes("14.180") ||
+                      mod.includes("11180") || mod.includes("13180") || mod.includes("14180") ||
+                      mod.includes("9.170") || mod.includes("9170") || mod.includes("TRUCK") ||
+                      (tipoVeiculoBanco === "2" && !mod.includes("ACCELO") && !mod.includes("DAILY") && !mod.includes("SPRINTER") && !mod.includes("HR") && !mod.includes("MASTER"));
+
+    const isLeveMod = !isTruckMod && (mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
                    mod.includes("DAILY") || mod.includes("SPRINTER") || mod.includes("HR") ||
                    mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4") ||
-                   mod.includes("STRADA") || mod.includes("DUCATO");
+                   mod.includes("STRADA") || mod.includes("DUCATO"));
 
     // 1. Analisa capacidade bruta do banco de dados
     let pesoKgBanco = Number(rawCapacidadeKg) || 0;
@@ -100,20 +108,23 @@ function inferirCapacidadeVeiculo(
         if (pesoKgBanco <= 60) {
             // Cadastrado em TONELADAS no Brudam (ex: 16.57 -> 16570 kg, 23 -> 23000 kg, 30 -> 30000 kg)
             const pesoConvertido = Math.round(pesoKgBanco * 1000);
-            // Se for Cavalo ou Truck Pesado e o valor der <= 6000 kg (ex: 3.00 -> 3000 kg), é DUMMY no ERP!
-            if ((isCavaloMod || isTruckPesado) && pesoConvertido <= 6000) {
+            // Se for Cavalo ou Truck e o valor der <= 6000 kg (ex: 3.00 -> 3000 kg), é DUMMY no ERP!
+            if ((isCavaloMod || isTruckMod) && pesoConvertido <= 6000) {
                 temCapacidadeRealBanco = false;
             } else {
                 pesoKgBanco = pesoConvertido;
                 temCapacidadeRealBanco = true;
             }
-        } else if (pesoKgBanco > 60 && pesoKgBanco < 3500 && (isCavaloMod || !isLeveMod)) {
+        } else if (pesoKgBanco > 60 && pesoKgBanco < 3500 && (isCavaloMod || isTruckMod || !isLeveMod)) {
             // Erro clássico de digitação de 1 zero a menos no Brudam (ex: 1400 -> 14000 kg)
             pesoKgBanco = Math.round(pesoKgBanco * 10);
             temCapacidadeRealBanco = true;
         } else if (pesoKgBanco >= 3500 && pesoKgBanco <= 60000) {
             // Se for Cavalo Mecânico e tiver menos de 10000 kg cadastrado, é dummy
             if (isCavaloMod && pesoKgBanco < 10000) {
+                temCapacidadeRealBanco = false;
+            } else if (isTruckMod && pesoKgBanco <= 6000) {
+                // Truck com 3.000 kg ou 4.000 kg cadastrado é dummy/placeholder no ERP
                 temCapacidadeRealBanco = false;
             } else {
                 temCapacidadeRealBanco = true;
@@ -125,7 +136,9 @@ function inferirCapacidadeVeiculo(
     let tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4";
     if (isCavaloMod || (temCapacidadeRealBanco && pesoKgBanco >= 19000)) {
         tipoVeiculo = "CAVALO MECANICO";
-    } else if (isLeveMod || (temCapacidadeRealBanco && pesoKgBanco <= 6000 && !isTruckPesado)) {
+    } else if (isTruckMod) {
+        tipoVeiculo = "TRUCK";
+    } else if (isLeveMod || (temCapacidadeRealBanco && pesoKgBanco <= 6000)) {
         tipoVeiculo = "VUC / 3/4";
     } else if (rotaContratual) {
         tipoVeiculo = rotaContratual.tipoVeiculo === "CAVALO MECANICO" ? "CAVALO MECANICO" : "TRUCK";
