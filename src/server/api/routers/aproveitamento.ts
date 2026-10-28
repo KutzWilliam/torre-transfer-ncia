@@ -32,6 +32,7 @@ interface ManifestoBrudamRow {
     soma_peso_cubado_kg: string | null;
     soma_peso_taxado_kg: string | null;
     soma_cubo_m3: string | null;
+    soma_cubo_m3_bruto: string | null;
     soma_volumes: string | null;
     soma_nf_valor: string | null;
     soma_frete_bruto: string | null;
@@ -78,7 +79,13 @@ function inferirCapacidadeVeiculo(
                      mod.includes("T113") || mod.includes("CAVALO") || mod.includes("CARRETA") ||
                      mod.includes("RANDON") || mod.includes("19320") || mod.includes("2540") ||
                      mod.includes("2536") || mod.includes("2646") || mod.includes("2544") ||
+                     mod.includes("P360") || mod.includes("P 360") || mod.includes("R 440") ||
                      mod.includes("CONSTELLATION 19");
+
+    const isTruckPesado = mod.includes("24280") || mod.includes("24250") || mod.includes("2426") ||
+                       mod.includes("24.280") || mod.includes("24.250") || mod.includes("24.260") ||
+                       mod.includes("ATEGO 24") || mod.includes("VM 330") || mod.includes("VM 270") ||
+                       mod.includes("TECTOR") || mod.includes("16170");
 
     const isLeveMod = mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
                    mod.includes("DAILY") || mod.includes("SPRINTER") || mod.includes("HR") ||
@@ -92,15 +99,25 @@ function inferirCapacidadeVeiculo(
     if (pesoKgBanco > 0 && pesoKgBanco !== 999.99 && pesoKgBanco < 999999) {
         if (pesoKgBanco <= 60) {
             // Cadastrado em TONELADAS no Brudam (ex: 16.57 -> 16570 kg, 23 -> 23000 kg, 30 -> 30000 kg)
-            pesoKgBanco = Math.round(pesoKgBanco * 1000);
-            temCapacidadeRealBanco = true;
+            const pesoConvertido = Math.round(pesoKgBanco * 1000);
+            // Se for Cavalo ou Truck Pesado e o valor der <= 6000 kg (ex: 3.00 -> 3000 kg), é DUMMY no ERP!
+            if ((isCavaloMod || isTruckPesado) && pesoConvertido <= 6000) {
+                temCapacidadeRealBanco = false;
+            } else {
+                pesoKgBanco = pesoConvertido;
+                temCapacidadeRealBanco = true;
+            }
         } else if (pesoKgBanco > 60 && pesoKgBanco < 3500 && (isCavaloMod || !isLeveMod)) {
             // Erro clássico de digitação de 1 zero a menos no Brudam (ex: 1400 -> 14000 kg)
             pesoKgBanco = Math.round(pesoKgBanco * 10);
             temCapacidadeRealBanco = true;
         } else if (pesoKgBanco >= 3500 && pesoKgBanco <= 60000) {
-            // Valor em kg válido e explícito cadastrado no veículo (ex: 12000, 16090, 23000, 30000)
-            temCapacidadeRealBanco = true;
+            // Se for Cavalo Mecânico e tiver menos de 10000 kg cadastrado, é dummy
+            if (isCavaloMod && pesoKgBanco < 10000) {
+                temCapacidadeRealBanco = false;
+            } else {
+                temCapacidadeRealBanco = true;
+            }
         }
     }
 
@@ -108,7 +125,7 @@ function inferirCapacidadeVeiculo(
     let tipoVeiculo: "TRUCK" | "CAVALO MECANICO" | "VUC / 3/4";
     if (isCavaloMod || (temCapacidadeRealBanco && pesoKgBanco >= 19000)) {
         tipoVeiculo = "CAVALO MECANICO";
-    } else if (isLeveMod || (temCapacidadeRealBanco && pesoKgBanco <= 6000)) {
+    } else if (isLeveMod || (temCapacidadeRealBanco && pesoKgBanco <= 6000 && !isTruckPesado)) {
         tipoVeiculo = "VUC / 3/4";
     } else if (rotaContratual) {
         tipoVeiculo = rotaContratual.tipoVeiculo === "CAVALO MECANICO" ? "CAVALO MECANICO" : "TRUCK";
@@ -202,11 +219,24 @@ export const aproveitamentoRouter = createTRPCRouter({
                         COALESCE(SUM(mn.total_peso), 0) as soma_peso_kg,
                         COALESCE(SUM(mn.total_cubo), 0) as soma_peso_cubado_kg,
                         COALESCE(SUM(mn.total_taxado), 0) as soma_peso_taxado_kg,
-                        COALESCE(SUM(CASE 
-                            WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
-                            WHEN mn.total_cubo > 0 THEN mn.total_cubo / 250.0 
-                            ELSE 0 
-                        END), 0) as soma_cubo_m3,
+                        COALESCE(SUM(
+                            CASE 
+                                -- Proteção contra erros operacionais grotescos no Brudam (ex: milímetros ou cubagem > 120m³ em CTE)
+                                WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
+                                    LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                                WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN mn.total_cubo / 250.0 
+                                WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                ELSE 0 
+                            END
+                        ), 0) as soma_cubo_m3,
+                        COALESCE(SUM(
+                            CASE 
+                                WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                                WHEN mn.total_cubo > 0 THEN mn.total_cubo / 250.0 
+                                ELSE 0 
+                            END
+                        ), 0) as soma_cubo_m3_bruto,
                         COALESCE(SUM(mn.total_volumes), 0) as soma_volumes,
                         COALESCE(SUM(mn.total_nf_valor), 0) as soma_nf_valor,
                         COALESCE(SUM(mn.frete_total), 0) as soma_frete_bruto,
@@ -245,6 +275,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                     ma.soma_peso_cubado_kg::text,
                     ma.soma_peso_taxado_kg::text,
                     ma.soma_cubo_m3::text,
+                    ma.soma_cubo_m3_bruto::text,
                     ma.soma_volumes::text,
                     ma.soma_nf_valor::text,
                     ma.soma_frete_bruto::text,
@@ -301,6 +332,8 @@ export const aproveitamentoRouter = createTRPCRouter({
 
                 const pesoCarregadoKg = Number(r.soma_peso_kg) || 0;
                 const cuboCarregadoM3 = Number(r.soma_cubo_m3) || 0;
+                const cuboCarregadoM3Bruto = Number(r.soma_cubo_m3_bruto) || cuboCarregadoM3;
+                const temAnomaliaVolume = cuboCarregadoM3Bruto > 150 || (cuboCarregadoM3Bruto > cuboCarregadoM3 * 2);
                 const totalVolumes = Number(r.soma_volumes) || 0;
                 const valorMercadoriaNf = Number(r.soma_nf_valor) || 0;
                 
@@ -316,9 +349,9 @@ export const aproveitamentoRouter = createTRPCRouter({
                 // Receita Líquida disponível para cobrir a transferência
                 const receitaLiquidaRateada = Math.max(0, receitaRateada - custoPontasRateado);
 
-                // Cálculos de ocupação
-                const ocupacaoPesoPct = capacidadeKg > 0 ? Math.round((pesoCarregadoKg / capacidadeKg) * 100) : 0;
-                const ocupacaoCuboPct = capacidadeM3 > 0 ? Math.round((cuboCarregadoM3 / capacidadeM3) * 100) : 0;
+                // Cálculos de ocupação (com limite de segurança de saturação para integridade gerencial)
+                const ocupacaoPesoPct = capacidadeKg > 0 ? Math.min(150, Math.round((pesoCarregadoKg / capacidadeKg) * 100)) : 0;
+                const ocupacaoCuboPct = capacidadeM3 > 0 ? Math.min(150, Math.round((cuboCarregadoM3 / capacidadeM3) * 100)) : 0;
                 const ocupacaoGeralPct = Math.max(ocupacaoPesoPct, ocupacaoCuboPct);
                 const gargalo = ocupacaoPesoPct >= ocupacaoCuboPct ? "PESO" : "VOLUME";
 
@@ -348,6 +381,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     capacidadeM3,
                     pesoCarregadoKg,
                     cuboCarregadoM3,
+                    cuboCarregadoM3Bruto,
+                    temAnomaliaVolume,
                     totalVolumes,
                     totalMinutas: Number(r.total_minutas) || 0,
                     valorMercadoriaNf,
@@ -407,8 +442,10 @@ export const aproveitamentoRouter = createTRPCRouter({
             const somaCuboCarregado = viagensFiltradas.reduce((acc, v) => acc + v.cuboCarregadoM3, 0);
             const somaCapacidadeCubo = viagensFiltradas.reduce((acc, v) => acc + v.capacidadeM3, 0);
 
-            const taxaMediaOcupacaoPeso = somaCapacidadePeso > 0 ? Math.round((somaPesoCarregado / somaCapacidadePeso) * 100) : 0;
-            const taxaMediaOcupacaoCubo = somaCapacidadeCubo > 0 ? Math.round((somaCuboCarregado / somaCapacidadeCubo) * 100) : 0;
+            // Blindagem matemática: taxa média não pode estourar 100% por anomalias
+            const taxaMediaOcupacaoPeso = somaCapacidadePeso > 0 ? Math.min(100, Math.round((somaPesoCarregado / somaCapacidadePeso) * 100)) : 0;
+            const taxaMediaOcupacaoCubo = somaCapacidadeCubo > 0 ? Math.min(100, Math.round((somaCuboCarregado / somaCapacidadeCubo) * 100)) : 0;
+            const totalAnomaliasVolume = viagensFiltradas.filter(v => v.temAnomaliaVolume).length;
 
             const receitaTotalRateada = viagensFiltradas.reduce((acc, v) => acc + v.receitaRateada, 0);
             const receitaLiquidaTotalRateada = viagensFiltradas.reduce((acc, v) => acc + v.receitaLiquidaRateada, 0);
@@ -462,21 +499,22 @@ export const aproveitamentoRouter = createTRPCRouter({
                 mapaParceiros.set(v.parceiro, item);
             }
 
-            const rankingParceiros = Array.from(mapaParceiros.values()).map(p => ({
-                parceiro: p.parceiro,
-                viagens: p.viagens,
-                ocupacaoMediaPeso: p.somaCapPeso > 0 ? Math.round((p.somaPeso / p.somaCapPeso) * 100) : 0,
-                ocupacaoMediaCubo: p.somaCapCubo > 0 ? Math.round((p.somaCubo / p.somaCapCubo) * 100) : 0,
-                ocupacaoGeral: Math.max(
-                    p.somaCapPeso > 0 ? Math.round((p.somaPeso / p.somaCapPeso) * 100) : 0,
-                    p.somaCapCubo > 0 ? Math.round((p.somaCubo / p.somaCapCubo) * 100) : 0
-                ),
-                receitaTotal: p.receitaBruta,
-                receitaLiquidaTotal: p.receitaLiquida,
-                custoTotal: p.custo,
-                margemTotal: p.margem,
-                margemPct: p.receitaLiquida > 0 ? Math.round((p.margem / p.receitaLiquida) * 100) : 0,
-            })).sort((a, b) => b.viagens - a.viagens);
+            const rankingParceiros = Array.from(mapaParceiros.values()).map(p => {
+                const ocupPeso = p.somaCapPeso > 0 ? Math.min(100, Math.round((p.somaPeso / p.somaCapPeso) * 100)) : 0;
+                const ocupCubo = p.somaCapCubo > 0 ? Math.min(100, Math.round((p.somaCubo / p.somaCapCubo) * 100)) : 0;
+                return {
+                    parceiro: p.parceiro,
+                    viagens: p.viagens,
+                    ocupacaoMediaPeso: ocupPeso,
+                    ocupacaoMediaCubo: ocupCubo,
+                    ocupacaoGeral: Math.max(ocupPeso, ocupCubo),
+                    receitaTotal: p.receitaBruta,
+                    receitaLiquidaTotal: p.receitaLiquida,
+                    custoTotal: p.custo,
+                    margemTotal: p.margem,
+                    margemPct: p.receitaLiquida > 0 ? Math.round((p.margem / p.receitaLiquida) * 100) : 0,
+                };
+            }).sort((a, b) => b.viagens - a.viagens);
 
             // 6. Ranking de Rotas Subutilizadas (Menor ocupação)
             const mapaRotas = new Map<string, { rota: string; viagens: number; ocupacaoSoma: number; prejuizoSoma: number; custoTotal: number; receitaTotal: number; receitaLiquidaTotal: number; margemTotal: number }>();
@@ -540,6 +578,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                     capacidadeOciosaM3,
                     qtdSubutilizadas,
                     qtdPrejuizo,
+                    totalAnomaliasVolume,
                 },
                 rankingParceiros,
                 rotasPiorOcupacao,
@@ -613,10 +652,19 @@ export const aproveitamentoRouter = createTRPCRouter({
                     mn.total_cubo::float,
                     COALESCE(mn.total_taxado, mn.total_peso)::float as total_taxado,
                     CASE 
+                        WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
+                            LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)::float
+                        WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
+                        WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN (mn.total_cubo / 250.0)::float 
+                        WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)::float
+                        ELSE 0 
+                    END as volume_m3,
+                    CASE 
                         WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
                         WHEN mn.total_cubo > 0 THEN (mn.total_cubo / 250.0)::float 
                         ELSE 0 
-                    END as volume_m3,
+                    END as volume_m3_original,
+                    (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) as anomalia_volume,
                     mn.total_nf_valor::float,
                     mn.frete_total::float,
                     COALESCE(mn.coleta_custo, 0)::float as coleta_custo,
@@ -671,6 +719,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     pesoCubadoKg: m.total_cubo,
                     pesoTaxadoKg: pesoTaxado,
                     cuboM3: Number(m.volume_m3) || 0,
+                    cuboM3Original: Number(m.volume_m3_original) || 0,
+                    anomaliaVolume: Boolean(m.anomalia_volume),
                     valorNf: m.total_nf_valor,
                     freteTotal,
                     freteRateado: freteRateadoTrecho,

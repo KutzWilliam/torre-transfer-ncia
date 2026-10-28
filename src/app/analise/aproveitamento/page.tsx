@@ -463,6 +463,27 @@ export default function AproveitamentoFrotaPage() {
                     </div>
                 ) : data ? (
                     <div className={`space-y-6 transition-opacity duration-200 ${isFetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
+                        {/* ── Banner de Proteção contra Anomalias Operacionais ── */}
+                        {data.kpis.totalAnomaliasVolume > 0 && (
+                            <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 flex items-start gap-3 text-amber-900 shadow-sm animate-in fade-in">
+                                <span className="text-xl mt-0.5">🛡️</span>
+                                <div className="flex-1 text-xs space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-extrabold text-amber-950 text-sm">
+                                            Proteção contra Anomalias do ERP Ativa ({data.kpis.totalAnomaliasVolume} viagem(ns) saneada(s))
+                                        </p>
+                                        <span className="px-2 py-0.5 bg-amber-200/80 text-amber-900 font-bold rounded-full text-[10px]">
+                                            KPIs Blindados
+                                        </span>
+                                    </div>
+                                    <p className="text-amber-800 leading-relaxed">
+                                        Identificamos viagens com valores operacionais aberrantes lançados no ERP Brudam (ex: minutas com cubagem na casa das centenas de milhares de m³ ou capacidades dummy de veículos). 
+                                        O sistema saneou esses valores automaticamente para a capacidade física real da frota, garantindo que os KPIs médios e o ranking de parceiros permaneçam 100% íntegros.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {/* ── Guia Metodológico de Pesos & Volumes ── */}
                         <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/60 to-slate-50 border border-blue-200/80 rounded-2xl p-4 text-xs text-slate-700 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                             <div className="flex items-start gap-3">
@@ -847,7 +868,17 @@ export default function AproveitamentoFrotaPage() {
 
                                                         {/* Volume Real (m3) */}
                                                         <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className="font-bold text-slate-800">{fmtNum(v.cuboCarregadoM3)} m³</p>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <p className="font-bold text-slate-800">{fmtNum(v.cuboCarregadoM3)} m³</p>
+                                                                {v.temAnomaliaVolume && (
+                                                                    <span
+                                                                        className="cursor-help px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300"
+                                                                        title={`Erro de digitação no ERP: lançado ${fmtNum(v.cuboCarregadoM3Bruto)} m³ no Brudam. O sistema saneou para ${fmtNum(v.cuboCarregadoM3)} m³ para proteger os KPIs.`}
+                                                                    >
+                                                                        ⚠️ Ajustado
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <p className="text-[10px] text-gray-400">Cap: {v.capacidadeM3} m³ ({v.ocupacaoCuboPct}%)</p>
                                                         </td>
 
@@ -1017,6 +1048,14 @@ export default function AproveitamentoFrotaPage() {
                                                                     )}
                                                                 </div>
                                                                 {m.cteNumero && <span className="block text-[10px] text-gray-400 font-normal">CTE: {m.cteNumero}</span>}
+                                                                {m.anomaliaVolume && (
+                                                                    <span
+                                                                        className="block mt-0.5 text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1 py-0.5 rounded cursor-help"
+                                                                        title={`Volume digitado no Brudam: ${fmtNum(m.cuboM3Original)} m³ (erro de digitação no ERP ajustado para ${fmtNum(m.cuboM3)} m³)`}
+                                                                    >
+                                                                        ⚠️ Volume ERP Aberrante ({fmtNum(m.cuboM3Original)} m³)
+                                                                    </span>
+                                                                )}
                                                             </td>
                                                             <td className="px-2.5 py-2 whitespace-nowrap text-slate-700">{m.origem} ➔ {m.destino}</td>
                                                             <td className="px-2 py-2 whitespace-nowrap text-right text-slate-800">{m.volumes}</td>
