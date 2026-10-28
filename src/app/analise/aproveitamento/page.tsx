@@ -78,6 +78,7 @@ export default function AproveitamentoFrotaPage() {
     const [parceiroFiltro, setParceiroFiltro] = useState<string>("");
     const [tipoVeiculoFiltro, setTipoVeiculoFiltro] = useState<string>("");
     const [modalidadeFiltro, setModalidadeFiltro] = useState<"TODAS" | "CAMINHAO" | "ONIBUS">("TODAS");
+    const [tipoOperacaoFiltro, setTipoOperacaoFiltro] = useState<"TODAS" | "TRANSFERENCIA" | "COLETA_ENTREGA">("TODAS");
     const [statusManifestoFiltro, setStatusManifestoFiltro] = useState<string>("");
     const [tipoManifestoFiltro, setTipoManifestoFiltro] = useState<string>("");
     const [ocupacaoFiltro, setOcupacaoFiltro] = useState<NivelOcupacaoFiltro>("TODAS");
@@ -133,6 +134,7 @@ export default function AproveitamentoFrotaPage() {
             parceiro: parceiroFiltro || undefined,
             tipoVeiculo: tipoVeiculoFiltro || undefined,
             modalidade: modalidadeFiltro,
+            tipoOperacao: tipoOperacaoFiltro,
             statusManifesto: statusManifestoFiltro || undefined,
             tipoManifesto: tipoManifestoFiltro || undefined,
             statusOcupacao: ocupacaoFiltro,
@@ -332,6 +334,26 @@ export default function AproveitamentoFrotaPage() {
                             <option value="TODAS">Todos (Caminhão & Ônibus)</option>
                             <option value="CAMINHAO">🚛 Caminhão</option>
                             <option value="ONIBUS">🚌 Ônibus</option>
+                        </select>
+                    </div>
+
+                    {/* Filtro Operação (Transferência vs Coleta/Entrega) */}
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Operação</p>
+                        <select
+                            value={tipoOperacaoFiltro}
+                            onChange={(e) => setTipoOperacaoFiltro(e.target.value as "TODAS" | "TRANSFERENCIA" | "COLETA_ENTREGA")}
+                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 min-w-[170px]"
+                        >
+                            <option value="TODAS">
+                                Todas as Operações {data?.contadoresGlobais ? `(${data.contadoresGlobais.totalTransferencias + data.contadoresGlobais.totalColetasEntregas})` : ""}
+                            </option>
+                            <option value="TRANSFERENCIA">
+                                🔄 Transferência {data?.contadoresGlobais ? `(${data.contadoresGlobais.totalTransferencias})` : ""}
+                            </option>
+                            <option value="COLETA_ENTREGA">
+                                📦 Coleta / Entrega {data?.contadoresGlobais ? `(${data.contadoresGlobais.totalColetasEntregas})` : ""}
+                            </option>
                         </select>
                     </div>
 
@@ -843,7 +865,16 @@ export default function AproveitamentoFrotaPage() {
 
                                                         {/* Trecho */}
                                                         <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className="font-semibold text-slate-800">{v.origem} ➔ {v.destino}</p>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <p className="font-semibold text-slate-800">{v.origem} ➔ {v.destino}</p>
+                                                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                                                    v.tipoOperacao === "TRANSFERENCIA"
+                                                                        ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                                                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                                }`}>
+                                                                    {v.tipoOperacao === "TRANSFERENCIA" ? "Transferência" : "Coleta / Entrega"}
+                                                                </span>
+                                                            </div>
                                                             <p className="text-[10px] text-gray-400 truncate max-w-[150px]" title={v.fornecedorRazao}>{v.fornecedorRazao}</p>
                                                         </td>
 
@@ -960,9 +991,15 @@ export default function AproveitamentoFrotaPage() {
                                         📊 Resultado da Operação & Minutas — Manifesto #{manifestoModalId}
                                     </h3>
                                     {manifestoSelecionado && renderBadgeStatusManifesto(manifestoSelecionado.statusDescricao)}
-                                    <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                                        Padrão Brudam
-                                    </span>
+                                    {manifestoSelecionado?.tipoOperacaoDescricao && (
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            manifestoSelecionado.tipoOperacao === "TRANSFERENCIA"
+                                                ? "bg-blue-100 text-blue-800"
+                                                : "bg-emerald-100 text-emerald-800"
+                                        }`}>
+                                            {manifestoSelecionado.tipoOperacao === "TRANSFERENCIA" ? "🔄 Transferência" : "📦 Coleta / Entrega"}
+                                        </span>
+                                    )}
                                 </div>
                                 <p className="text-xs text-slate-500 mt-0.5">
                                     {manifestoSelecionado ? `${manifestoSelecionado.parceiro} • ${manifestoSelecionado.placa} • ${manifestoSelecionado.origem} ➔ ${manifestoSelecionado.destino} • ` : ""}DRE detalhado das cargas: Frete Total, Coleta, Entrega, Transferência rateada, Seguro e Lucro Líquido

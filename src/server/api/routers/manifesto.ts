@@ -59,7 +59,7 @@ export const manifestoRouter = createTRPCRouter({
                     ms.descricao                                              AS status_descricao
                 FROM manifesto m
                 LEFT JOIN unidades      u  ON u.id_unidade::text   = m.base::text
-                LEFT JOIN veiculos      v  ON v.id_veiculo::text   = m.veiculo::text
+                LEFT JOIN veiculos      v  ON v.id_veiculo::text   = COALESCE(NULLIF(m.veiculo, 0)::text, NULLIF(m.veiculo_terceiro, 0)::text, NULLIF(m.veiculo_agente, 0)::text)
                 LEFT JOIN manifesto_list ml ON ml.id_manifesto::text = m.id_manifesto::text
                 LEFT JOIN minuta        mn ON mn.id_minuta::text   = ml.minuta::text
                 LEFT JOIN aero          ao ON ao.id_aero::text      = m.transf_origem::text
@@ -68,7 +68,7 @@ export const manifestoRouter = createTRPCRouter({
                 LEFT JOIN manifesto_status ms ON ms.id_status::text = m.status::text
                 WHERE m.prev_saida_data::text NOT LIKE '0000%'
                   AND LEFT(m.prev_saida_data::text, 10) = $1
-                  AND m.veiculo IS NOT NULL
+                  AND (m.veiculo IS NOT NULL OR m.veiculo_terceiro IS NOT NULL)
                 GROUP BY
                     m.id_manifesto, m.prev_saida_data, m.prev_saida_hora,
                     u.fantasia, m.base, v.placa, m.veiculo,

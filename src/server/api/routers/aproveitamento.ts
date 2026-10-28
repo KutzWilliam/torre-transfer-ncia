@@ -87,18 +87,21 @@ function inferirCapacidadeVeiculo(
                        mod.includes("ATEGO 24") || mod.includes("VM 330") || mod.includes("VM 270") ||
                        mod.includes("TECTOR") || mod.includes("16170");
 
+    // Veículos leves / 3/4 / VUC
+    const isLeveMod = mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
+                   mod.includes("8.120") || mod.includes("8.140") || mod.includes("8.150") || mod.includes("8.160") ||
+                   mod.includes("8120") || mod.includes("8140") || mod.includes("8150") || mod.includes("8160") ||
+                   mod.includes("DAILY") || mod.includes("SPRINTER") || mod.includes("HR") ||
+                   mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4") ||
+                   mod.includes("STRADA") || mod.includes("DUCATO");
+
     // Caminhões médios / trucks de transferência (ex: VW Delivery, Ford Cargo, Atego, Constellation)
-    const isTruckMod = isTruckPesado || mod.includes("DELIVERY") || mod.includes("CARGO") ||
+    const isTruckMod = !isLeveMod && (isTruckPesado || mod.includes("DELIVERY") || mod.includes("CARGO") ||
                       mod.includes("1719") || mod.includes("1723") || mod.includes("1726") || mod.includes("1729") ||
                       mod.includes("11.180") || mod.includes("13.180") || mod.includes("14.180") ||
                       mod.includes("11180") || mod.includes("13180") || mod.includes("14180") ||
                       mod.includes("9.170") || mod.includes("9170") || mod.includes("TRUCK") ||
-                      (tipoVeiculoBanco === "2" && !mod.includes("ACCELO") && !mod.includes("DAILY") && !mod.includes("SPRINTER") && !mod.includes("HR") && !mod.includes("MASTER"));
-
-    const isLeveMod = !isTruckMod && (mod.includes("ACCELO") || mod.includes("815") || mod.includes("816") ||
-                   mod.includes("DAILY") || mod.includes("SPRINTER") || mod.includes("HR") ||
-                   mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4") ||
-                   mod.includes("STRADA") || mod.includes("DUCATO"));
+                      tipoVeiculoBanco === "2");
 
     // 1. Analisa capacidade bruta do banco de dados
     let pesoKgBanco = Number(rawCapacidadeKg) || 0;
@@ -162,7 +165,7 @@ function inferirCapacidadeVeiculo(
 
     if (tipoVeiculo === "CAVALO MECANICO" && m3 >= 70 && m3 <= 140) m3Valido = true;
     if (tipoVeiculo === "TRUCK" && m3 >= 35 && m3 <= 75) m3Valido = true;
-    if (tipoVeiculo === "VUC / 3/4" && m3 >= 15 && m3 <= 35) m3Valido = true;
+    if (tipoVeiculo === "VUC / 3/4" && m3 >= 12 && m3 <= 35) m3Valido = true;
 
     if (!m3Valido) {
         if (rotaContratual && rotaContratual.cubagemM3 > 0 && rotaContratual.tipoVeiculo === tipoVeiculo) {
@@ -188,6 +191,7 @@ export const aproveitamentoRouter = createTRPCRouter({
             parceiro: z.string().optional(),
             tipoVeiculo: z.string().optional(),
             modalidade: z.enum(["TODAS", "CAMINHAO", "ONIBUS"]).optional().default("TODAS"),
+            tipoOperacao: z.enum(["TODAS", "TRANSFERENCIA", "COLETA_ENTREGA"]).optional().default("TODAS"),
             statusManifesto: z.string().optional(),
             tipoManifesto: z.string().optional(),
             statusOcupacao: z.enum(["TODAS", "CRITICA", "ATENCAO", "IDEAL"]).optional().default("TODAS"),
@@ -237,6 +241,9 @@ export const aproveitamentoRouter = createTRPCRouter({
                                 -- Proteção contra erros operacionais grotescos no Brudam (ex: milímetros ou cubagem > 120m³ em CTE)
                                 WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
                                     LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                -- Proteção quando o operador digita a quantidade de volumes no campo metragem_cubica
+                                WHEN (mn.metragem_cubica > 30 AND mn.total_cubo > 0 AND mn.metragem_cubica > (mn.total_cubo / 250.0) * 2.5) THEN
+                                    (mn.total_cubo / 250.0)
                                 WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
                                 WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN mn.total_cubo / 250.0 
                                 WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
@@ -274,8 +281,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     COALESCE(v.modelo, t.ve_modelo) as modelo_veiculo,
                     COALESCE(v.capacidade::text, t.ve_capacidade::text) as capacidade_veiculo_kg,
                     COALESCE(v."capM3"::text, t."capM3"::text) as capacidade_veiculo_m3,
-                    COALESCE(fv.fantasia, ft.fantasia) as fornecedor_nome,
-                    COALESCE(fv.cnpj, ft.cnpj) as fornecedor_cnpj,
+                    COALESCE(fv.fantasia, fmt.fantasia, ft.fantasia) as fornecedor_nome,
+                    COALESCE(fv.cnpj, fmt.cnpj, ft.cnpj) as fornecedor_cnpj,
                     ao.aeroporto as origem_aero,
                     ad.aeroporto as destino_aero,
                     uo.fantasia as origem_unidade,
@@ -303,8 +310,10 @@ export const aproveitamentoRouter = createTRPCRouter({
                 FROM manifesto m
                 LEFT JOIN manifesto_status ms ON ms.id_status = m.status
                 LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text = m.tipo::text
-                LEFT JOIN veiculos v ON v.id_veiculo = m.veiculo
+                LEFT JOIN veiculos v ON v.id_veiculo = COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0))
                 LEFT JOIN fornecedores fv ON v.proprietario::text = fv.id_local::text
+                LEFT JOIN motorista_terceiro mt_mot ON mt_mot.id::text = COALESCE(NULLIF(m.motorista_agente::text, '0'), NULLIF(m.motorista::text, '0'))
+                LEFT JOIN fornecedores fmt ON fmt.id_local::text = mt_mot.id_local::text
                 LEFT JOIN terceiros t ON t.id_terceiro = m.veiculo_terceiro
                 LEFT JOIN fornecedores ft ON t.fornecedor::text = ft.id_local::text
                 LEFT JOIN aero ao ON ao.id_aero::text = m.transf_origem::text
@@ -316,7 +325,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                   AND LEFT(m.prev_saida_data::text, 10) >= $1
                   AND LEFT(m.prev_saida_data::text, 10) <= $2
                   AND m.status != 3
-                  AND (ma.total_minutas > 0 OR m.veiculo IS NOT NULL OR m.veiculo_terceiro IS NOT NULL)
+                  AND (ma.total_minutas > 0 OR COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0)) IS NOT NULL)
                 ORDER BY m.id_manifesto DESC;
             `, [input.dataInicio, input.dataFim]);
 
@@ -326,7 +335,7 @@ export const aproveitamentoRouter = createTRPCRouter({
             const viagensProcessadas = rows.map((r) => {
                 const parceiroIdentificado = identificarParceiroBrudam(r.fornecedor_nome) || "Outros / Próprio";
                 const origem = r.origem_aero || r.origem_unidade || "Origem não inf.";
-                const destino = r.destino_aero || r.destino_unidade || "Destino não inf.";
+                const destino = r.destino_aero || r.destino_unidade || (r.tipo_manifesto_id === "4" ? "Coleta / Entrega Local" : "Destino não inf.");
 
                 const rotaContratual = encontrarRotaCompativel(parceiroIdentificado, origem, destino, rotasContratuais);
 
@@ -376,6 +385,13 @@ export const aproveitamentoRouter = createTRPCRouter({
                 const margemPercentual = receitaLiquidaRateada > 0 ? Math.round((margemFinanceira / receitaLiquidaRateada) * 100) : (custoViagem > 0 ? -100 : 0);
                 const resultadoFinanceiro: "LUCRO" | "PREJUIZO" = margemFinanceira >= 0 ? "LUCRO" : "PREJUIZO";
 
+                const isTransferencia = (
+                    (Boolean(r.destino_aero) && r.destino_aero !== r.origem_aero) ||
+                    (Boolean(r.destino_unidade) && r.destino_unidade !== r.origem_unidade)
+                );
+                const tipoOperacao: "TRANSFERENCIA" | "COLETA_ENTREGA" = isTransferencia ? "TRANSFERENCIA" : "COLETA_ENTREGA";
+                const tipoOperacaoDescricao = isTransferencia ? "Transferência" : "Coleta / Entrega";
+
                 return {
                     idManifesto: r.id_manifesto,
                     data: r.prev_saida_data,
@@ -388,6 +404,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     origem,
                     destino,
                     rotaDescricao: `${origem} ➔ ${destino}`,
+                    tipoOperacao,
+                    tipoOperacaoDescricao,
                     modalidade,
                     tipoVeiculo,
                     capacidadeKg,
@@ -426,6 +444,7 @@ export const aproveitamentoRouter = createTRPCRouter({
             // 3. Aplicação dos filtros do usuário
             const viagensFiltradas = viagensProcessadas.filter((v) => {
                 if (input.modalidade && input.modalidade !== "TODAS" && v.modalidade !== input.modalidade) return false;
+                if (input.tipoOperacao && input.tipoOperacao !== "TODAS" && v.tipoOperacao !== input.tipoOperacao) return false;
                 if (input.parceiro && v.parceiro.toLowerCase() !== input.parceiro.toLowerCase()) return false;
                 if (input.tipoVeiculo && v.tipoVeiculo !== input.tipoVeiculo) return false;
                 if (input.statusManifesto && v.statusDescricao.toLowerCase() !== input.statusManifesto.toLowerCase()) return false;
@@ -442,6 +461,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                         v.parceiro.toLowerCase().includes(q) ||
                         v.fornecedorRazao.toLowerCase().includes(q) ||
                         v.statusDescricao.toLowerCase().includes(q) ||
+                        v.tipoOperacaoDescricao.toLowerCase().includes(q) ||
                         v.tipoManifestoDescricao.toLowerCase().includes(q);
                     if (!match) return false;
                 }
@@ -592,6 +612,12 @@ export const aproveitamentoRouter = createTRPCRouter({
                     qtdSubutilizadas,
                     qtdPrejuizo,
                     totalAnomaliasVolume,
+                    totalTransferencias: viagensFiltradas.filter(v => v.tipoOperacao === "TRANSFERENCIA").length,
+                    totalColetasEntregas: viagensFiltradas.filter(v => v.tipoOperacao === "COLETA_ENTREGA").length,
+                },
+                contadoresGlobais: {
+                    totalTransferencias: viagensProcessadas.filter(v => v.tipoOperacao === "TRANSFERENCIA").length,
+                    totalColetasEntregas: viagensProcessadas.filter(v => v.tipoOperacao === "COLETA_ENTREGA").length,
                 },
                 rankingParceiros,
                 rotasPiorOcupacao,
