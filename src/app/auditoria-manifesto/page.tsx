@@ -42,6 +42,8 @@ interface AuditoriaItem {
     viagemId: string | null;
     status: StatusItem;
     tipoManifesto: string;
+    tipoOperacao: "TRANSFERENCIA" | "COLETA_ENTREGA";
+    tipoOperacaoDescricao: string;
 }
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
@@ -87,6 +89,7 @@ export default function AuditoriaManifestoPage() {
     const [buscaUnidade, setBuscaUnidade] = useState("");
     const [filtroStatus, setFiltroStatus] = useState<"TODOS" | "ALERTA" | "OK">("TODOS");
     const [filtroTipo, setFiltroTipo] = useState<string>("TODOS");
+    const [filtroOperacao, setFiltroOperacao] = useState<"TODOS" | "TRANSFERENCIA" | "COLETA_ENTREGA">("TODOS");
 
     // ── Estados do Modal de Relatório Excel ──────────────────────────────────
     const [isModalExcelOpen, setIsModalExcelOpen] = useState(false);
@@ -117,9 +120,10 @@ export default function AuditoriaManifestoPage() {
             const matchUnidade = !buscaUnidade || item.unidade.toLowerCase().includes(buscaUnidade.toLowerCase());
             const matchStatus = filtroStatus === "TODOS" || item.status === filtroStatus;
             const matchTipo = filtroTipo === "TODOS" || item.tipoManifesto === filtroTipo;
-            return matchPlaca && matchUnidade && matchStatus && matchTipo;
+            const matchOperacao = filtroOperacao === "TODOS" || item.tipoOperacao === filtroOperacao;
+            return matchPlaca && matchUnidade && matchStatus && matchTipo && matchOperacao;
         });
-    }, [data?.itens, buscaPlaca, buscaUnidade, filtroStatus, filtroTipo]);
+    }, [data?.itens, buscaPlaca, buscaUnidade, filtroStatus, filtroTipo, filtroOperacao]);
 
     const tiposDisponiveis = useMemo(() => {
         if (!data?.itens) return [];
@@ -209,6 +213,7 @@ export default function AuditoriaManifestoPage() {
                 "Data": item.prevSaidaData ? format(new Date(item.prevSaidaData + "T12:00:00"), "dd/MM/yyyy") : "—",
                 "Hora Saída": item.prevSaidaHora ? String(item.prevSaidaHora).substring(0, 5) : "—",
                 "Nº Manifesto": item.idManifesto,
+                "Operação": item.tipoOperacaoDescricao,
                 "Tipo Manifesto": item.tipoManifesto,
                 "Status Manifesto": item.statusManifesto,
                 "Qtd. Minutas": item.qtdMinutas,
@@ -379,6 +384,31 @@ export default function AuditoriaManifestoPage() {
                         </div>
                     </div>
 
+                    {/* Filtro Operação (Transferência vs Coleta/Entrega) */}
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Operação</p>
+                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-0.5">
+                            {([
+                                { key: "TODOS", label: `Todas (${data?.itens?.length ?? 0})`, icon: "🌐" },
+                                { key: "TRANSFERENCIA", label: `Transferência (${data?.totalTransferencias ?? 0})`, icon: "🔄" },
+                                { key: "COLETA_ENTREGA", label: `Coleta / Entrega (${data?.totalColetasEntregas ?? 0})`, icon: "📦" },
+                            ] as const).map(({ key, label, icon }) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setFiltroOperacao(key)}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${
+                                        filtroOperacao === key
+                                            ? "bg-white text-amber-700 shadow-sm"
+                                            : "text-slate-500 hover:text-slate-700"
+                                    }`}
+                                >
+                                    <span>{icon}</span>
+                                    <span className="whitespace-nowrap">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Busca Placa */}
                     <div className="space-y-1.5 min-w-[160px]">
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Placa</p>
@@ -542,6 +572,7 @@ export default function AuditoriaManifestoPage() {
                                             <tr>
                                                 {[
                                                     "Nº Manifesto",
+                                                    "Operação",
                                                     "Tipo",
                                                     "Status Manifesto",
                                                     "Minutas",
@@ -580,6 +611,17 @@ export default function AuditoriaManifestoPage() {
                                                     <td className="px-4 py-3 whitespace-nowrap">
                                                         <span className="font-bold text-slate-800 text-sm font-mono">
                                                             #{item.idManifesto}
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Operação */}
+                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                            item.tipoOperacao === "TRANSFERENCIA"
+                                                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                                                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                        }`}>
+                                                            {item.tipoOperacao === "TRANSFERENCIA" ? "🔄 Transferência" : "📦 Coleta/Entrega"}
                                                         </span>
                                                     </td>
 
@@ -675,8 +717,12 @@ export default function AuditoriaManifestoPage() {
 
                                                     {/* Placa */}
                                                     <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className="text-sm font-mono font-bold text-slate-900 tracking-wider bg-slate-100 px-2 py-0.5 rounded">
-                                                            {item.placa}
+                                                        <span className={`text-sm font-mono font-bold tracking-wider px-2 py-0.5 rounded ${
+                                                            item.placa && item.placa !== "0" && item.placa !== "—"
+                                                                ? "bg-slate-100 text-slate-900"
+                                                                : "bg-red-50 text-red-600 border border-red-200"
+                                                        }`}>
+                                                            {item.placa && item.placa !== "0" ? item.placa : "Não Informada"}
                                                         </span>
                                                     </td>
 

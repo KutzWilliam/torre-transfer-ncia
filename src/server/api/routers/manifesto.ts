@@ -18,6 +18,7 @@ interface ManifestoComValorRow {
     tipo_manifesto: string | null;
     status_id: string | null;
     status_descricao: string | null;
+    tipo_operacao: "TRANSFERENCIA" | "COLETA_ENTREGA";
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ export const manifestoRouter = createTRPCRouter({
 
             // ── 1. Query única: busca todos os manifestos do dia com seu valor total ──
             // - Filtra datas inválidas "0000-00-00" com LIKE antes de qualquer cast
-            // - JOINs todos com ::text para evitar bigint/integer/text mismatches
+            // - Suporta veículos de terceiros (veiculo_terceiro) quando m.veiculo = 0
             // - HAVING > 140000 filtra direto no banco, sem loop no Node
             const manifestosQuery = await telemetriaDb.query<ManifestoComValorRow>(`
                 SELECT
@@ -50,16 +51,26 @@ export const manifestoRouter = createTRPCRouter({
                     LEFT(m.saida_efetiva_data::text, 10)                      AS saida_efetiva_data,
                     m.saida_efetiva_hora::text                                AS saida_efetiva_hora,
                     COALESCE(u.fantasia,  m.base::text)                       AS unidade,
-                    COALESCE(v.placa,     m.veiculo::text)                    AS placa,
+                    COALESCE(v.placa, t.ve_placa, '—')                        AS placa,
                     COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0)      AS valor_total,
-                    ao.aeroporto                                              AS origem,
-                    ad.aeroporto                                              AS destino,
+                    COALESCE(ao.aeroporto, u.fantasia)                        AS origem,
+                    COALESCE(ad.aeroporto, ud.fantasia, CASE WHEN (m.tipo = 4 OR m.transf_destino IS NULL OR m.transf_destino = '0') THEN 'Coleta / Entrega Local' ELSE 'Destino não inf.' END) AS destino,
                     mt.tipo                                                   AS tipo_manifesto,
                     m.status::text                                            AS status_id,
-                    ms.descricao                                              AS status_descricao
+                    ms.descricao                                              AS status_descricao,
+                    CASE 
+                        WHEN (ad.aeroporto IS NOT NULL AND ad.aeroporto != ao.aeroporto) 
+                          OR (ud.fantasia IS NOT NULL AND ud.fantasia != u.fantasia)
+                          OR (m.transf_destino IS NOT NULL AND m.transf_destino != '0' AND m.transf_destino != m.transf_origem)
+                          OR (m.destino IS NOT NULL AND m.destino != '0' AND m.destino != m.base)
+                        THEN 'TRANSFERENCIA'
+                        ELSE 'COLETA_ENTREGA'
+                    END AS tipo_operacao
                 FROM manifesto m
                 LEFT JOIN unidades      u  ON u.id_unidade::text   = m.base::text
-                LEFT JOIN veiculos      v  ON v.id_veiculo::text   = COALESCE(NULLIF(m.veiculo, 0)::text, NULLIF(m.veiculo_terceiro, 0)::text, NULLIF(m.veiculo_agente, 0)::text)
+                LEFT JOIN unidades      ud ON ud.id_unidade::text  = m.destino::text
+                LEFT JOIN veiculos      v  ON v.id_veiculo = COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0))
+                LEFT JOIN terceiros     t  ON t.id_terceiro = m.veiculo_terceiro
                 LEFT JOIN manifesto_list ml ON ml.id_manifesto::text = m.id_manifesto::text
                 LEFT JOIN minuta        mn ON mn.id_minuta::text   = ml.minuta::text
                 LEFT JOIN aero          ao ON ao.id_aero::text      = m.transf_origem::text
@@ -71,7 +82,9 @@ export const manifestoRouter = createTRPCRouter({
                   AND (m.veiculo IS NOT NULL OR m.veiculo_terceiro IS NOT NULL)
                 GROUP BY
                     m.id_manifesto, m.prev_saida_data, m.prev_saida_hora,
-                    u.fantasia, m.base, v.placa, m.veiculo,
+                    m.saida_efetiva_data, m.saida_efetiva_hora,
+                    u.fantasia, ud.fantasia, m.base, m.destino, m.tipo, m.transf_origem, m.transf_destino,
+                    v.placa, t.ve_placa,
                     ao.aeroporto, ad.aeroporto, mt.tipo, m.status, ms.descricao
                 HAVING COALESCE(SUM(CAST(mn.total_nf_valor AS NUMERIC)), 0) > 140000
                 ORDER BY valor_total DESC
@@ -80,7 +93,7 @@ export const manifestoRouter = createTRPCRouter({
             const manifestos = manifestosQuery.rows;
 
             if (manifestos.length === 0) {
-                return { itens: [], totalManifestos: 0, comAlerta: 0, semAlerta: 0 };
+                return { itens: [], totalManifestos: 0, comAlerta: 0, semAlerta: 0, totalTransferencias: 0, totalColetasEntregas: 0 };
             }
 
             // ── 1b. Métricas de minutas/volumes/bipagens (consultas em lote) ──
@@ -229,6 +242,8 @@ export const manifestoRouter = createTRPCRouter({
                     origem:    m.origem  ?? null,
                     destino:   m.destino ?? null,
                     tipoManifesto: m.tipo_manifesto ?? "—",
+                    tipoOperacao: (m.tipo_operacao as "TRANSFERENCIA" | "COLETA_ENTREGA") || "TRANSFERENCIA",
+                    tipoOperacaoDescricao: m.tipo_operacao === "TRANSFERENCIA" ? "Transferência" : "Coleta / Entrega",
                     valorTotal,
                     temViagem: !!melhorViagem,
                     viagemId:  melhorViagem?.id ?? null,
@@ -245,12 +260,16 @@ export const manifestoRouter = createTRPCRouter({
 
             const comAlerta = resultados.filter(r => r.status === "ALERTA").length;
             const semAlerta = resultados.filter(r => r.status === "OK").length;
+            const totalTransferencias = resultados.filter(r => r.tipoOperacao === "TRANSFERENCIA").length;
+            const totalColetasEntregas = resultados.filter(r => r.tipoOperacao === "COLETA_ENTREGA").length;
 
             return {
                 itens: resultados,
                 totalManifestos: resultados.length,
                 comAlerta,
                 semAlerta,
+                totalTransferencias,
+                totalColetasEntregas,
             };
         }),
 
