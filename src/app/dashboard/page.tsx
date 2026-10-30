@@ -230,7 +230,8 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                 {/* Barra de progresso */}
                 <BarraProgresso concluidas={v.paradasConcluidas} total={v.totalParadas} />
 
-                {/* Previsão preditiva */}
+                {/* Previsão preditiva (apenas viagens em andamento) */}
+                {v.status === "EM_ANDAMENTO" && (
                 <div className="rounded-xl border bg-gray-50 p-3 space-y-1">
                     <p className="text-[10px] uppercase font-semibold tracking-wider text-gray-400">
                         🕐 Chegada em <span className="font-bold text-gray-700">{v.proximaParadaNome}</span>
@@ -263,19 +264,14 @@ function CardViagem({ v, isMounted, agora }: { v: DadosDashboard, isMounted: boo
                                 </span>
                             </>
                         )}
-                        {!previsaoChegada && v.status === "EM_ANDAMENTO" && (
+                        {!previsaoChegada && (
                             <span className="text-xs text-gray-400 italic">
                                 {isMounted && v.semSinalGPS ? "⚠️ Sem sinal GPS há mais de 30min" : "Aguardando posição..."}
                             </span>
                         )}
-                        {v.status === "FINALIZADA" && (
-                            <span className="text-xs text-emerald-600 font-semibold">✅ Viagem concluída</span>
-                        )}
-                        {v.status === "PROGRAMADA" && (
-                            <span className="text-xs text-gray-400 italic">Não iniciada</span>
-                        )}
                     </div>
                 </div>
+                )}
 
                 {/* Descrição da ocorrência ativa */}
                 {temOcorrencia && (
@@ -381,9 +377,10 @@ type Filtro = "todos" | "em_andamento" | "atrasadas" | "com_alerta";
 
 export default function DashboardOperacionalPage() {
     const [isMounted, setIsMounted] = useState(false);
-    const [filtro, setFiltro] = useState<Filtro>("todos");
-    const [horasFiltro, setHorasFiltro] = useState<"24" | "48">("48");
-    const [baseFiltro, setBaseFiltro] = useState<string>("todas");
+    const [filtro, setFiltro] = useState<Filtro>("em_andamento");
+    const [horasFiltro, setHorasFiltro] = useState<"24" | "48">("24");
+    const [origemFiltro, setOrigemFiltro] = useState<string>("todas");
+    const [destinoFiltro, setDestinoFiltro] = useState<string>("todas");
     const [painelTVAtivo, setPainelTVAtivo] = useState(false);
 
     // Hora real sincronizada via API (corrige relógio incorreto da TV)
@@ -423,40 +420,36 @@ export default function DashboardOperacionalPage() {
         };
     }, [viagens]);
 
-    // Bases Únicas para o Filtro
-    const basesGerais = useMemo(() => {
+    // Unidades únicas de origem e destino para os filtros
+    const basesOrigem = useMemo(() => {
         if (!viagens) return [];
-        const setBases = new Set<string>();
-        viagens.forEach(v => {
-            setBases.add(v.baseOrigem.nome);
-            setBases.add(v.baseDestino.nome);
-            v.paradasViagem.forEach(p => setBases.add(p.base.nome));
-        });
-        return Array.from(setBases).sort();
+        return Array.from(new Set(viagens.map(v => v.baseOrigem.nome))).sort();
     }, [viagens]);
 
-    // Filtragem combinada (Status + Base)
+    const basesDestino = useMemo(() => {
+        if (!viagens) return [];
+        return Array.from(new Set(viagens.map(v => v.baseDestino.nome))).sort();
+    }, [viagens]);
+
+    // Filtragem combinada (Origem + Destino + Status) e ordenação (com telemetria primeiro)
     const viagensFiltradas = useMemo(() => {
         if (!viagens) return [];
         let r = viagens;
 
-        // 1. Filtro de Base
-        if (baseFiltro !== "todas") {
-            r = r.filter(v => {
-                return v.baseOrigem.nome === baseFiltro || 
-                       v.baseDestino.nome === baseFiltro || 
-                       v.paradasViagem.some(p => p.base.nome === baseFiltro);
-            });
-        }
+        // 1. Filtros de Unidade
+        if (origemFiltro !== "todas") r = r.filter(v => v.baseOrigem.nome === origemFiltro);
+        if (destinoFiltro !== "todas") r = r.filter(v => v.baseDestino.nome === destinoFiltro);
 
         // 2. Filtro de Status Rapido
         switch (filtro) {
-            case "em_andamento": return r.filter((v) => v.status === "EM_ANDAMENTO");
-            case "atrasadas":    return r.filter((v) => v.nivelAlerta !== "PONTUAL" && v.status !== "FINALIZADA" && v.status !== "CANCELADA");
-            case "com_alerta":   return r.filter((v) => ["ATRASADO", "CRITICO", "SEM_SINAL"].includes(v.nivelAlerta));
-            default:             return r;
+            case "em_andamento": r = r.filter((v) => v.status === "EM_ANDAMENTO"); break;
+            case "atrasadas":    r = r.filter((v) => v.nivelAlerta !== "PONTUAL" && v.status !== "FINALIZADA" && v.status !== "CANCELADA"); break;
+            case "com_alerta":   r = r.filter((v) => ["ATRASADO", "CRITICO", "SEM_SINAL"].includes(v.nivelAlerta)); break;
         }
-    }, [viagens, filtro, baseFiltro]);
+
+        // 3. Ordenação: viagens com telemetria primeiro
+        return [...r].sort((a, b) => Number(!!b.ultimaTelemetria) - Number(!!a.ultimaTelemetria));
+    }, [viagens, filtro, origemFiltro, destinoFiltro]);
 
     const ultimaAtualizacao = dataUpdatedAt
         ? new Date(dataUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -500,14 +493,26 @@ export default function DashboardOperacionalPage() {
                         </div>
                         
                         <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unidade:</label>
-                            <select 
-                                value={baseFiltro} 
-                                onChange={(e) => setBaseFiltro(e.target.value)}
+                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Origem:</label>
+                            <select
+                                value={origemFiltro}
+                                onChange={(e) => setOrigemFiltro(e.target.value)}
                                 className="text-sm bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
                             >
-                                <option value="todas">Todas as Unidades</option>
-                                {basesGerais.map(b => <option key={b} value={b}>{b}</option>)}
+                                <option value="todas">Todas as Origens</option>
+                                {basesOrigem.map(b => <option key={b} value={b}>{b}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Destino:</label>
+                            <select
+                                value={destinoFiltro}
+                                onChange={(e) => setDestinoFiltro(e.target.value)}
+                                className="text-sm bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                            >
+                                <option value="todas">Todos os Destinos</option>
+                                {basesDestino.map(b => <option key={b} value={b}>{b}</option>)}
                             </select>
                         </div>
                     </div>
