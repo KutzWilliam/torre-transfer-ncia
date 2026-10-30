@@ -95,6 +95,9 @@ function inferirCapacidadeVeiculo(
                    mod.includes("MASTER") || mod.includes("VUC") || mod.includes("3/4") ||
                    mod.includes("STRADA") || mod.includes("DUCATO");
 
+    const isFurgao = mod.includes("DAILY 35") || mod.includes("35S") || mod.includes("SPRINTER") ||
+                     mod.includes("MASTER") || mod.includes("HR") || mod.includes("DUCATO") || mod.includes("STRADA");
+
     // Caminhões médios / trucks de transferência (ex: VW Delivery, Ford Cargo, Atego, Constellation)
     const isTruckMod = !isLeveMod && (isTruckPesado || mod.includes("DELIVERY") || mod.includes("CARGO") ||
                       mod.includes("1719") || mod.includes("1723") || mod.includes("1726") || mod.includes("1729") ||
@@ -114,6 +117,9 @@ function inferirCapacidadeVeiculo(
             // Se for Cavalo ou Truck e o valor der <= 6000 kg (ex: 3.00 -> 3000 kg), é DUMMY no ERP!
             if ((isCavaloMod || isTruckMod) && pesoConvertido <= 6000) {
                 temCapacidadeRealBanco = false;
+            } else if (isLeveMod && pesoConvertido > 5500) {
+                // Caso AZT-7C03 (Accelo 815): cadastrado 15.00 no Brudam. Para caminhão leve/3/4 isso é erro (copiado do m³ ou perfil errado)
+                temCapacidadeRealBanco = false;
             } else {
                 pesoKgBanco = pesoConvertido;
                 temCapacidadeRealBanco = true;
@@ -128,6 +134,9 @@ function inferirCapacidadeVeiculo(
                 temCapacidadeRealBanco = false;
             } else if (isTruckMod && pesoKgBanco <= 6000) {
                 // Truck com 3.000 kg ou 4.000 kg cadastrado é dummy/placeholder no ERP
+                temCapacidadeRealBanco = false;
+            } else if (isLeveMod && pesoKgBanco > 5500) {
+                // Veículo leve cadastrado com 14400, 16000, 18000 ou 35000 kg no Brudam (usaram perfil de Truck ou erro)
                 temCapacidadeRealBanco = false;
             } else {
                 temCapacidadeRealBanco = true;
@@ -156,7 +165,18 @@ function inferirCapacidadeVeiculo(
     } else if (rotaContratual && rotaContratual.pesoKg > 0 && rotaContratual.tipoVeiculo === tipoVeiculo) {
         capacidadeKg = rotaContratual.pesoKg;
     } else {
-        capacidadeKg = tipoVeiculo === "CAVALO MECANICO" ? 24000 : (tipoVeiculo === "VUC / 3/4" ? 4000 : 14000);
+        if (tipoVeiculo === "CAVALO MECANICO") {
+            capacidadeKg = 24000;
+        } else if (tipoVeiculo === "VUC / 3/4") {
+            capacidadeKg = isFurgao ? 1800 : 4000;
+        } else {
+            capacidadeKg = 14000;
+        }
+    }
+
+    // Trava de coerência física para evitar que qualquer valor aberrante cadastrado fure o limite da categoria
+    if (tipoVeiculo === "VUC / 3/4" && capacidadeKg > 5500) {
+        capacidadeKg = isFurgao ? 1800 : 4000;
     }
 
     // 4. Define capacidade em m3 (baú)
@@ -165,13 +185,13 @@ function inferirCapacidadeVeiculo(
 
     if (tipoVeiculo === "CAVALO MECANICO" && m3 >= 70 && m3 <= 140) m3Valido = true;
     if (tipoVeiculo === "TRUCK" && m3 >= 35 && m3 <= 75) m3Valido = true;
-    if (tipoVeiculo === "VUC / 3/4" && m3 >= 12 && m3 <= 35) m3Valido = true;
+    if (tipoVeiculo === "VUC / 3/4" && m3 >= 8 && m3 <= 35) m3Valido = true;
 
     if (!m3Valido) {
         if (rotaContratual && rotaContratual.cubagemM3 > 0 && rotaContratual.tipoVeiculo === tipoVeiculo) {
             m3 = rotaContratual.cubagemM3;
         } else {
-            m3 = tipoVeiculo === "CAVALO MECANICO" ? 100 : (tipoVeiculo === "TRUCK" ? 50 : 25);
+            m3 = tipoVeiculo === "CAVALO MECANICO" ? 100 : (tipoVeiculo === "TRUCK" ? 50 : (isFurgao ? 12 : 25));
         }
     }
 
