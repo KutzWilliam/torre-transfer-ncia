@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
@@ -67,6 +67,18 @@ function renderBadgeStatusManifesto(status: string) {
             {status || "Indefinido"}
         </span>
     );
+}
+
+function renderBadgeTipoVeiculo(tipo: string) {
+    const cls =
+        tipo === "CAVALO MECANICO" ? "bg-purple-50 text-purple-700 border border-purple-200" :
+            (tipo === "ONIBUS" ? "bg-amber-50 text-amber-800 border border-amber-200" :
+                (tipo === "VUC / 3/4" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-blue-50 text-blue-700 border border-blue-200"));
+    const label =
+        tipo === "CAVALO MECANICO" ? "Cavalo" :
+            (tipo === "ONIBUS" ? "🚌 Ônibus" :
+                (tipo === "VUC / 3/4" ? "VUC / 3/4" : "Truck"));
+    return <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${cls}`}>{label}</span>;
 }
 
 export default function AproveitamentoFrotaPage() {
@@ -164,6 +176,64 @@ export default function AproveitamentoFrotaPage() {
             return new Date(b.data).getTime() - new Date(a.data).getTime();
         });
     }, [data?.viagens, ordenacao]);
+
+    // Agrupamento por veículo (placa) com médias e viagens detalhadas
+    const [veiculosExpandidos, setVeiculosExpandidos] = useState<Set<string>>(new Set());
+    const toggleVeiculo = (chave: string) => {
+        setVeiculosExpandidos((prev) => {
+            const novo = new Set(prev);
+            if (novo.has(chave)) novo.delete(chave);
+            else novo.add(chave);
+            return novo;
+        });
+    };
+
+    const veiculosAgrupados = useMemo(() => {
+        const mapa = new Map<string, typeof viagensOrdenadas>();
+        for (const v of viagensOrdenadas) {
+            const chave = v.placa && v.placa !== "—" && v.placa !== "0" ? v.placa : `SEM_PLACA_${v.parceiro}`;
+            const lista = mapa.get(chave);
+            if (lista) lista.push(v);
+            else mapa.set(chave, [v]);
+        }
+        const media = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+        const r1 = (n: number) => Math.round(n * 10) / 10;
+
+        const lista = Array.from(mapa.entries()).map(([chave, viagens]) => {
+            // viagens já estão na ordem da ordenação atual; para exibição interna, mais recentes primeiro
+            const viagensPorData = [...viagens].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+            const ref = viagensPorData[0]!;
+            const receitaLiquidaTotal = viagens.reduce((s, x) => s + x.receitaLiquidaRateada, 0);
+            const custoTotal = viagens.reduce((s, x) => s + x.custoViagem, 0);
+            const lucroTotal = viagens.reduce((s, x) => s + x.margemFinanceira, 0);
+            return {
+                chave,
+                placa: ref.placa,
+                parceiro: ref.parceiro,
+                tipoVeiculo: ref.tipoVeiculo,
+                capacidadeKg: ref.capacidadeKg,
+                capacidadeM3: ref.capacidadeM3,
+                viagens: viagensPorData,
+                ultimaData: new Date(ref.data).getTime(),
+                pesoMedioKg: media(viagens.map((x) => x.pesoCarregadoKg)),
+                cuboMedioM3: media(viagens.map((x) => x.cuboCarregadoM3)),
+                ocupacaoPesoMedia: r1(media(viagens.map((x) => x.ocupacaoPesoPct))),
+                ocupacaoCuboMedia: r1(media(viagens.map((x) => x.ocupacaoCuboPct))),
+                ocupacaoMedia: r1(media(viagens.map((x) => x.ocupacaoGeralPct))),
+                custoTotal,
+                receitaLiquidaTotal,
+                lucroTotal,
+                margemPct: receitaLiquidaTotal > 0 ? r1((lucroTotal / receitaLiquidaTotal) * 100) : 0,
+            };
+        });
+
+        return lista.sort((a, b) => {
+            if (ordenacao === "menorOcupacao") return a.ocupacaoMedia - b.ocupacaoMedia;
+            if (ordenacao === "maiorPrejuizo") return a.lucroTotal - b.lucroTotal;
+            if (ordenacao === "maiorCarga") return b.pesoMedioKg - a.pesoMedioKg;
+            return b.ultimaData - a.ultimaData;
+        });
+    }, [viagensOrdenadas, ordenacao]);
 
     const handleExportExcel = () => {
         if (!viagensOrdenadas.length) return;
@@ -274,9 +344,8 @@ export default function AproveitamentoFrotaPage() {
                                 <button
                                     key={p}
                                     onClick={() => setPeriodo(p)}
-                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                                        periodo === p ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                                    }`}
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${periodo === p ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                        }`}
                                 >
                                     {{ HOJE: "Hoje", SEMANA: "Semana", MES: "Mês", DIA_CUSTOM: "Dia", MES_CUSTOM: "Mês Esp." }[p]}
                                 </button>
@@ -499,7 +568,7 @@ export default function AproveitamentoFrotaPage() {
                                         </span>
                                     </div>
                                     <p className="text-amber-800 leading-relaxed">
-                                        Identificamos viagens com valores operacionais aberrantes lançados no ERP Brudam (ex: minutas com cubagem na casa das centenas de milhares de m³ ou capacidades dummy de veículos). 
+                                        Identificamos viagens com valores operacionais aberrantes lançados no ERP Brudam (ex: minutas com cubagem na casa das centenas de milhares de m³ ou capacidades dummy de veículos).
                                         O sistema saneou esses valores automaticamente para a capacidade física real da frota, garantindo que os KPIs médios e o ranking de parceiros permaneçam 100% íntegros.
                                     </p>
                                 </div>
@@ -553,14 +622,14 @@ export default function AproveitamentoFrotaPage() {
                             {/* Receita Líquida Real */}
                             <div className="rounded-2xl border bg-white p-5 shadow-sm flex flex-col gap-2 border-l-4 border-l-emerald-500">
                                 <div className="flex items-center justify-between text-gray-500">
-                                    <span className="text-xs font-bold uppercase tracking-wider">Receita Líquida</span>
+                                    <span className="text-xs font-bold uppercase tracking-wider">Receita Bruta</span>
                                     <span className="text-xl">💰</span>
                                 </div>
                                 <p className="text-3xl font-extrabold text-emerald-700 tabular-nums">
                                     {fmtMoeda(data.kpis.receitaLiquidaTotalRateada)}
                                 </p>
                                 <p className="text-xs text-gray-400 truncate" title={`Bruto: ${fmtMoeda(data.kpis.receitaTotalRateada)} | Pontas: -${fmtMoeda(data.kpis.custoPontasTotal)}`}>
-                                    Bruto: {fmtMoeda(data.kpis.receitaTotalRateada)} • Pontas: -{fmtMoeda(data.kpis.custoPontasTotal)}
+                                    Bruto: {fmtMoeda(data.kpis.receitaTotalRateada)} • C. Diversos: -{fmtMoeda(data.kpis.custoPontasTotal)}
                                 </p>
                             </div>
 
@@ -574,7 +643,7 @@ export default function AproveitamentoFrotaPage() {
                                     {fmtMoeda(data.kpis.custoTotalParceiros)}
                                 </p>
                                 <div className="flex items-center gap-2 text-xs">
-                                    <span className="text-gray-500">Lucro Real:</span>
+                                    <span className="text-gray-500">R.L Descontada:</span>
                                     <span className={`font-bold ${data.kpis.margemTotal >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                                         {fmtMoeda(data.kpis.margemTotal)} ({data.kpis.margemTotalPct}%)
                                     </span>
@@ -640,7 +709,7 @@ export default function AproveitamentoFrotaPage() {
                                                         <div className="flex items-center gap-4 flex-shrink-0 text-xs">
                                                             <div>
                                                                 <span className="text-gray-400">Receita: </span>
-                                                                <span className="font-semibold text-slate-700">{fmtMoeda(p.receitaTotal)}</span>
+                                                                <span className="font-semibold text-slate-700">{fmtMoeda(p.receitaLiquidaTotal)}</span>
                                                             </div>
                                                             <div>
                                                                 <span className="text-gray-400">Custo: </span>
@@ -720,6 +789,231 @@ export default function AproveitamentoFrotaPage() {
                             </div>
                         </div>
 
+                        {/* ── Tabela Analítica por Veículo (expansível para viagens) ── */}
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div className="flex flex-wrap items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50 gap-4">
+                                <div>
+                                    <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">📋 Detalhamento dos Manifestos &amp; Viagens</h2>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <p className="text-xs text-slate-400">{veiculosAgrupados.length} veículo(s) • {viagensOrdenadas.length} viagem(ns) no filtro atual</p>
+                                        {isFetching && (
+                                            <span className="text-xs text-orange-600 font-semibold flex items-center gap-1 animate-pulse">
+                                                • <span className="animate-spin inline-block">↻</span> Atualizando lista...
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500">Ordenar:</span>
+                                    <select
+                                        value={ordenacao}
+                                        onChange={(e) => setOrdenacao(e.target.value as typeof ordenacao)}
+                                        className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                                    >
+                                        <option value="data">Viagem Mais Recente</option>
+                                        <option value="menorOcupacao">Menor Ocupação Média Primeiro</option>
+                                        <option value="maiorPrejuizo">Maior Prejuízo Primeiro</option>
+                                        <option value="maiorCarga">Maior Carga Média Primeiro</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {veiculosAgrupados.length === 0 ? (
+                                <div className="py-20 text-center">
+                                    <p className="text-4xl mb-3">📭</p>
+                                    <p className="text-lg font-semibold text-gray-500">Nenhum manifesto encontrado para os filtros selecionados</p>
+                                    <p className="text-sm text-gray-400 mt-1">Experimente alterar o parceiro ou ampliar as datas</p>
+                                </div>
+                            ) : (
+                                <div className="overflow-auto max-h-[70vh] relative border-t border-slate-200">
+                                    <table className="min-w-full divide-y divide-gray-100 border-separate border-spacing-0">
+                                        <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
+                                            <tr>
+                                                {["Veículo / Placa", "Parceiro", "Tipo", "Viagens", "Peso Médio / Viagem", "Volume Médio / Viagem", "Ocupação Média", "Custo Total", "Receita Líquida", "Lucro Real Líquido"].map((h, idx) => (
+                                                    <th
+                                                        key={h}
+                                                        className={`px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap bg-slate-50 border-b border-slate-200 ${idx === 0 ? "sticky left-0 z-30 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]" : ""
+                                                            }`}
+                                                    >
+                                                        {h}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="text-xs">
+                                            {veiculosAgrupados.map((vei) => {
+                                                const aberto = veiculosExpandidos.has(vei.chave);
+                                                const corOcup = vei.ocupacaoMedia >= 75 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                                    (vei.ocupacaoMedia >= 50 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200");
+                                                const corBarra = vei.ocupacaoMedia >= 75 ? "bg-emerald-500" : vei.ocupacaoMedia >= 50 ? "bg-amber-500" : "bg-red-500";
+                                                const corMargemVei = vei.lucroTotal >= 0 ? "text-emerald-700 font-bold" : "text-red-600 font-bold";
+
+                                                return (
+                                                    <Fragment key={vei.chave}>
+                                                        <tr
+                                                            onClick={() => toggleVeiculo(vei.chave)}
+                                                            className="group cursor-pointer hover:bg-slate-50/80 transition-colors border-b border-gray-50"
+                                                        >
+                                                            <td className="px-4 py-3 whitespace-nowrap sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] transition-colors">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`inline-block text-slate-400 transition-transform duration-200 ${aberto ? "rotate-90" : ""}`}>▶</span>
+                                                                    <div>
+                                                                        <p className="font-extrabold text-slate-800 font-mono">{vei.placa}</p>
+                                                                        <p className="text-[10px] text-gray-400">Cap: {fmtNum(vei.capacidadeKg)} kg • {vei.capacidadeM3} m³</p>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <p className="font-bold text-slate-800">{vei.parceiro}</p>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                {renderBadgeTipoVeiculo(vei.tipoVeiculo)}
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[11px]">{vei.viagens.length}</span>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <p className="font-bold text-slate-800">{fmtNum(vei.pesoMedioKg)} kg</p>
+                                                                <p className="text-[10px] text-gray-400">{vei.ocupacaoPesoMedia}% da cap.</p>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <p className="font-bold text-slate-800">{fmtNum(vei.cuboMedioM3)} m³</p>
+                                                                <p className="text-[10px] text-gray-400">{vei.ocupacaoCuboMedia}% da cap.</p>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <div className="space-y-1">
+                                                                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black border ${corOcup}`}>
+                                                                        {vei.ocupacaoMedia}% média
+                                                                    </span>
+                                                                    <div className="h-1.5 w-16 bg-gray-100 rounded-full overflow-hidden">
+                                                                        <div className={`h-1.5 rounded-full ${corBarra}`} style={{ width: `${Math.min(100, vei.ocupacaoMedia)}%` }} />
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap text-slate-700 font-medium">{fmtMoeda(vei.custoTotal)}</td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <p className="font-bold text-emerald-700">{fmtMoeda(vei.receitaLiquidaTotal)}</p>
+                                                            </td>
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <p className={corMargemVei}>{vei.lucroTotal >= 0 ? "+" : ""}{fmtMoeda(vei.lucroTotal)}</p>
+                                                                <p className="text-[10px] text-gray-400">{vei.margemPct}% margem</p>
+                                                            </td>
+                                                        </tr>
+
+                                                        {aberto && (
+                                                            <tr>
+                                                                <td colSpan={10} className="p-0 bg-slate-50/60 border-b border-slate-200">
+                                                                    <div className="px-6 py-4">
+                                                                        <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+                                                                            Viagens realizadas — {vei.placa} ({vei.viagens.length})
+                                                                        </p>
+                                                                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                                                                            <table className="min-w-full text-xs border-separate border-spacing-0">
+                                                                                <thead className="bg-slate-50">
+                                                                                    <tr>
+                                                                                        {["Manifesto / Data", "Status", "Trecho / Rota", "Peso Real", "Volume Baú", "Pacotes", "Ocupação", "Gargalo", "Custo", "Receita Líquida", "Lucro Líquido", "Ação"].map((h) => (
+                                                                                            <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap border-b border-slate-200">{h}</th>
+                                                                                        ))}
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody className="divide-y divide-gray-50">
+                                                                                    {vei.viagens.map((v) => {
+                                                                                        const corOcupV = v.nivelOcupacao === "IDEAL" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                                                                            (v.nivelOcupacao === "ATENCAO" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200");
+                                                                                        const corMargem = v.resultadoFinanceiro === "LUCRO" ? "text-emerald-700 font-bold" : "text-red-600 font-bold";
+                                                                                        return (
+                                                                                            <tr key={v.idManifesto} className="hover:bg-slate-50/80 transition-colors">
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <div className="flex items-center gap-1.5">
+                                                                                                        <span className="font-extrabold text-blue-600">#{v.idManifesto}</span>
+                                                                                                        {v.tipoManifestoDescricao && (
+                                                                                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">{v.tipoManifestoDescricao}</span>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{v.data}</p>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">{renderBadgeStatusManifesto(v.statusDescricao)}</td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <div className="flex items-center gap-1.5">
+                                                                                                        <p className="font-semibold text-slate-800">{v.origem} ➔ {v.destino}</p>
+                                                                                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${v.tipoOperacao === "TRANSFERENCIA"
+                                                                                                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                                                                                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                                                                                            }`}>
+                                                                                                            {v.tipoOperacao === "TRANSFERENCIA" ? "Transferência" : "Coleta / Entrega"}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                    <p className="text-[10px] text-gray-400 truncate max-w-[200px]" title={v.fornecedorRazao}>{v.fornecedorRazao}</p>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <p className="font-bold text-slate-800">{fmtNum(v.pesoCarregadoKg)} kg</p>
+                                                                                                    <p className="text-[10px] text-gray-400">Cap: {fmtNum(v.capacidadeKg)} kg ({v.ocupacaoPesoPct}%)</p>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <div className="flex items-center gap-1.5">
+                                                                                                        <p className="font-bold text-slate-800">{fmtNum(v.cuboCarregadoM3)} m³</p>
+                                                                                                        {v.temAnomaliaVolume && (
+                                                                                                            <span
+                                                                                                                className="cursor-help px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300"
+                                                                                                                title={`Erro de digitação no ERP: lançado ${fmtNum(v.cuboCarregadoM3Bruto)} m³ no Brudam. O sistema saneou para ${fmtNum(v.cuboCarregadoM3)} m³ para proteger os KPIs.`}
+                                                                                                            >
+                                                                                                                ⚠️ Ajustado
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                    <p className="text-[10px] text-gray-400">Cap: {v.capacidadeM3} m³ ({v.ocupacaoCuboPct}%)</p>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <span className="font-bold text-slate-700">{v.totalVolumes}</span>
+                                                                                                    <span className="text-[10px] text-gray-400 block">{v.totalMinutas} minuta(s)</span>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black border ${corOcupV}`}>{v.ocupacaoGeralPct}%</span>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${v.gargalo === "PESO" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
+                                                                                                        {v.gargalo === "PESO" ? "⚖️ Peso" : "📦 Volume"}
+                                                                                                    </span>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap text-slate-700 font-medium">{fmtMoeda(v.custoViagem)}</td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <p className="font-bold text-emerald-700">{fmtMoeda(v.receitaLiquidaRateada)}</p>
+                                                                                                    <p className="text-[10px] text-gray-400">Bruto: {fmtMoeda(v.receitaRateada)}</p>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <p className={corMargem}>{v.margemFinanceira >= 0 ? "+" : ""}{fmtMoeda(v.margemFinanceira)}</p>
+                                                                                                    <p className="text-[10px] text-gray-400">{v.margemPercentual}% margem</p>
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                                                                    <button
+                                                                                                        onClick={() => {
+                                                                                                            setManifestoModalId(v.idManifesto);
+                                                                                                            setManifestoSelecionado(v);
+                                                                                                        }}
+                                                                                                        className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all active:scale-95"
+                                                                                                    >
+                                                                                                        🔍 Minutas ({v.totalMinutas})
+                                                                                                    </button>
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        );
+                                                                                    })}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
                         {/* ── Rotas Subutilizadas e com Maior Movimento ── */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* Top Rotas com Pior Ocupação */}
@@ -778,203 +1072,6 @@ export default function AproveitamentoFrotaPage() {
                             </div>
                         </div>
 
-                        {/* ── Tabela Analítica de Viagens ── */}
-                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                            <div className="flex flex-wrap items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50 gap-4">
-                                <div>
-                                    <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">📋 Detalhamento dos Manifestos & Viagens</h2>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                        <p className="text-xs text-slate-400">{viagensOrdenadas.length} viagem(ns) no filtro atual</p>
-                                        {isFetching && (
-                                            <span className="text-xs text-orange-600 font-semibold flex items-center gap-1 animate-pulse">
-                                                • <span className="animate-spin inline-block">↻</span> Atualizando lista...
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs text-slate-500">Ordenar:</span>
-                                    <select
-                                        value={ordenacao}
-                                        onChange={(e) => setOrdenacao(e.target.value as typeof ordenacao)}
-                                        className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                                    >
-                                        <option value="data">Data Recente</option>
-                                        <option value="menorOcupacao">Menor Ocupação Primeiro</option>
-                                        <option value="maiorPrejuizo">Maior Prejuízo Primeiro</option>
-                                        <option value="maiorCarga">Maior Carga Primeiro</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {viagensOrdenadas.length === 0 ? (
-                                <div className="py-20 text-center">
-                                    <p className="text-4xl mb-3">📭</p>
-                                    <p className="text-lg font-semibold text-gray-500">Nenhum manifesto encontrado para os filtros selecionados</p>
-                                    <p className="text-sm text-gray-400 mt-1">Experimente alterar o parceiro ou ampliar as datas</p>
-                                </div>
-                            ) : (
-                                <div className="overflow-auto max-h-[70vh] relative border-t border-slate-200">
-                                    <table className="min-w-full divide-y divide-gray-100 border-separate border-spacing-0">
-                                        <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
-                                            <tr>
-                                                {["Manifesto / Data", "Status", "Parceiro / Placa", "Trecho / Rota", "Tipo", "Peso Real (Balança)", "Volume Baú (m³)", "Pacotes (Caixas)", "Ocupação", "Gargalo", "Custo Parceiro", "Receita Líquida", "Lucro Real Líquido", "Ação"].map((h, idx) => (
-                                                    <th
-                                                        key={h}
-                                                        className={`px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap bg-slate-50 border-b border-slate-200 ${
-                                                            idx === 0 ? "sticky left-0 z-30 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]" : ""
-                                                        }`}
-                                                    >
-                                                        {h}
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50 text-xs">
-                                            {viagensOrdenadas.map((v) => {
-                                                const corOcup = v.nivelOcupacao === "IDEAL" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                                                    (v.nivelOcupacao === "ATENCAO" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200");
-
-                                                const corMargem = v.resultadoFinanceiro === "LUCRO" ? "text-emerald-700 font-bold" : "text-red-600 font-bold";
-
-                                                return (
-                                                    <tr key={v.idManifesto} className="group hover:bg-slate-50/80 transition-colors">
-                                                        {/* Manifesto */}
-                                                        <td className="px-4 py-3 whitespace-nowrap sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] transition-colors">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="font-extrabold text-blue-600">#{v.idManifesto}</span>
-                                                                {v.tipoManifestoDescricao && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                                                                        {v.tipoManifestoDescricao}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <p className="text-[10px] text-gray-400 mt-0.5">{v.data}</p>
-                                                        </td>
-
-                                                        {/* Status */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            {renderBadgeStatusManifesto(v.statusDescricao)}
-                                                        </td>
-
-                                                        {/* Parceiro / Placa */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className="font-bold text-slate-800">{v.parceiro}</p>
-                                                            <p className="text-[10px] text-gray-500 font-mono">{v.placa}</p>
-                                                        </td>
-
-                                                        {/* Trecho */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <p className="font-semibold text-slate-800">{v.origem} ➔ {v.destino}</p>
-                                                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                                                    v.tipoOperacao === "TRANSFERENCIA"
-                                                                        ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                                                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                                }`}>
-                                                                    {v.tipoOperacao === "TRANSFERENCIA" ? "Transferência" : "Coleta / Entrega"}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-[10px] text-gray-400 truncate max-w-[150px]" title={v.fornecedorRazao}>{v.fornecedorRazao}</p>
-                                                        </td>
-
-                                                        {/* Tipo */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                v.tipoVeiculo === "CAVALO MECANICO" ? "bg-purple-50 text-purple-700 border border-purple-200" :
-                                                                (v.tipoVeiculo === "ONIBUS" ? "bg-amber-50 text-amber-800 border border-amber-200" :
-                                                                (v.tipoVeiculo === "VUC / 3/4" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-blue-50 text-blue-700 border border-blue-200"))
-                                                            }`}>
-                                                                {v.tipoVeiculo === "CAVALO MECANICO" ? "Cavalo" :
-                                                                 (v.tipoVeiculo === "ONIBUS" ? "🚌 Ônibus" :
-                                                                 (v.tipoVeiculo === "VUC / 3/4" ? "VUC / 3/4" : "Truck"))}
-                                                            </span>
-                                                        </td>
-
-                                                        {/* Peso Real */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className="font-bold text-slate-800">{fmtNum(v.pesoCarregadoKg)} kg</p>
-                                                            <p className="text-[10px] text-gray-400">Cap: {fmtNum(v.capacidadeKg)} kg ({v.ocupacaoPesoPct}%)</p>
-                                                        </td>
-
-                                                        {/* Volume Real (m3) */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <p className="font-bold text-slate-800">{fmtNum(v.cuboCarregadoM3)} m³</p>
-                                                                {v.temAnomaliaVolume && (
-                                                                    <span
-                                                                        className="cursor-help px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300"
-                                                                        title={`Erro de digitação no ERP: lançado ${fmtNum(v.cuboCarregadoM3Bruto)} m³ no Brudam. O sistema saneou para ${fmtNum(v.cuboCarregadoM3)} m³ para proteger os KPIs.`}
-                                                                    >
-                                                                        ⚠️ Ajustado
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <p className="text-[10px] text-gray-400">Cap: {v.capacidadeM3} m³ ({v.ocupacaoCuboPct}%)</p>
-                                                        </td>
-
-                                                        {/* Pacotes / Caixas */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <span className="font-bold text-slate-700">{v.totalVolumes}</span>
-                                                            <span className="text-[10px] text-gray-400 block">{v.totalMinutas} minuta(s)</span>
-                                                        </td>
-
-                                                        {/* Ocupação */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <div className="space-y-1">
-                                                                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black border ${corOcup}`}>
-                                                                    {v.ocupacaoGeralPct}% geral
-                                                                </span>
-                                                                <div className="h-1.5 w-16 bg-gray-100 rounded-full overflow-hidden">
-                                                                    <div className={`h-1.5 rounded-full ${v.ocupacaoGeralPct >= 75 ? "bg-emerald-500" : v.ocupacaoGeralPct >= 50 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${Math.min(100, v.ocupacaoGeralPct)}%` }} />
-                                                                </div>
-                                                            </div>
-                                                        </td>
-
-                                                        {/* Gargalo */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${v.gargalo === "PESO" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
-                                                                {v.gargalo === "PESO" ? "⚖️ Peso" : "📦 Volume"}
-                                                            </span>
-                                                        </td>
-
-                                                        {/* Custo */}
-                                                        <td className="px-4 py-3 whitespace-nowrap text-slate-700 font-medium">
-                                                            {fmtMoeda(v.custoViagem)}
-                                                        </td>
-
-                                                        {/* Receita Líquida */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className="font-bold text-emerald-700">{fmtMoeda(v.receitaLiquidaRateada)}</p>
-                                                            <p className="text-[10px] text-gray-400">Bruto: {fmtMoeda(v.receitaRateada)}</p>
-                                                        </td>
-
-                                                        {/* Lucro Real Líquido */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <p className={corMargem}>{v.margemFinanceira >= 0 ? "+" : ""}{fmtMoeda(v.margemFinanceira)}</p>
-                                                            <p className="text-[10px] text-gray-400">{v.margemPercentual}% margem</p>
-                                                        </td>
-
-                                                        {/* Ação */}
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setManifestoModalId(v.idManifesto);
-                                                                    setManifestoSelecionado(v);
-                                                                }}
-                                                                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all active:scale-95"
-                                                            >
-                                                                🔍 Minutas ({v.totalMinutas})
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
                     </div>
                 ) : null}
             </main>
@@ -992,11 +1089,10 @@ export default function AproveitamentoFrotaPage() {
                                     </h3>
                                     {manifestoSelecionado && renderBadgeStatusManifesto(manifestoSelecionado.statusDescricao)}
                                     {manifestoSelecionado?.tipoOperacaoDescricao && (
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                            manifestoSelecionado.tipoOperacao === "TRANSFERENCIA"
-                                                ? "bg-blue-100 text-blue-800"
-                                                : "bg-emerald-100 text-emerald-800"
-                                        }`}>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${manifestoSelecionado.tipoOperacao === "TRANSFERENCIA"
+                                            ? "bg-blue-100 text-blue-800"
+                                            : "bg-emerald-100 text-emerald-800"
+                                            }`}>
                                             {manifestoSelecionado.tipoOperacao === "TRANSFERENCIA" ? "🔄 Transferência" : "📦 Coleta / Entrega"}
                                         </span>
                                     )}
