@@ -3,7 +3,7 @@ import {
     createTRPCRouter,
     protectedProcedure,
 } from "@/server/api/trpc";
-import { normalizeString, normalizeCityName } from "@/server/utils/stringUtils";
+import { normalizeString, normalizeCityName, chaveRota } from "@/server/utils/stringUtils";
 import { getPlacaAtivaSascar } from "@/server/utils/sascarUtils";
 import { calcularDistanciaGeocerca } from "@/server/utils/geolocalizacao";
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, parse } from "date-fns";
@@ -77,6 +77,12 @@ export const viagemRouter = createTRPCRouter({
                     ctx.db.veiculo.findMany()
                 ]);
 
+                const rotaPorChave = new Map<string, typeof rotasCadastradas[0]>();
+                for (const r of rotasCadastradas) {
+                    const k = chaveRota(r.nome);
+                    if (k && !rotaPorChave.has(k)) rotaPorChave.set(k, r);
+                }
+
                 const basePorNome = new Map<string, typeof todasBases[0]>();
                 const basePorId = new Map<string, typeof todasBases[0]>();
                 for (const b of todasBases) {
@@ -131,11 +137,12 @@ export const viagemRouter = createTRPCRouter({
                     // 3. Veículo com cache
                     const veiculo = await getOrCreateVeiculo(placaSascar);
 
-                    // 4. Procurar a Rota Matriz (com tolerância a acentos, maiúsculas e espaços irregulares)
+                    // 4. Procurar a Rota Matriz (nome exato normalizado; senão, chave canônica de cidades)
                     const rotaNomeDescartavel = normalizeString(item.rotaDescricao).replace(/\s+/g, ' ').trim();
-                    const rotaPadrao = rotasCadastradas.find(r => 
-                        normalizeString(r.nome).replace(/\s+/g, ' ').trim() === rotaNomeDescartavel
-                    );
+                    const rotaPadrao =
+                        rotasCadastradas.find(r =>
+                            normalizeString(r.nome).replace(/\s+/g, ' ').trim() === rotaNomeDescartavel
+                        ) ?? rotaPorChave.get(chaveRota(item.rotaDescricao));
 
                     // Quando há rota cadastrada, usa as paradas da rota como origem/destino canônicos
                     let baseOrigemFinal = baseOrigem;

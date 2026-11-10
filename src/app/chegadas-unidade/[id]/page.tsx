@@ -8,6 +8,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { TruckLoader } from "@/components/TruckLoader";
+import { getBrudamManifestoUrl, getBrudamMinutaUrl } from "@/utils/brudam";
 
 type ManifestoItem = RouterOutputs["manifesto"]["manifestosPorUnidade"]["manifestos"][number];
 
@@ -82,7 +83,19 @@ function MinutasPanel({ idManifesto, idAero }: { idManifesto: number; idAero: st
 
                         return (
                             <tr key={m.idMinuta} className={`transition-colors ${styleClasses}`}>
-                                <td className="px-4 py-2.5 font-mono font-bold text-slate-700 whitespace-nowrap">#{m.idMinuta}</td>
+                                <td className="px-4 py-2.5 font-mono font-bold whitespace-nowrap">
+                                    <a
+                                        href={getBrudamMinutaUrl(m.idMinuta)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        title={`Abrir minuta #${m.idMinuta} no Brudam`}
+                                        className="text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                    >
+                                        #{m.idMinuta}
+                                        <span className="text-[10px] opacity-60">↗</span>
+                                    </a>
+                                </td>
                                 <td className={`px-4 py-2.5 max-w-[200px] truncate ${textClasses}`} title={m.clienteRemetente}>{m.clienteRemetente}</td>
                                 <td className={`px-4 py-2.5 max-w-[200px] truncate ${textClasses}`} title={m.clienteDestinatario}>{m.clienteDestinatario}</td>
                                 <td className="px-4 py-2.5 font-mono text-slate-600 whitespace-nowrap">{fmtData(m.prevEntrega)}</td>
@@ -123,9 +136,17 @@ function ManifestoCard({ manifesto, idAero }: { manifesto: ManifestoItem; idAero
                 onClick={() => setExpandido(v => !v)}
             >
                 <div className="flex items-center gap-4 flex-wrap min-w-0">
-                    <span className="font-mono font-extrabold text-slate-800 text-sm whitespace-nowrap">
+                    <a
+                        href={getBrudamManifestoUrl(manifesto.idManifesto)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        title={`Abrir manifesto #${manifesto.idManifesto} no Brudam`}
+                        className="font-mono font-extrabold text-blue-600 hover:text-blue-800 hover:underline text-sm whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition-colors"
+                    >
                         #{manifesto.idManifesto}
-                    </span>
+                        <span className="text-[10px] opacity-60">↗</span>
+                    </a>
                     <span className="font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs font-bold tracking-wider whitespace-nowrap">
                         {manifesto.placa}
                     </span>

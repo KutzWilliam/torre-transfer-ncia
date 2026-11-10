@@ -7,6 +7,7 @@ import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-f
 import { ptBR } from "date-fns/locale";
 import { keepPreviousData } from "@tanstack/react-query";
 import { TruckLoader } from "@/components/TruckLoader";
+import { getBrudamManifestoUrl, getBrudamMinutaUrl } from "@/utils/brudam";
 
 type PeriodoFiltro = "HOJE" | "SEMANA" | "MES" | "DIA_CUSTOM" | "MES_CUSTOM";
 type NivelOcupacaoFiltro = "TODAS" | "CRITICA" | "ATENCAO" | "IDEAL";
@@ -925,7 +926,17 @@ export default function AproveitamentoFrotaPage() {
                                                                                             <tr key={v.idManifesto} className="hover:bg-slate-50/80 transition-colors">
                                                                                                 <td className="px-3 py-2 whitespace-nowrap">
                                                                                                     <div className="flex items-center gap-1.5">
-                                                                                                        <span className="font-extrabold text-blue-600">#{v.idManifesto}</span>
+                                                                                                        <a
+                                                                                                            href={getBrudamManifestoUrl(v.idManifesto)}
+                                                                                                            target="_blank"
+                                                                                                            rel="noopener noreferrer"
+                                                                                                            onClick={(e) => e.stopPropagation()}
+                                                                                                            title={`Abrir manifesto #${v.idManifesto} no Brudam`}
+                                                                                                            className="font-extrabold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                                                                                        >
+                                                                                                            #{v.idManifesto}
+                                                                                                            <span className="text-[10px] opacity-60">↗</span>
+                                                                                                        </a>
                                                                                                         {v.tipoManifestoDescricao && (
                                                                                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">{v.tipoManifestoDescricao}</span>
                                                                                                         )}
@@ -1084,8 +1095,18 @@ export default function AproveitamentoFrotaPage() {
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                             <div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <h3 className="text-base font-extrabold text-slate-900">
-                                        📊 Resultado da Operação & Minutas — Manifesto #{manifestoModalId}
+                                    <h3 className="text-base font-extrabold text-slate-900 inline-flex items-center gap-1.5">
+                                        📊 Resultado da Operação & Minutas — Manifesto{" "}
+                                        <a
+                                            href={getBrudamManifestoUrl(manifestoModalId)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title={`Abrir manifesto #${manifestoModalId} no Brudam`}
+                                            className="text-blue-600 hover:text-blue-800 underline inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                        >
+                                            #{manifestoModalId}
+                                            <span className="text-xs opacity-70">↗</span>
+                                        </a>
                                     </h3>
                                     {manifestoSelecionado && renderBadgeStatusManifesto(manifestoSelecionado.statusDescricao)}
                                     {manifestoSelecionado?.tipoOperacaoDescricao && (
@@ -1173,7 +1194,17 @@ export default function AproveitamentoFrotaPage() {
                                                         <tr key={m.idMinuta} className="group hover:bg-slate-50/80 transition-colors">
                                                             <td className="px-2.5 py-2 whitespace-nowrap font-bold text-blue-600 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] transition-colors">
                                                                 <div className="flex items-center gap-1.5">
-                                                                    <span>#{m.idMinuta}</span>
+                                                                    <a
+                                                                        href={getBrudamMinutaUrl(m.idMinuta)}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        title={`Abrir minuta #${m.idMinuta} no Brudam`}
+                                                                        className="hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                                                    >
+                                                                        <span>#{m.idMinuta}</span>
+                                                                        <span className="text-[10px] opacity-60">↗</span>
+                                                                    </a>
                                                                     {m.totalManifestos > 1 && (
                                                                         <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded-full" title={`Carga multitrecho: transportada em ${m.totalManifestos} manifestos`}>
                                                                             {m.totalManifestos} trechos

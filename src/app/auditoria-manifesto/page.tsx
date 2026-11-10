@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { TruckLoader } from "@/components/TruckLoader";
 import * as XLSX from "xlsx";
+import { getBrudamManifestoUrl } from "@/utils/brudam";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -609,9 +610,17 @@ export default function AuditoriaManifestoPage() {
                                                 >
                                                     {/* Nº Manifesto */}
                                                     <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className="font-bold text-slate-800 text-sm font-mono">
+                                                        <a
+                                                            href={getBrudamManifestoUrl(item.idManifesto)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            title={`Abrir manifesto #${item.idManifesto} no Brudam`}
+                                                            className="font-bold text-blue-600 hover:text-blue-800 hover:underline text-sm font-mono inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                                        >
                                                             #{item.idManifesto}
-                                                        </span>
+                                                            <span className="text-[10px] opacity-60">↗</span>
+                                                        </a>
                                                     </td>
 
                                                     {/* Operação */}

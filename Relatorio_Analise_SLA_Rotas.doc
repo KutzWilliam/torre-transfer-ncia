@@ -1,0 +1,316 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset='utf-8'>
+<title>Relatório Técnico: Diagnóstico de Rotas SLA</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+body {
+    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #1f2937;
+    margin: 40px;
+}
+h1 {
+    color: #14532d;
+    font-size: 20pt;
+    border-bottom: 2px solid #16a34a;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+}
+.subtitle {
+    font-size: 11pt;
+    color: #4b5563;
+    margin-bottom: 24px;
+}
+h2 {
+    color: #166534;
+    font-size: 14pt;
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 4px;
+    margin-top: 28px;
+}
+h3 {
+    color: #15803d;
+    font-size: 12pt;
+    margin-top: 18px;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    font-size: 10pt;
+}
+th {
+    background-color: #dcfce7;
+    color: #14532d;
+    font-weight: bold;
+    border: 1px solid #94a3b8;
+    padding: 8px;
+    text-align: left;
+}
+td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 8px;
+    vertical-align: top;
+}
+tr:nth-child(even) td {
+    background-color: #f8fafc;
+}
+.alert-box {
+    background-color: #f0fdf4;
+    border-left: 4px solid #16a34a;
+    padding: 12px 16px;
+    margin: 16px 0;
+    color: #166534;
+    font-size: 10.5pt;
+}
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 9pt;
+    font-weight: 600;
+    border-radius: 4px;
+}
+.badge-red { background-color: #fee2e2; color: #991b1b; }
+.badge-orange { background-color: #ffedd5; color: #9a3412; }
+.badge-blue { background-color: #e0f2fe; color: #075985; }
+.badge-green { background-color: #dcfce7; color: #166534; }
+ul, ol {
+    margin-top: 6px;
+    margin-bottom: 12px;
+    padding-left: 24px;
+}
+li { margin-bottom: 4px; }
+.footer {
+    margin-top: 40px;
+    padding-top: 12px;
+    border-top: 1px solid #cbd5e1;
+    font-size: 9pt;
+    color: #64748b;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+
+<h1>Relatório Técnico: Diagnóstico de Rotas SLA</h1>
+<div class="subtitle">
+    <strong>Arquivo:</strong> <code>SLA Transferências.xlsx</code> | <strong>Aba:</strong> <code>Sem_identificação</code><br>
+    <strong>Sistema:</strong> Torre de Controle de Transferências — Expresso Princesa dos Campos<br>
+    <strong>Data de Emissão:</strong> 26 de Outubro de 2026
+</div>
+
+<div class="alert-box">
+    <strong>Aviso de Conformidade:</strong> Nenhuma regra de negócio, parâmetro de cálculo ou código do sistema foi modificado. Este documento detalha a auditoria forense dos dados e explica as causas de cada inconsistência encontrada na planilha.
+</div>
+
+<h2>1. Sumário Executivo</h2>
+<p>
+O arquivo <strong><code>SLA Transferências.xlsx</code></strong> foi submetido a uma auditoria técnica completa para compreender a origem das rotas marcadas como não encontradas na aba <strong><code>Sem_identificação</code></strong>.
+</p>
+<p>
+Para o diagnóstico, confrontamos as informações da planilha com o banco de dados oficial em produção, que possui <strong>9.004 viagens registradas</strong>, <strong>115 rotas padrão cadastradas</strong> e <strong>74 bases de operação</strong>.
+</p>
+
+<h2>2. Panorama dos Apontamentos na Aba "Sem_identificação"</h2>
+<p>A aba possui 102 rotas avaliadas, divididas conforme a coluna <em>Observações</em>:</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Status da Observação</th>
+            <th>Qtd. Rotas</th>
+            <th>% do Total</th>
+            <th>Causa Raiz Identificada no Diagnóstico</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><span class="badge badge-red">Rota não localizada</span></td>
+            <td><strong>36</strong></td>
+            <td>35,3%</td>
+            <td>Divergência de grafia, inversão de sentido (Ida/Volta), paradas intermediárias no TMS ou linha inativa.</td>
+        </tr>
+        <tr>
+            <td><span class="badge badge-orange">Origem não localizada</span></td>
+            <td><strong>22</strong></td>
+            <td>21,6%</td>
+            <td>A base não emite viagens de transferência direta no sistema (0 viagens saindo da cidade).</td>
+        </tr>
+        <tr>
+            <td><span class="badge badge-blue">Rota não estava incluída no SLA</span></td>
+            <td><strong>7</strong></td>
+            <td>6,9%</td>
+            <td>Rotas que rodaram na operação real, mas não faziam parte da tabela original de SLA (Planilha1).</td>
+        </tr>
+        <tr>
+            <td><span class="badge badge-green">Sem ocorrências</span></td>
+            <td><strong>5</strong></td>
+            <td>4,9%</td>
+            <td>Rotas localizadas com <strong>100% de pontualidade</strong> operacional (zero atrasos de saída ou trânsito).</td>
+        </tr>
+        <tr>
+            <td><strong>Sem observação (Identificadas)</strong></td>
+            <td><strong>32</strong></td>
+            <td>31,3%</td>
+            <td>Rotas perfeitamente mapeadas com dados de pontualidade distribuídos nas colunas de SLA.</td>
+        </tr>
+        <tr style="font-weight: bold; background-color: #f1f5f9;">
+            <td>TOTAL ANALISADO</td>
+            <td>102</td>
+            <td>100,0%</td>
+            <td>641 viagens totalizadas na conciliação</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>3. Grupo: "Origem não localizada" (22 Rotas)</h2>
+<h3>3.1. Por que não foram encontradas?</h3>
+<ol>
+    <li><strong>Unidades Não Emissoras de Viagens de Transferência:</strong> No cadastro da Torre de Controle, existem 74 cidades cadastradas como Base. No entanto, <strong>apenas 27 cidades são bases operacionais geradoras de viagens de transferência</strong>. Cidades menores ou filiais de apoio atuam como paradas intermediárias de transbordo, pontos de coleta e entrega local ou linhas atendidas por parceiros/terceiros. <strong>Nenhuma dessas 21 cidades emite manifestos de transferência direta como origem no sistema</strong>.</li>
+    <li><strong>Divergência de Nomenclatura Cadastral:</strong>
+        <ul>
+            <li><strong>Campinas (Linha 12):</strong> A base operacional cadastrada no TMS e no sistema é <strong>SUMARÉ</strong> (código <code>SUM</code>, presente na coluna H da própria planilha). No banco de dados existem 26 viagens com origem em Sumaré, e zero com "Campinas".</li>
+            <li><strong>Terra Roxa (Linha 196):</strong> A cidade marcada na coluna A foi "Terra Roxa", mas o nome da rota é <code>GUAIRA X TERRA ROXA X PALOTINA X CASCAVEL</code>. A origem física real do veículo é Guaíra.</li>
+        </ul>
+    </li>
+</ol>
+
+<h3>3.2. Lista Completa das 22 Ocorrências</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Linha</th>
+            <th>Origem Planilha</th>
+            <th>Rota Indicada</th>
+            <th>Sigla</th>
+            <th>Diagnóstico Técnico</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr><td>7</td><td>Birigui</td><td>BIRIGUI X LONDRINA</td><td>BIR</td><td>Base Birigui possui 0 viagens geradas. Atendida a partir de Londrina.</td></tr>
+        <tr><td>12</td><td>Campinas</td><td>CAMPINAS X SÃO PAULO X REGISTRO X CURITIBA</td><td>SUM</td><td>Base cadastrada como SUMARÉ (SUM). Existem 26 viagens de Sumaré no BD.</td></tr>
+        <tr><td>14</td><td>Campo Mourão</td><td>CAMPO MOURÃO X MARINGÁ</td><td>COM</td><td>0 viagens geradas com origem em Campo Mourão.</td></tr>
+        <tr><td>27</td><td>Castro</td><td>CASTRO X PONTA GROSSA</td><td>CST</td><td>0 viagens geradas. Atendida pela rota Curitiba x Castro x Jaguariaíva.</td></tr>
+        <tr><td>31</td><td>Cianorte</td><td>CIANORTE X MARINGA</td><td>CIA</td><td>0 viagens de origem geradas no sistema.</td></tr>
+        <tr><td>33</td><td>Criciúma</td><td>CRICIÚMA X JOINVILLE</td><td>CCM</td><td>0 viagens de origem geradas no sistema.</td></tr>
+        <tr><td>78</td><td>Fernandopolis</td><td>FERNANDOPOLIS X LONDRINA</td><td>FER</td><td>0 viagens regulares geradas partindo de Fernandópolis.</td></tr>
+        <tr><td>80</td><td>Florianopolis</td><td>FLORIANOPOLIS X JOINVILLE</td><td>FLN</td><td>0 viagens de transferência geradas a partir de Florianópolis.</td></tr>
+        <tr><td>100</td><td>Ibaiti</td><td>IBAITI X CORNELIO PROCÓPIO X LONDRINA</td><td>IBT</td><td>0 viagens com origem Ibaiti no sistema.</td></tr>
+        <tr><td>110</td><td>Jaguariaiva</td><td>JAGUARIAIVA X PONTA GROSSA X CURITIBA</td><td>JGV</td><td>0 viagens de transferência com origem em Jaguariaíva.</td></tr>
+        <tr><td>112</td><td>Joaçaba</td><td>JOAÇABA X JOINVILLE</td><td>JCB</td><td>0 viagens saindo de Joaçaba. A linha opera como Joinville x Joaçaba.</td></tr>
+        <tr><td>154</td><td>Porto Alegre</td><td>PORTO ALEGRE X JOINVILLE X CURITIBA</td><td>POA</td><td>0 viagens geradas com origem em Porto Alegre no sistema.</td></tr>
+        <tr><td>156</td><td>Prudentopolis</td><td>PRUDENTOPOLIS X PONTA GROSSA X CURITIBA</td><td>PRD</td><td>0 viagens geradas com origem em Prudentópolis.</td></tr>
+        <tr><td>158</td><td>São Mateus</td><td>SÃO MATEUS DO SUL X PALMEIRA X PONTA GROSSA</td><td>SMT</td><td>0 viagens geradas com origem em São Mateus do Sul.</td></tr>
+        <tr><td>174</td><td>Ribeirão Preto</td><td>RIBEIRAO PRETO X SÃO PAULO</td><td>RAO</td><td>0 viagens geradas com origem em Ribeirão Preto.</td></tr>
+        <tr><td>180</td><td>Irati</td><td>IRATI X GUARAPUAVA</td><td>IRA</td><td>0 viagens de origem. O fluxo passa por Irati vindo de Curitiba/Umuarama.</td></tr>
+        <tr><td>182</td><td>Pato Branco</td><td>PATO BRANCO X GUARAPUAVA</td><td>PTO</td><td>0 viagens de transferência geradas de Pato Branco.</td></tr>
+        <tr><td>186</td><td>Palmas</td><td>PALMAS X MANGUEIRINHA X CANDOI X GUARAPUAVA</td><td>SSPS</td><td>0 viagens de transferência de Palmas no BD.</td></tr>
+        <tr><td>190</td><td>Palmas</td><td>PALMAS X MANGUEIRINHA X GUARAPUAVA</td><td>SSPS</td><td>0 viagens de transferência de Palmas no BD.</td></tr>
+        <tr><td>192</td><td>Dois Vizinhos</td><td>DOIS VIZINHOS X CHOPINZINHO X GUARAPUAVA</td><td>DVZ</td><td>0 viagens de transferência de Dois Vizinhos.</td></tr>
+        <tr><td>196</td><td>Terra Roxa</td><td>GUAIRA X TERRA ROXA X PALOTINA X CASCAVEL</td><td>GUA</td><td>Origem real é Guaíra. Terra Roxa é cidade intermediária de trânsito.</td></tr>
+        <tr><td>200</td><td>Assis Chateaubriand</td><td>ASSIS CHATEAUBRIAND X CASCAVEL</td><td>ASC x CAC</td><td>0 viagens com saída em Assis Chateaubriand.</td></tr>
+    </tbody>
+</table>
+
+<h2>4. Grupo: "Rota não localizada" (36 Rotas)</h2>
+<h3>4.1. As 4 Causas Técnicas Comprovadas</h3>
+
+<h4>A. Divergência de Grafia e Acentuação (Rotas que EXISTEM no Banco de Dados)</h4>
+<p>Quatro rotas estavam perfeitamente ativas e com centenas de viagens no sistema, mas foram classificadas como "não localizadas" devido a divergências textuais no cruzamento de planilhas:</p>
+<ul>
+    <li><strong>Linha 39:</strong> Origem digitada com erro: <code>"CuritibaCuritiba"</code> (duplicada) e rota com <code>"MOURÃO"</code>. No banco de dados constam <strong>113 viagens</strong> sob o nome <code>"CURITIBA X GUARAPUAVA X CAMPO MOURAO X UMUARAMA"</code> (sem acento no Mourao).</li>
+    <li><strong>Linha 168:</strong> <code>"UMUARAMA X CAMPO MOURÃO X GUARAPUAVA X IRATI X CURITIBA"</code>. No sistema constam <strong>112 viagens</strong> gravadas sem o acento em <code>MOURAO</code>.</li>
+    <li><strong>Linha 160:</strong> <code>"SÃO PAULO X PONTA GROSSA X GUARAPUAVA"</code>. No sistema constam <strong>211 viagens</strong> gravadas como <code>"SAO PAULO"</code> (sem til).</li>
+    <li><strong>Linha 176:</strong> <code>"CASCAVEL X IBEMA X GUARAPUAVA"</code>. Existem <strong>16 viagens</strong> gravadas exatamente com esse nome no sistema.</li>
+    <li><strong>Espaços Invisíveis:</strong> Células com espaço no final como <code>"MARINGÁ X CAMPO MOURÃO "</code> e <code>"FOZ DO IGUAÇU X MEDIANEIRA X CASCAVEL "</code> quebram funções de busca como <code>PROCV</code>.</li>
+</ul>
+
+<h4>B. Inversão de Sentido Operacional (Ida x Volta)</h4>
+<p>O caminhão opera no sentido inverso ao cadastrado na matriz teórica de SLA:</p>
+<ul>
+    <li><strong>Linha 3 (Apucarana x Toledo):</strong> O fluxo operacional real roda como <strong><code>TOLEDO X CASCAVEL X MARINGA X APUCARANA</code></strong> (23 viagens no BD).</li>
+    <li><strong>Linha 9 (Blumenau x Curitiba):</strong> Roda como <strong><code>CURITIBA X BLUMENAU</code></strong> (183 viagens no BD).</li>
+    <li><strong>Linha 92 (Guarapuava x Chapecó):</strong> Roda no sentido <strong><code>CHAPECO X GUARAPUAVA</code></strong> (174 viagens no BD).</li>
+    <li><strong>Linha 98 (Guarapuava x Curitiba):</strong> Despachada quase exclusivamente de Curitiba: <strong><code>CURITIBA X GUARAPUAVA</code></strong> (237 viagens no BD).</li>
+    <li><strong>Linha 144 (Paranavaí x Maringá):</strong> O veículo tem origem em Curitiba: <strong><code>CURITIBA X MARINGÁ X PARANAVAÍ</code></strong>.</li>
+</ul>
+
+<h4>C. Nomenclatura com Cliente ou Rota com Mais Paradas no TMS</h4>
+<ul>
+    <li><strong>Linha 70 (Curitiba x Cotia):</strong> Rota dedicada do cliente Wurth. Gravada no TMS como <strong><code>"WURTH DO BRASIL - COTIA-SP X CURITIBA-PR"</code></strong> (<strong>143 viagens no BD</strong>). A busca rígida por "Curitiba x Cotia" não a localizou.</li>
+    <li><strong>Linha 53 (Curitiba x Toledo):</strong> Não há linha expressa direta; a operação faz escala em Cascavel: <strong><code>"CURITIBA X CASCAVEL X TOLEDO"</code></strong> (<strong>181 viagens</strong>).</li>
+    <li><strong>Linha 64 (Curitiba x Joinville x Porto Alegre):</strong> A escala em Santa Catarina é feita em Itajaí: <strong><code>"CURITIBA X ITAJAI X PORTO ALEGRE"</code></strong>.</li>
+    <li><strong>Linha 82 (Foz do Iguaçu x Medianeira x Cascavel):</strong> O trajeto segue até a capital como <strong><code>"FOZ DO IGUAÇU X CASCAVEL X CURITIBA"</code></strong> (<strong>195 viagens</strong>).</li>
+    <li><strong>Linha 198 (Cascavel x Assis Chateaubriand):</strong> Opera via Marechal: <strong><code>"CASCAVEL X MARECHAL X ASSIS CHATEAUBRIAND"</code></strong> (20 viagens).</li>
+</ul>
+
+<h4>D. Rotas Teóricas sem Viagens Registradas no Período (16 Rotas)</h4>
+<p>Rotas cadastradas na grade teórica que não tiveram operação despachada no período avaliado:</p>
+<p style="font-size: 10pt; color: #475569;">
+<em>Cascavel x Marechal Cândido Rondon | Guarapuava x Francisco Beltrão x Dois Vizinhos | Guarapuava x Pato Branco | Joinville x Criciúma | Joinville x Florianópolis | Londrina x Presidente Prudente x Birigui | Londrina x São José do Rio Preto x Fernandópolis | Londrina x Ibaiti | Maringá x Campo Mourão | Maringá x Cianorte | Maringá x Umuarama | Ponta Grossa x Palmeira x São Mateus do Sul | Ponta Grossa x Castro | São Paulo x Campinas x Ribeirão Preto | Guarapuava x Candoi x Mangueirinha x Palmas (2x).</em>
+</p>
+
+<h2>5. Grupo: "Rota não estava incluída no SLA" (7 Rotas)</h2>
+<p>
+Estas 7 rotas <strong>operaram normalmente e tiveram viagens com índices calculados</strong>. O analista as marcou assim porque elas <strong>não existiam na matriz original de SLA (Planilha1)</strong>, tendo sido adicionadas de forma complementar na aba de conciliação:
+</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Linha</th>
+            <th>Rota Complementar</th>
+            <th>Pontual</th>
+            <th>Atenção</th>
+            <th>Atraso</th>
+            <th>Crítico</th>
+            <th>Total Viagens</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr><td>11</td><td>BLUMENAU X JOINVILE X CURITIBA</td><td>16</td><td>1</td><td>1</td><td>1</td><td><strong>19</strong></td></tr>
+        <tr><td>23</td><td>CASCAVEL X MARECHAL X ASSIS CHATEAUBRIAND</td><td>1</td><td>1</td><td>0</td><td>0</td><td><strong>2</strong></td></tr>
+        <tr><td>24</td><td>CASCAVEL X GUARAPUAVA X CURITIBA</td><td>10</td><td>8</td><td>1</td><td>1</td><td><strong>20</strong></td></tr>
+        <tr><td>25</td><td>EPC-CASCAVEL-PR - 120 X EPC - REALEZA -PR - 159</td><td>1</td><td>0</td><td>1</td><td>0</td><td><strong>2</strong></td></tr>
+        <tr><td>54</td><td>CURITIBA X CASCAVEL X TOLEDO</td><td>12</td><td>1</td><td>2</td><td>3</td><td><strong>18</strong></td></tr>
+        <tr><td>107</td><td>JOINVILLE X CURITIBA</td><td>19</td><td>1</td><td>1</td><td>4</td><td><strong>25</strong></td></tr>
+        <tr><td>108</td><td>JOINVILLE X CURITIBA X JOINVILLE</td><td>3</td><td>1</td><td>0</td><td>0</td><td><strong>4</strong></td></tr>
+    </tbody>
+</table>
+
+<h2>6. Grupo: "Sem ocorrências" (5 Rotas)</h2>
+<p>
+Indica que a rota foi encontrada e que <strong>100% das suas viagens foram pontuais</strong>, sem qualquer apontamento de atraso nas etapas de saída ou trânsito:
+</p>
+<ul>
+    <li><strong>Linha 5:</strong> APUCARANA X GUARAPUAVA X PONTA GROSSA (18 viagens — 100% Pontual)</li>
+    <li><strong>Linha 29:</strong> CHAPECÓ X GUARAPUAVA (18 viagens — 100% Pontual)</li>
+    <li><strong>Linha 35:</strong> CURITIBA X SÃO MATEUS X UNIÃO DA VITÓRIA (2 viagens — 100% Pontual)</li>
+    <li><strong>Linha 76:</strong> FRANCISCO BELTRÃO X GUARAPUAVA X CURITIBA (18 viagens — 100% Pontual)</li>
+    <li><strong>Linha 194:</strong> CASCAVEL X PALOTINA X TERRA ROXA X GUAIRA (2 viagens — 100% Pontual)</li>
+</ul>
+
+<h2>7. Recomendações e Boas Práticas (Sem Mudança de Regras)</h2>
+<ol>
+    <li><strong>Tratamento de Strings nas Conciliações:</strong> Sempre aplicar normalização para desconsiderar acentos (<code>MOURAO</code> = <code>MOURÃO</code>), eliminar espaços duplos e remover espaços nas pontas das células (<code>TRIM</code>).</li>
+    <li><strong>Tabela de Equivalência (De-Para):</strong> Cadastrar a relação direta entre o código da unidade (ex.: <code>SUMARE</code> / <code>SUM</code>) e a cidade comercial (<code>Campinas</code>), e nomes de clientes dedicados (ex.: <code>WURTH DO BRASIL</code> = <code>Curitiba x Cotia</code>).</li>
+    <li><strong>Verificação de Sentido Reversivo:</strong> Sempre checar se viagens não encontradas no sentido Ida estão sendo despachadas no sentido Volta (ex.: <code>Toledo x Apucarana</code>).</li>
+    <li><strong>Atualização da Grade Oficial:</strong> Adicionar à matriz padrão de SLA as rotas que operam rotineiramente com alto volume, como <code>Curitiba x Cascavel x Toledo</code> e <code>Joinville x Curitiba</code>.</li>
+</ol>
+
+<div class="footer">
+    Relatório emitido pela Torre de Controle de Transferências — Princesa dos Campos.<br>
+    Arquivo correspondente disponível na raiz do repositório em formato Markdown (<code>DIAGNOSTICO_SLA_TRANSFERENCIAS.md</code>) e Word (<code>Relatorio_Analise_SLA_Rotas.doc</code>).
+</div>
+
+</body>
+</html>

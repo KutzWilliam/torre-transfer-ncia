@@ -1,0 +1,581 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset='utf-8'>
+<title>Relatório Analítico: Projeto EP5 — Carga nos Bagageiros</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+@page {
+    size: 21.0cm 29.7cm;
+    margin: 2.0cm 2.0cm 2.0cm 2.0cm;
+    mso-page-orientation: portrait;
+}
+body {
+    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: #1f2937;
+    margin: 0;
+}
+h1 {
+    color: #14532d;
+    font-size: 18pt;
+    border-bottom: 2.5px solid #16a34a;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+}
+.subtitle {
+    font-size: 10pt;
+    color: #4b5563;
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+h2 {
+    color: #166534;
+    font-size: 13pt;
+    border-bottom: 1.5px solid #cbd5e1;
+    padding-bottom: 4px;
+    margin-top: 24px;
+    margin-bottom: 10px;
+}
+h3 {
+    color: #15803d;
+    font-size: 11pt;
+    margin-top: 16px;
+    margin-bottom: 6px;
+}
+p {
+    margin: 6px 0 10px 0;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0 18px 0;
+    font-size: 9pt;
+}
+th {
+    background-color: #dcfce7;
+    color: #14532d;
+    font-weight: bold;
+    border: 1px solid #94a3b8;
+    padding: 6px 8px;
+    text-align: left;
+}
+td {
+    border: 1px solid #cbd5e1;
+    padding: 5px 7px;
+    vertical-align: top;
+}
+tr:nth-child(even) td {
+    background-color: #f8fafc;
+}
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.font-bold { font-weight: bold; }
+.alert-box {
+    background-color: #f0fdf4;
+    border-left: 4px solid #16a34a;
+    padding: 10px 14px;
+    margin: 14px 0;
+    color: #166534;
+    font-size: 9.5pt;
+}
+.alert-box-amber {
+    background-color: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    padding: 10px 14px;
+    margin: 14px 0;
+    color: #92400e;
+    font-size: 9.5pt;
+}
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 8.5pt;
+    font-weight: 600;
+    border-radius: 3px;
+}
+.badge-red { background-color: #fee2e2; color: #991b1b; }
+.badge-orange { background-color: #ffedd5; color: #9a3412; }
+.badge-blue { background-color: #e0f2fe; color: #075985; }
+.badge-green { background-color: #dcfce7; color: #166534; }
+ul, ol {
+    margin-top: 4px;
+    margin-bottom: 10px;
+    padding-left: 20px;
+}
+li { margin-bottom: 3px; }
+.kpi-card {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 12px;
+}
+.footer {
+    margin-top: 35px;
+    padding-top: 10px;
+    border-top: 1px solid #cbd5e1;
+    font-size: 8.5pt;
+    color: #64748b;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+
+<h1>🚌 Relatório Analítico: Projeto EP5 — Otimização nos Bagageiros</h1>
+<div class="subtitle">
+    <strong>Foco Estratégico:</strong> Monetização de Espaço Ocioso nos Ônibus de Linha e Captura de Receita Marginal<br>
+    <strong>Empresa:</strong> Expresso Princesa dos Campos • <strong>Período Auditado:</strong> Novembro/2025 a Novembro/2026 (Série Histórica Mensal)<br>
+    <strong>Fontes dos Indicadores:</strong> TMS Brudam (Veículos Tipo 5 - Ônibus) e Torre de Controle de Transferências
+</div>
+
+<div class="alert-box">
+    <strong>Sumário Executivo do Projeto EP5:</strong><br>
+    Este relatório analisa o desempenho do transporte de cargas expressas e encomendas nos bagageiros dos ônibus rodoviários da Princesa dos Campos. A operação saltou de 500 para ~2.900 viagens integradas por mês, gerando faturamento mensal de R$ 1,9 milhão. No entanto, os bagageiros operam com <strong>mais de 90% de ociosidade volumétrica e 96% de ociosidade em peso</strong>, representando a maior oportunidade de expansão de margem da empresa.
+</div>
+
+<h2>1. Premissas Técnicas dos Veículos e Parâmetros dos Indicadores</h2>
+<table>
+    <thead>
+        <tr>
+            <th style="width: 25%;">Parâmetro</th>
+            <th style="width: 25%;">Valor Padrão Adotado</th>
+            <th style="width: 50%;">Justificativa Operacional e Engenharia de Frota</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Capacidade Média em Peso</strong></td>
+            <td><strong>3.000 kg</strong> (3,0 toneladas)</td>
+            <td>Carga útil reservada nos bagageiros inferiores após cálculo de passageiros e bagagens convencionais.</td>
+        </tr>
+        <tr>
+            <td><strong>Capacidade Média em Volume</strong></td>
+            <td><strong>8,0 m³</strong> de baú livre</td>
+            <td>Espaço cúbico líquido aproveitável para acomodação de caixas e fardos sem comprometer malas.</td>
+        </tr>
+        <tr>
+            <td><strong>OTIF de Bagageiro</strong></td>
+            <td>Viagens Concluídas no Destino</td>
+            <td>Percentual de manifestos de ônibus baixados com sucesso e mercadorias entregues na agência.</td>
+        </tr>
+        <tr>
+            <td><strong>Taxa de Ocupação Geral</strong></td>
+            <td>Max(Ocup. Peso, Ocup. Volume)</td>
+            <td>Mede o gargalo efetivo do veículo: saturação por densidade (peso) ou por cubagem (volume).</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>2. Visão Macro: Série Mensal de Ocupação e Receita (Nov/2025 a Nov/2026)</h2>
+<p>Evolução histórica do aproveitamento dos bagageiros em toda a malha rodoviária de passageiros:</p>
+
+<table>
+    <thead>
+        <tr>
+            <th class="text-center">Mês/Ano</th>
+            <th class="text-center">Viagens Ônibus</th>
+            <th class="text-center">Viagens Finaliz.</th>
+            <th class="text-center">OTIF Concl. (%)</th>
+            <th class="text-right">Peso Transportado (kg)</th>
+            <th class="text-right">Cubo (m³)</th>
+            <th class="text-center">Ocup. Peso</th>
+            <th class="text-center">Ocup. Cubo</th>
+            <th class="text-center">Ocupação Geral</th>
+            <th class="text-right">Frete Faturado (R$)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="text-center font-bold">2025-11</td>
+            <td class="text-center">658</td>
+            <td class="text-center">620</td>
+            <td class="text-center"><span class="badge badge-green">94,2%</span></td>
+            <td class="text-right">236.238,8 kg</td>
+            <td class="text-right">3.689,1 m³</td>
+            <td class="text-center">12,0%</td>
+            <td class="text-center">30,9%</td>
+            <td class="text-center"><span class="badge badge-blue">31,1%</span></td>
+            <td class="text-right">R$ 1.503.766,82</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2025-12</td>
+            <td class="text-center">458</td>
+            <td class="text-center">415</td>
+            <td class="text-center"><span class="badge badge-green">90,6%</span></td>
+            <td class="text-right">157.017,5 kg</td>
+            <td class="text-right">2.238,4 m³</td>
+            <td class="text-center">11,4%</td>
+            <td class="text-center">32,3%</td>
+            <td class="text-center"><span class="badge badge-blue">32,3%</span></td>
+            <td class="text-right">R$ 1.012.250,54</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-01</td>
+            <td class="text-center">505</td>
+            <td class="text-center">466</td>
+            <td class="text-center"><span class="badge badge-green">92,3%</span></td>
+            <td class="text-right">175.287,0 kg</td>
+            <td class="text-right">2.431,8 m³</td>
+            <td class="text-center">11,6%</td>
+            <td class="text-center">33,2%</td>
+            <td class="text-center"><span class="badge badge-blue">33,2%</span></td>
+            <td class="text-right">R$ 1.150.405,14</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-02</td>
+            <td class="text-center">484</td>
+            <td class="text-center">449</td>
+            <td class="text-center"><span class="badge badge-green">92,8%</span></td>
+            <td class="text-right">197.119,1 kg</td>
+            <td class="text-right">2.856,8 m³</td>
+            <td class="text-center">13,6%</td>
+            <td class="text-center">33,3%</td>
+            <td class="text-center"><span class="badge badge-blue">33,3%</span></td>
+            <td class="text-right">R$ 1.226.609,03</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-03</td>
+            <td class="text-center">1.311</td>
+            <td class="text-center">1.262</td>
+            <td class="text-center"><span class="badge badge-green">96,3%</span></td>
+            <td class="text-right">281.099,9 kg</td>
+            <td class="text-right">3.741,5 m³</td>
+            <td class="text-center">7,0%</td>
+            <td class="text-center">20,0%</td>
+            <td class="text-center"><span class="badge badge-orange">20,0%</span></td>
+            <td class="text-right">R$ 1.696.518,96</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-04</td>
+            <td class="text-center">2.444</td>
+            <td class="text-center">2.378</td>
+            <td class="text-center"><span class="badge badge-green">97,3%</span></td>
+            <td class="text-right">285.393,1 kg</td>
+            <td class="text-right">4.062,1 m³</td>
+            <td class="text-center">3,9%</td>
+            <td class="text-center">13,4%</td>
+            <td class="text-center"><span class="badge badge-red">13,4%</span></td>
+            <td class="text-right">R$ 1.959.160,22</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-05</td>
+            <td class="text-center">2.894</td>
+            <td class="text-center">2.763</td>
+            <td class="text-center"><span class="badge badge-green">95,5%</span></td>
+            <td class="text-right">316.214,0 kg</td>
+            <td class="text-right">4.816,1 m³</td>
+            <td class="text-center">3,5%</td>
+            <td class="text-center">12,8%</td>
+            <td class="text-center"><span class="badge badge-red">12,8%</span></td>
+            <td class="text-right">R$ 1.937.481,93</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-06</td>
+            <td class="text-center">2.795</td>
+            <td class="text-center">2.528</td>
+            <td class="text-center"><span class="badge badge-green">90,4%</span></td>
+            <td class="text-right">269.420,5 kg</td>
+            <td class="text-right">2.622,1 m³</td>
+            <td class="text-center">3,0%</td>
+            <td class="text-center">9,1%</td>
+            <td class="text-center"><span class="badge badge-red">9,1%</span></td>
+            <td class="text-right">R$ 1.627.437,01</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-07</td>
+            <td class="text-center">3.085</td>
+            <td class="text-center">2.659</td>
+            <td class="text-center"><span class="badge badge-blue">86,2%</span></td>
+            <td class="text-right">282.000,7 kg</td>
+            <td class="text-right">1.976,0 m³</td>
+            <td class="text-center">3,0%</td>
+            <td class="text-center">7,9%</td>
+            <td class="text-center"><span class="badge badge-red">7,9%</span></td>
+            <td class="text-right">R$ 1.892.038,41</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-08</td>
+            <td class="text-center">3.091</td>
+            <td class="text-center">2.417</td>
+            <td class="text-center"><span class="badge badge-orange">78,2%</span></td>
+            <td class="text-right">310.229,2 kg</td>
+            <td class="text-right">2.115,9 m³</td>
+            <td class="text-center">3,3%</td>
+            <td class="text-center">8,3%</td>
+            <td class="text-center"><span class="badge badge-red">8,3%</span></td>
+            <td class="text-right">R$ 1.853.085,03</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-09</td>
+            <td class="text-center">2.994</td>
+            <td class="text-center">2.145</td>
+            <td class="text-center"><span class="badge badge-orange">71,6%</span></td>
+            <td class="text-right">335.583,3 kg</td>
+            <td class="text-right">2.232,8 m³</td>
+            <td class="text-center">3,7%</td>
+            <td class="text-center">9,3%</td>
+            <td class="text-center"><span class="badge badge-red">9,3%</span></td>
+            <td class="text-right">R$ 1.956.017,19</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-10</td>
+            <td class="text-center">2.920</td>
+            <td class="text-center">2.170</td>
+            <td class="text-center"><span class="badge badge-orange">74,3%</span></td>
+            <td class="text-right">506.095,2 kg</td>
+            <td class="text-right">2.211,2 m³</td>
+            <td class="text-center">3,6%</td>
+            <td class="text-center">8,6%</td>
+            <td class="text-center"><span class="badge badge-red">8,7%</span></td>
+            <td class="text-right">R$ 1.914.412,11</td>
+        </tr>
+        <tr>
+            <td class="text-center font-bold">2026-11*</td>
+            <td class="text-center">457</td>
+            <td class="text-center">273</td>
+            <td class="text-center"><span class="badge badge-red">59,7%</span></td>
+            <td class="text-right">43.293,8 kg</td>
+            <td class="text-right">304,2 m³</td>
+            <td class="text-center">3,2%</td>
+            <td class="text-center">8,3%</td>
+            <td class="text-center"><span class="badge badge-red">8,3%</span></td>
+            <td class="text-right">R$ 259.323,23</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>3. Visão Micro: Top 20 Rotas de Ônibus em Faturamento e Volumetria</h2>
+<p>Análise de 17.779 viagens de ônibus operadas no período consolidado de Maio a Outubro de 2026:</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Origem ➔ Destino (Linha de Passageiros)</th>
+            <th class="text-center">Viagens</th>
+            <th class="text-right">Peso Total (kg)</th>
+            <th class="text-center">Méd./Viagem</th>
+            <th class="text-center">Ocup. Peso</th>
+            <th class="text-center">Ocup. Cubo</th>
+            <th class="text-right">Frete Faturado (R$)</th>
+            <th>Diagnóstico de Ocupação</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>CASCAVEL ➔ FOZ DO IGUAÇU</strong></td>
+            <td class="text-center">647</td>
+            <td class="text-right">39.635,8 kg</td>
+            <td class="text-center">61,3 kg</td>
+            <td class="text-center">2,0%</td>
+            <td class="text-center">0,3%</td>
+            <td class="text-right">R$ 208.644,06</td>
+            <td>Alta frequência, baixíssima ocupação (98% ocioso).</td>
+        </tr>
+        <tr>
+            <td><strong>CURITIBA ➔ TELÊMACO BORBA</strong></td>
+            <td class="text-center">645</td>
+            <td class="text-right">17.443,0 kg</td>
+            <td class="text-center">27,0 kg</td>
+            <td class="text-center">0,9%</td>
+            <td class="text-center">0,1%</td>
+            <td class="text-right">R$ 154.167,68</td>
+            <td>Ônibus transporta em média menos de 30 kg de carga.</td>
+        </tr>
+        <tr>
+            <td><strong>PONTA GROSSA ➔ CURITIBA</strong></td>
+            <td class="text-center">614</td>
+            <td class="text-right">9.975,6 kg</td>
+            <td class="text-center">16,2 kg</td>
+            <td class="text-center">0,5%</td>
+            <td class="text-center">0,1%</td>
+            <td class="text-right">R$ 94.992,52</td>
+            <td>Fluxo de retorno 99,5% vazio. Oportunidade extrema.</td>
+        </tr>
+        <tr>
+            <td><strong>CURITIBA ➔ GUAÍRA</strong></td>
+            <td class="text-center">606</td>
+            <td class="text-right">94.481,1 kg</td>
+            <td class="text-center">155,9 kg</td>
+            <td class="text-center"><span class="badge badge-green">5,2%</span></td>
+            <td class="text-center">1,1%</td>
+            <td class="text-right font-bold">R$ 577.265,07</td>
+            <td><strong>Líder absoluta em receita de bagageiro.</strong></td>
+        </tr>
+        <tr>
+            <td><strong>TELÊMACO BORBA ➔ CURITIBA</strong></td>
+            <td class="text-center">554</td>
+            <td class="text-right">9.367,2 kg</td>
+            <td class="text-center">16,9 kg</td>
+            <td class="text-center">0,6%</td>
+            <td class="text-center">0,8%</td>
+            <td class="text-right">R$ 121.319,56</td>
+            <td>Ociosidade quase total de retorno.</td>
+        </tr>
+        <tr>
+            <td><strong>GUARAPUAVA ➔ CURITIBA</strong></td>
+            <td class="text-center">509</td>
+            <td class="text-right">11.568,9 kg</td>
+            <td class="text-center">22,7 kg</td>
+            <td class="text-center">0,8%</td>
+            <td class="text-center">0,1%</td>
+            <td class="text-right">R$ 89.465,69</td>
+            <td>Capacidade de capturar cargas expressas locais.</td>
+        </tr>
+        <tr>
+            <td><strong>CURITIBA ➔ PONTA GROSSA</strong></td>
+            <td class="text-center">464</td>
+            <td class="text-right">78.498,8 kg</td>
+            <td class="text-center">169,2 kg</td>
+            <td class="text-center"><span class="badge badge-green">5,6%</span></td>
+            <td class="text-center">0,7%</td>
+            <td class="text-right font-bold">R$ 429.417,35</td>
+            <td>Excelente tração de saída saindo do CD da capital.</td>
+        </tr>
+        <tr>
+            <td><strong>CURITIBA ➔ FRANCISCO BELTRÃO</strong></td>
+            <td class="text-center">454</td>
+            <td class="text-right">42.791,7 kg</td>
+            <td class="text-center">94,3 kg</td>
+            <td class="text-center">3,1%</td>
+            <td class="text-center">0,5%</td>
+            <td class="text-right">R$ 264.190,28</td>
+            <td>Linha tronco do sudoeste com potencial de absorver +500 kg.</td>
+        </tr>
+        <tr>
+            <td><strong>FOZ DO IGUAÇU ➔ CASCAVEL</strong></td>
+            <td class="text-center">413</td>
+            <td class="text-right">8.104,7 kg</td>
+            <td class="text-center">19,6 kg</td>
+            <td class="text-center">0,7%</td>
+            <td class="text-center">0,3%</td>
+            <td class="text-right">R$ 63.565,03</td>
+            <td>Contra-fluxo desbalanceado.</td>
+        </tr>
+        <tr>
+            <td><strong>GUAÍRA ➔ CURITIBA</strong></td>
+            <td class="text-center">351</td>
+            <td class="text-right">22.458,9 kg</td>
+            <td class="text-center">64,0 kg</td>
+            <td class="text-center">2,1%</td>
+            <td class="text-center">1,8%</td>
+            <td class="text-right">R$ 140.049,33</td>
+            <td>Retorno moderado com boa margem.</td>
+        </tr>
+        <tr>
+            <td><strong>PONTA GROSSA ➔ FOZ DO IGUAÇU</strong></td>
+            <td class="text-center">286</td>
+            <td class="text-right">12.128,7 kg</td>
+            <td class="text-center">42,4 kg</td>
+            <td class="text-center">1,4%</td>
+            <td class="text-center">0,1%</td>
+            <td class="text-right">R$ 101.512,41</td>
+            <td>Linha transversal interestadual com espaço ocioso.</td>
+        </tr>
+        <tr>
+            <td><strong>CURITIBA ➔ REGISTRO</strong></td>
+            <td class="text-center">260</td>
+            <td class="text-right">9.736,5 kg</td>
+            <td class="text-center">37,4 kg</td>
+            <td class="text-center">1,2%</td>
+            <td class="text-center">0,6%</td>
+            <td class="text-right">R$ 106.111,06</td>
+            <td>Linha de SP com perfil de cargas de alto valor agregado.</td>
+        </tr>
+        <tr>
+            <td><strong>SÃO MIGUEL DO OESTE ➔ SÃO PAULO</strong></td>
+            <td class="text-center">250</td>
+            <td class="text-right">8.703,9 kg</td>
+            <td class="text-center">34,8 kg</td>
+            <td class="text-center">1,2%</td>
+            <td class="text-center">0,2%</td>
+            <td class="text-right">R$ 135.441,24</td>
+            <td>Linha interestadual de longa distância com receita expressiva.</td>
+        </tr>
+        <tr>
+            <td><strong>CURITIBA ➔ GUARAPUAVA</strong></td>
+            <td class="text-center">242</td>
+            <td class="text-right">49.105,9 kg</td>
+            <td class="text-center">202,9 kg</td>
+            <td class="text-center"><span class="badge badge-green">6,8%</span></td>
+            <td class="text-center">0,2%</td>
+            <td class="text-right">R$ 224.313,78</td>
+            <td>Uma das maiores médias de carga da capital (202 kg/ônibus).</td>
+        </tr>
+        <tr>
+            <td><strong>CASCAVEL ➔ BARREIRAS</strong></td>
+            <td class="text-center">202</td>
+            <td class="text-right">69.233,8 kg</td>
+            <td class="text-center">342,7 kg</td>
+            <td class="text-center"><span class="badge badge-green">11,4%</span></td>
+            <td class="text-center">2,4%</td>
+            <td class="text-right font-bold">R$ 491.995,85</td>
+            <td><strong>Campeã geral de ocupação média (11,4% em peso).</strong></td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>4. Simulação de Ganho Financeiro por Aumento de Ocupação</h2>
+<div class="alert-box-amber">
+    <strong>Impacto no EBITDA da Princesa dos Campos:</strong><br>
+    Como os ônibus já operam obrigatoriamente para o transporte de passageiros, <strong>o custo rodoviário incremental de combustível e pedágio para carregar mais 500 kg de carga no bagageiro é praticamente ZERO</strong>. Todo ganho tarifário de frete verte diretamente em Margem de Contribuição líquida.
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Cenário Projetado</th>
+            <th class="text-center">Carga Média por Ônibus</th>
+            <th class="text-center">Taxa de Ocupação</th>
+            <th class="text-right">Faturamento Mensal Estimado</th>
+            <th class="text-right">Ganho Adicional Anual</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Baseline Atual (Auditado)</strong></td>
+            <td class="text-center">105 kg</td>
+            <td class="text-center">3,5%</td>
+            <td class="text-right">R$ 1.914.000,00</td>
+            <td class="text-right">—</td>
+        </tr>
+        <tr>
+            <td><strong>Cenário 1: Meta Intermediária</strong></td>
+            <td class="text-center">450 kg</td>
+            <td class="text-center">15,0%</td>
+            <td class="text-right">R$ 4.700.000,00</td>
+            <td class="text-right font-bold" style="color: #166534;">+ R$ 33,4 Milhões / ano</td>
+        </tr>
+        <tr>
+            <td><strong>Cenário 2: Meta Operacional Plena</strong></td>
+            <td class="text-center">750 kg</td>
+            <td class="text-center">25,0%</td>
+            <td class="text-right">R$ 7.200.000,00</td>
+            <td class="text-right font-bold" style="color: #166534;">+ R$ 63,4 Milhões / ano</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>5. Plano de Implementação Imediata (Projeto EP5)</h2>
+<ol>
+    <li><strong>Alocação Inteligente no TMS:</strong> Parametrizar o Brudam para roteirizar pacotes fracionados de até 25 kg para os bagageiros de ônibus antes de disponibilizar para a transferência pesada de caminhões.</li>
+    <li><strong>Campanha Comercial de Frete Reverso (Contra-Fluxo):</strong> Oferecer tarifas diferenciadas para pequenos embarcadores de Ponta Grossa, Telêmaco Borba e Guarapuava com destino a Curitiba, ocupando o bagageiro que retorna com 99% de ociosidade.</li>
+    <li><strong>Melhoria no OTIF das Agências Rodoviárias:</strong> Agilizar a leitura de código de barras no desembarque das rodoviárias para recuperar o índice de baixa do OTIF para patamares &gt; 95%.</li>
+</ol>
+
+<div class="footer">
+    Documento Gerado pela Torre de Controle &amp; Gestão Estratégica — Princesa dos Campos<br>
+    Extração e Consolidação direta dos Bancos de Dados Operacionais e TMS Brudam • Uso Interno Confidencial
+</div>
+
+</body>
+</html>
