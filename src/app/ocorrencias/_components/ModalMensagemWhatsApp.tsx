@@ -64,13 +64,13 @@ export function montarMensagemWhatsAppOcorrencia(params: ParametrosMensagemWhats
     const atrasoOcorrenciaPositivo = Math.max(0, params.tempoAtrasoOcorrenciaMinutos || 0);
     const atrasoTotalMinutos = atrasoSaidaPositivo + atrasoOcorrenciaPositivo;
 
-    // Linha de atraso na saída da origem
+    // Linha de saída da origem
     let textoSaidaOrigem = "Sem registro de saída efetiva";
     if (params.atrasoSaidaMinutos !== null) {
         if (params.atrasoSaidaMinutos > 0) {
-            textoSaidaOrigem = `Sim, saiu com *${formatarDuracaoCurta(params.atrasoSaidaMinutos)}* de atraso (Previsto: ${formatarDataHoraCurta(params.prevSaidaOrigem)} | Real: ${formatarDataHoraCurta(params.saidaEfetivaOrigem)})`;
+            textoSaidaOrigem = `Saiu com atraso de *${formatarDuracaoCurta(params.atrasoSaidaMinutos)}* (Previsto: ${formatarDataHoraCurta(params.prevSaidaOrigem)} | Real: ${formatarDataHoraCurta(params.saidaEfetivaOrigem)})`;
         } else {
-            textoSaidaOrigem = `Não — saiu no horário previsto (Previsto: ${formatarDataHoraCurta(params.prevSaidaOrigem)} | Real: ${formatarDataHoraCurta(params.saidaEfetivaOrigem)})`;
+            textoSaidaOrigem = `Saiu no horário previsto (Previsto: ${formatarDataHoraCurta(params.prevSaidaOrigem)} | Real: ${formatarDataHoraCurta(params.saidaEfetivaOrigem)})`;
         }
     } else if (params.prevSaidaOrigem) {
         textoSaidaOrigem = `Não identificado (Saída prevista: ${formatarDataHoraCurta(params.prevSaidaOrigem)})`;
@@ -122,7 +122,7 @@ export function montarMensagemWhatsAppOcorrencia(params: ParametrosMensagemWhats
         `• *Carga transportada:* *${params.qtdMinutas} minuta(s)* | *${params.totalVolumes} volume(s)*`,
         ``,
         `⏱️ *Impacto no Horário da Viagem:*`,
-        `• *Atraso na saída da origem:* ${textoSaidaOrigem}`,
+        `• *Saída da origem:* ${textoSaidaOrigem}`,
         `• *Atraso gerado pela ocorrência:* *+${formatarDuracaoAtraso(atrasoOcorrenciaPositivo)}*`,
     ];
 
