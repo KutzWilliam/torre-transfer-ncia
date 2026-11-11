@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { api } from "@/trpc/react";
 import Link from "next/link";
+import { ModalMensagemWhatsApp, formatarDuracaoCurta } from "../_components/ModalMensagemWhatsApp";
 
 // ─── Helpers de Formatação ───────────────────────────────────────────────────
 
@@ -268,6 +269,7 @@ function CardUnidade({
     onAbrirResolucao: (id: string, placa: string, unidadeNome: string) => void;
 }) {
     const [expandido, setExpandido] = useState(false);
+    const [ocorrenciaIdWhatsApp, setOcorrenciaIdWhatsApp] = useState<string | null>(null);
 
     const ocorrenciasExibidas = useMemo(() => {
         if (expandido) return unidade.ocorrencias;
@@ -279,6 +281,12 @@ function CardUnidade({
 
     return (
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden">
+            {ocorrenciaIdWhatsApp && (
+                <ModalMensagemWhatsApp
+                    ocorrenciaId={ocorrenciaIdWhatsApp}
+                    onClose={() => setOcorrenciaIdWhatsApp(null)}
+                />
+            )}
             {/* Cabeçalho da Unidade */}
             <div className="p-6 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -419,6 +427,11 @@ function CardUnidade({
                                                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                                                     Em Atendimento
                                                 </span>
+                                                {oc.causouParada && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2.5 py-0.5 text-xs font-bold">
+                                                        🛑 Parou veículo {oc.tempoAtrasoMinutos ? `(+${formatarDuracaoCurta(oc.tempoAtrasoMinutos)})` : ""}
+                                                    </span>
+                                                )}
                                                 <span
                                                     className={`text-xs font-semibold px-2 py-0.5 rounded-md ${
                                                         isUrgente
@@ -506,7 +519,13 @@ function CardUnidade({
                                         <span className="text-[11px] text-slate-400">
                                             Aberta por {oc.abertaPor?.name ?? "Sistema"}
                                         </span>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button
+                                                onClick={() => setOcorrenciaIdWhatsApp(oc.id)}
+                                                className="px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center gap-1 shadow-2xs cursor-pointer"
+                                            >
+                                                💬 WhatsApp
+                                            </button>
                                             <button
                                                 onClick={() =>
                                                     onAbrirNotificacao(oc.id, unidade.usuarios)

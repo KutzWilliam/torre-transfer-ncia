@@ -5,6 +5,13 @@ import { api } from "@/trpc/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { tocarAlertaSonoroOcorrencia, desbloquearAudio } from "./_components/alertaSonoro";
+import {
+    ModalMensagemWhatsApp,
+    montarMensagemWhatsAppOcorrencia,
+    formatarDuracaoCurta,
+    formatarDataHoraCurta,
+} from "./_components/ModalMensagemWhatsApp";
+import { getBrudamManifestoUrl } from "@/utils/brudam";
 
 const MapaOcorrencias = dynamic(() => import("./_components/MapaOcorrencias"), {
     ssr: false,
@@ -45,12 +52,22 @@ function tempoAgo(date: Date | string) {
 }
 
 const STATUS_CONFIG = {
-    ABERTA:         { label: "Aberta",         bg: "bg-red-100",    text: "text-red-700",    dot: "bg-red-500"    },
-    EM_ATENDIMENTO: { label: "Em Atendimento", bg: "bg-amber-100",  text: "text-amber-700",  dot: "bg-amber-500"  },
-    RESOLVIDA:      { label: "Resolvida",      bg: "bg-emerald-100",text: "text-emerald-700",dot: "bg-emerald-500" },
+    ABERTA: { label: "Aberta", bg: "bg-red-100", text: "text-red-700", dot: "bg-red-500" },
+    EM_ATENDIMENTO: { label: "Em Atendimento", bg: "bg-amber-100", text: "text-amber-700", dot: "bg-amber-500" },
+    RESOLVIDA: { label: "Resolvida", bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
 };
 
 // ─── Componente: Modal de Atendimento (Torre) ────────────────────────────────
+
+const OPCOES_TEMPO_ATRASO = [
+    { label: "15 min", valor: 15 },
+    { label: "30 min", valor: 30 },
+    { label: "45 min", valor: 45 },
+    { label: "1h", valor: 60 },
+    { label: "1h 30m", valor: 90 },
+    { label: "2h", valor: 120 },
+    { label: "3h", valor: 180 },
+];
 
 function ModalAtendimento({ ocorrenciaId, onClose, onIniciado }: {
     ocorrenciaId: string;
@@ -59,70 +76,594 @@ function ModalAtendimento({ ocorrenciaId, onClose, onIniciado }: {
 }) {
     const [notaTorre, setNotaTorre] = useState("");
     const [unidadeResponsavelId, setUnidadeResponsavelId] = useState("");
+    const [causouParada, setCausouParada] = useState<boolean | null>(null);
+    const [tempoAtrasoMinutos, setTempoAtrasoMinutos] = useState<number>(30);
+    const [alvoPrevisao, setAlvoPrevisao] = useState<"AMBOS" | "PROXIMA_PARADA" | "DESTINO_FINAL">("AMBOS");
+    const [idsManifestosSelecionados, setIdsManifestosSelecionados] = useState<number[]>([]);
+    const [qtdMinutasManual, setQtdMinutasManual] = useState<number>(0);
+    const [totalVolumesManual, setTotalVolumesManual] = useState<number>(0);
+    const [mensagemEditada, setMensagemEditada] = useState<string | null>(null);
+    const [copiado, setCopiado] = useState(false);
+    const [etapaConcluidaWhats, setEtapaConcluidaWhats] = useState(false);
 
     const { data: bases, isLoading: isLoadingBases } = api.ocorrencia.listarBases.useQuery();
+    const { data: contexto, isLoading: isLoadingContexto } = api.ocorrencia.obterContextoAtendimento.useQuery(
+        { ocorrenciaId },
+        { refetchOnWindowFocus: false }
+    );
+
+    useEffect(() => {
+        if (!contexto) return;
+        const padrao = contexto.manifesto.itens.filter((i) => i.selecionadoPadrao).map((i) => i.idManifesto);
+        setIdsManifestosSelecionados(padrao);
+        setQtdMinutasManual(contexto.manifesto.qtdMinutas);
+        setTotalVolumesManual(contexto.manifesto.totalVolumes);
+    }, [contexto]);
+
+    function alternarManifesto(idManifesto: number) {
+        if (!contexto) return;
+        setIdsManifestosSelecionados((prev) => {
+            const novo = prev.includes(idManifesto)
+                ? prev.filter((id) => id !== idManifesto)
+                : [...prev, idManifesto];
+            const itensSel = contexto.manifesto.itens.filter((i) => novo.includes(i.idManifesto));
+            setQtdMinutasManual(itensSel.reduce((acc, i) => acc + i.qtdMinutas, 0));
+            setTotalVolumesManual(itensSel.reduce((acc, i) => acc + i.totalVolumes, 0));
+            setMensagemEditada(null);
+            return novo;
+        });
+    }
+
+    const unidadeSelecionadaNome = useMemo(() => {
+        if (!unidadeResponsavelId || !bases) return undefined;
+        return bases.find((b) => b.id === unidadeResponsavelId)?.nome;
+    }, [unidadeResponsavelId, bases]);
+
+    const mensagemPadrao = useMemo(() => {
+        if (!contexto) return "";
+        return montarMensagemWhatsAppOcorrencia({
+            placa: contexto.viagem.placa,
+            viagemId: contexto.viagem.id,
+            motorista: contexto.viagem.motorista,
+            rota: contexto.viagem.rotaSequencial || contexto.viagem.rotaDescricao,
+            tipoOcorrencia: contexto.ocorrencia.tipoOcorrencia,
+            causouParada: causouParada === true,
+            tempoAtrasoOcorrenciaMinutos: causouParada ? tempoAtrasoMinutos : 0,
+            prevSaidaOrigem: contexto.viagem.prevSaidaOrigem,
+            saidaEfetivaOrigem: contexto.viagem.saidaEfetivaOrigem,
+            atrasoSaidaMinutos: contexto.viagem.atrasoSaidaMinutos,
+            proximaParada: contexto.viagem.proximaParada,
+            destinoFinal: contexto.viagem.destinoFinal,
+            alvoPrevisao,
+            idsManifestos: idsManifestosSelecionados,
+            qtdMinutas: qtdMinutasManual,
+            totalVolumes: totalVolumesManual,
+            notaTorre,
+            unidadeResponsavelNome: unidadeSelecionadaNome,
+        });
+    }, [
+        contexto,
+        causouParada,
+        tempoAtrasoMinutos,
+        alvoPrevisao,
+        idsManifestosSelecionados,
+        qtdMinutasManual,
+        totalVolumesManual,
+        notaTorre,
+        unidadeSelecionadaNome,
+    ]);
+
+    const mensagemFinal = mensagemEditada ?? mensagemPadrao;
+
+    async function copiarMensagem() {
+        try {
+            await navigator.clipboard.writeText(mensagemFinal);
+            setCopiado(true);
+            setTimeout(() => setCopiado(false), 3000);
+        } catch {
+            // Ignora falha de permissão de clipboard
+        }
+    }
+
+    function abrirWhatsApp() {
+        const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(mensagemFinal)}`;
+        window.open(url, "_blank", "noopener,noreferrer");
+    }
+
     const iniciar = api.ocorrencia.iniciarAtendimento.useMutation({
-        onSuccess: () => { onIniciado(); onClose(); }
+        onSuccess: async () => {
+            onIniciado();
+            if (causouParada) {
+                await copiarMensagem();
+                setEtapaConcluidaWhats(true);
+            } else {
+                onClose();
+            }
+        },
     });
 
+    const atrasoTotalCalculado = useMemo(() => {
+        const atrasoSaida = Math.max(0, contexto?.viagem.atrasoSaidaMinutos ?? 0);
+        const atrasoOc = causouParada ? Math.max(0, tempoAtrasoMinutos || 0) : 0;
+        return atrasoSaida + atrasoOc;
+    }, [contexto?.viagem.atrasoSaidaMinutos, causouParada, tempoAtrasoMinutos]);
+
+    const formValido =
+        notaTorre.trim().length >= 10 &&
+        Boolean(unidadeResponsavelId) &&
+        causouParada !== null &&
+        (!causouParada || tempoAtrasoMinutos > 0);
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-slate-900">Iniciar Atendimento</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
-                </div>
-                <p className="text-sm text-slate-500">Descreva o que foi conversado com o motorista e selecione a unidade que tratará a ocorrência.</p>
-                
-                <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        Nota de Atendimento
-                    </label>
-                    <textarea
-                        value={notaTorre}
-                        onChange={e => setNotaTorre(e.target.value)}
-                        rows={3}
-                        placeholder="Ex: Motorista informou que o pneu furou e precisa de guincho..."
-                        className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                    />
-                </div>
-
-                <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        Unidade Responsável
-                    </label>
-                    {isLoadingBases ? (
-                        <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
-                    ) : (
-                        <select
-                            value={unidadeResponsavelId}
-                            onChange={e => setUnidadeResponsavelId(e.target.value)}
-                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-                        >
-                            <option value="">Selecione a unidade...</option>
-                            {bases?.map(base => (
-                                <option key={base.id} value={base.id}>
-                                    {base.nome} {base.cidade ? `(${base.cidade})` : ""}
-                                </option>
-                            ))}
-                        </select>
-                    )}
-                </div>
-
-                <div className="flex gap-2 justify-end pt-2">
-                    <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
-                        Cancelar
-                    </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+                {/* Cabeçalho */}
+                <div className="flex items-center justify-between px-6 py-4 bg-amber-50 border-b border-amber-200">
+                    <div>
+                        <h3 className="text-lg font-extrabold text-slate-900">
+                            {etapaConcluidaWhats ? "✅ Atendimento Iniciado — Notificar WhatsApp" : "🟡 Iniciar Atendimento da Ocorrência"}
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                            {etapaConcluidaWhats
+                                ? "A mensagem de atraso já foi copiada! Envie agora no grupo de WhatsApp."
+                                : "Registre o contato com o motorista, verifique o manifesto e gere o alerta de atraso."}
+                        </p>
+                    </div>
                     <button
-                        onClick={() => iniciar.mutate({ id: ocorrenciaId, notaTorre, unidadeResponsavelId })}
-                        disabled={notaTorre.trim().length < 10 || !unidadeResponsavelId || iniciar.isPending}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        onClick={onClose}
+                        className="text-slate-400 hover:text-slate-600 text-xl leading-none p-1 cursor-pointer"
                     >
-                        {iniciar.isPending ? "Iniciando..." : "Iniciar Atendimento"}
+                        ✕
                     </button>
                 </div>
-                {iniciar.error && (
-                    <p className="text-xs text-red-600">{iniciar.error.message}</p>
+
+                {etapaConcluidaWhats ? (
+                    <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                        <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-start gap-3">
+                            <span className="text-2xl">📋</span>
+                            <div>
+                                <p className="text-sm font-bold text-emerald-800">
+                                    Atendimento salvo e mensagem copiada para a área de transferência!
+                                </p>
+                                <p className="text-xs text-emerald-700 mt-0.5">
+                                    Cole a mensagem diretamente no grupo do WhatsApp ou clique em &ldquo;Abrir no WhatsApp&rdquo; abaixo.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                Mensagem para o Grupo de WhatsApp
+                            </label>
+                            <textarea
+                                value={mensagemFinal}
+                                onChange={(e) => setMensagemEditada(e.target.value)}
+                                rows={12}
+                                className="w-full border border-emerald-200 bg-emerald-50/30 rounded-xl px-4 py-3 text-xs font-mono text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-y"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                Concluir e Fechar
+                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={copiarMensagem}
+                                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors cursor-pointer ${copiado ? "bg-emerald-700 text-white" : "bg-slate-800 text-white hover:bg-slate-700"
+                                        }`}
+                                >
+                                    {copiado ? "✅ Copiado!" : "📋 Copiar Novamente"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={abrirWhatsApp}
+                                    className="px-5 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm"
+                                >
+                                    💬 Abrir no WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        {/* Corpo do Formulário */}
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                            {/* Resumo da Viagem e Manifesto puxado pela Placa */}
+                            {isLoadingContexto ? (
+                                <div className="h-28 rounded-xl bg-slate-100 animate-pulse" />
+                            ) : contexto ? (
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-mono text-sm font-extrabold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-lg">
+                                                {contexto.viagem.placa}
+                                            </span>
+                                            <span className="text-xs font-bold text-slate-700">
+                                                Viagem #{contexto.viagem.id}
+                                            </span>
+                                            <span className="text-xs text-slate-500">
+                                                • {contexto.viagem.motorista}
+                                            </span>
+                                        </div>
+                                        {contexto.viagem.atrasoSaidaMinutos !== null && contexto.viagem.atrasoSaidaMinutos > 0 ? (
+                                            <span className="text-[11px] font-bold bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full">
+                                                ⏱ Atraso na saída: +{formatarDuracaoCurta(contexto.viagem.atrasoSaidaMinutos)}
+                                            </span>
+                                        ) : (
+                                            <span className="text-[11px] font-bold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">
+                                                ✓ Sem atraso na saída
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <p className="text-xs text-slate-600">
+                                        <strong className="text-slate-700">Rota:</strong>{" "}
+                                        {contexto.viagem.rotaSequencial || contexto.viagem.rotaDescricao}
+                                    </p>
+
+                                    {/* Manifesto puxado pela placa */}
+                                    <div className="border-t border-slate-200 pt-2.5 space-y-2">
+                                        <div className="flex items-center justify-between flex-wrap gap-2">
+                                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                                📦 Manifesto(s) da Viagem (Brudam)
+                                            </span>
+                                            <div className="flex items-center gap-3 text-xs">
+                                                <label className="flex items-center gap-1 text-slate-600 font-medium">
+                                                    Minutas:
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        value={qtdMinutasManual}
+                                                        onChange={(e) => {
+                                                            setQtdMinutasManual(Math.max(0, parseInt(e.target.value || "0", 10)));
+                                                            setMensagemEditada(null);
+                                                        }}
+                                                        className="w-16 border border-slate-300 rounded-lg px-2 py-0.5 text-xs font-bold text-slate-800 bg-white"
+                                                    />
+                                                </label>
+                                                <label className="flex items-center gap-1 text-slate-600 font-medium">
+                                                    Volumes:
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        value={totalVolumesManual}
+                                                        onChange={(e) => {
+                                                            setTotalVolumesManual(Math.max(0, parseInt(e.target.value || "0", 10)));
+                                                            setMensagemEditada(null);
+                                                        }}
+                                                        className="w-20 border border-slate-300 rounded-lg px-2 py-0.5 text-xs font-bold text-slate-800 bg-white"
+                                                    />
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {contexto.manifesto.itens.length > 0 ? (
+                                            <div className="space-y-1 max-h-28 overflow-y-auto">
+                                                {contexto.manifesto.itens.map((m) => {
+                                                    const selecionado = idsManifestosSelecionados.includes(m.idManifesto);
+                                                    return (
+                                                        <label
+                                                            key={m.idManifesto}
+                                                            className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${selecionado
+                                                                    ? "bg-blue-50 border-blue-200 text-blue-900"
+                                                                    : "bg-white border-slate-200 text-slate-600"
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selecionado}
+                                                                    onChange={() => alternarManifesto(m.idManifesto)}
+                                                                    className="rounded border-slate-300"
+                                                                />
+                                                                <a
+                                                                    href={getBrudamManifestoUrl(m.idManifesto)}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="font-mono font-bold text-blue-600 hover:underline"
+                                                                >
+                                                                    #{m.idManifesto} ↗
+                                                                </a>
+                                                                <span className="truncate text-slate-500">
+                                                                    {m.origem ?? "—"} → {m.destino ?? "—"}
+                                                                </span>
+                                                            </div>
+                                                            <span className="font-bold flex-shrink-0">
+                                                                {m.qtdMinutas} min. • {m.totalVolumes} vol.
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                                                ⚠️ Nenhum manifesto localizado automaticamente pela placa no período. Você pode informar a quantidade de minutas e volumes nos campos acima.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {/* Nota de Atendimento */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                    Nota de Atendimento (O que foi conversado com o motorista)
+                                </label>
+                                <textarea
+                                    value={notaTorre}
+                                    onChange={(e) => {
+                                        setNotaTorre(e.target.value);
+                                        setMensagemEditada(null);
+                                    }}
+                                    rows={3}
+                                    placeholder="Ex: Motorista informou que o pneu furou no km 120 e aguarda socorro da borracharia..."
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                                />
+                            </div>
+
+                            {/* Unidade Responsável */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                    Unidade Responsável
+                                </label>
+                                {isLoadingBases ? (
+                                    <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
+                                ) : (
+                                    <select
+                                        value={unidadeResponsavelId}
+                                        onChange={(e) => {
+                                            setUnidadeResponsavelId(e.target.value);
+                                            setMensagemEditada(null);
+                                        }}
+                                        className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                                    >
+                                        <option value="">Selecione a unidade...</option>
+                                        {bases?.map((base) => (
+                                            <option key={base.id} value={base.id}>
+                                                {base.nome} {base.cidade ? `(${base.cidade})` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
+                            {/* Pergunta 1: Essa ocorrência causou a parada do veículo? */}
+                            <div className="rounded-xl border border-slate-200 p-4 space-y-3 bg-slate-50/60">
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                    🛑 Essa ocorrência causou a parada do veículo?
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCausouParada(true);
+                                            setMensagemEditada(null);
+                                        }}
+                                        className={`py-2.5 px-4 rounded-xl text-sm font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${causouParada === true
+                                                ? "bg-red-600 text-white border-red-600 shadow-sm"
+                                                : "bg-white text-slate-700 border-slate-200 hover:bg-red-50 hover:border-red-200"
+                                            }`}
+                                    >
+                                        <span>🛑</span>
+                                        <span>Sim, parou o veículo</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCausouParada(false);
+                                            setMensagemEditada(null);
+                                        }}
+                                        className={`py-2.5 px-4 rounded-xl text-sm font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${causouParada === false
+                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                                                : "bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:border-emerald-200"
+                                            }`}
+                                    >
+                                        <span>🚛</span>
+                                        <span>Não (seguiu viagem)</span>
+                                    </button>
+                                </div>
+
+                                {/* Pergunta 2: Se SIM, quanto tempo de atraso trouxe para a viagem? */}
+                                {causouParada === true && (
+                                    <div className="pt-3 border-t border-slate-200 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                                                ⏱️ Quanto tempo de atraso essa ocorrência trouxe para a viagem?
+                                            </label>
+                                            <div className="flex flex-wrap gap-1.5 mb-2.5">
+                                                {OPCOES_TEMPO_ATRASO.map((op) => (
+                                                    <button
+                                                        key={op.valor}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setTempoAtrasoMinutos(op.valor);
+                                                            setMensagemEditada(null);
+                                                        }}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${tempoAtrasoMinutos === op.valor
+                                                                ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                                                                : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50"
+                                                            }`}
+                                                    >
+                                                        +{op.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    step={5}
+                                                    value={tempoAtrasoMinutos || ""}
+                                                    onChange={(e) => {
+                                                        setTempoAtrasoMinutos(Math.max(0, parseInt(e.target.value || "0", 10)));
+                                                        setMensagemEditada(null);
+                                                    }}
+                                                    placeholder="Minutos"
+                                                    className="w-32 border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                                />
+                                                <span className="text-xs text-slate-500 font-medium">
+                                                    minutos ({formatarDuracaoCurta(tempoAtrasoMinutos)})
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Resumo da Nova Previsão de Chegada */}
+                                        {contexto && (
+                                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2 text-xs">
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <span className="font-bold text-amber-900 uppercase tracking-wider text-[11px]">
+                                                        📍 Novo Horário Previsto de Chegada
+                                                    </span>
+                                                    {contexto.viagem.proximaParada && (
+                                                        <select
+                                                            value={alvoPrevisao}
+                                                            onChange={(e) => {
+                                                                setAlvoPrevisao(e.target.value as "AMBOS" | "PROXIMA_PARADA" | "DESTINO_FINAL");
+                                                                setMensagemEditada(null);
+                                                            }}
+                                                            className="border border-amber-300 rounded-lg px-2 py-1 text-[11px] font-semibold bg-white text-slate-700"
+                                                        >
+                                                            <option value="AMBOS">Exibir Próxima Parada + Destino Final</option>
+                                                            <option value="PROXIMA_PARADA">Apenas Próxima Parada</option>
+                                                            <option value="DESTINO_FINAL">Apenas Destino Final</option>
+                                                        </select>
+                                                    )}
+                                                </div>
+
+                                                {contexto.viagem.proximaParada?.prevChegada && (
+                                                    <div className="flex items-center justify-between text-amber-900 bg-white/80 rounded-lg px-2.5 py-1.5 border border-amber-100">
+                                                        <span>
+                                                            Próxima Parada (<strong>{contexto.viagem.proximaParada.nome}</strong>):
+                                                        </span>
+                                                        <span>
+                                                            <span className="line-through text-slate-400 mr-1.5">
+                                                                {formatarDataHoraCurta(contexto.viagem.proximaParada.prevChegada)}
+                                                            </span>
+                                                            <strong className="text-red-700">
+                                                                {formatarDataHoraCurta(
+                                                                    new Date(
+                                                                        new Date(contexto.viagem.proximaParada.prevChegada).getTime() +
+                                                                        atrasoTotalCalculado * 60000
+                                                                    )
+                                                                )}
+                                                            </strong>
+                                                        </span>
+                                                    </div>
+                                                )}
+
+                                                {contexto.viagem.destinoFinal?.prevChegada && (
+                                                    <div className="flex items-center justify-between text-amber-900 bg-white/80 rounded-lg px-2.5 py-1.5 border border-amber-100">
+                                                        <span>
+                                                            Destino Final (<strong>{contexto.viagem.destinoFinal.nome}</strong>):
+                                                        </span>
+                                                        <span>
+                                                            <span className="line-through text-slate-400 mr-1.5">
+                                                                {formatarDataHoraCurta(contexto.viagem.destinoFinal.prevChegada)}
+                                                            </span>
+                                                            <strong className="text-red-700">
+                                                                {formatarDataHoraCurta(
+                                                                    new Date(
+                                                                        new Date(contexto.viagem.destinoFinal.prevChegada).getTime() +
+                                                                        atrasoTotalCalculado * 60000
+                                                                    )
+                                                                )}
+                                                            </strong>
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Prévia da Mensagem para Grupo de WhatsApp */}
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <label className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <span>💬</span>
+                                                    <span>Mensagem para o Grupo de WhatsApp</span>
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    {mensagemEditada !== null && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setMensagemEditada(null)}
+                                                            className="text-[11px] text-blue-600 hover:underline font-semibold cursor-pointer"
+                                                        >
+                                                            ↺ Restaurar padrão
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={copiarMensagem}
+                                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${copiado
+                                                                ? "bg-emerald-700 text-white"
+                                                                : "bg-slate-800 text-white hover:bg-slate-700"
+                                                            }`}
+                                                    >
+                                                        {copiado ? "✅ Copiado!" : "📋 Copiar Mensagem"}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={abrirWhatsApp}
+                                                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
+                                                    >
+                                                        💬 Abrir WhatsApp
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <textarea
+                                                value={mensagemFinal}
+                                                onChange={(e) => setMensagemEditada(e.target.value)}
+                                                rows={10}
+                                                className="w-full border border-emerald-200 bg-emerald-50/40 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-y"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {iniciar.error && (
+                                <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                                    ⚠️ {iniciar.error.message}
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Rodapé */}
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex gap-2 justify-end">
+                            <button
+                                onClick={onClose}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() =>
+                                    iniciar.mutate({
+                                        id: ocorrenciaId,
+                                        notaTorre,
+                                        unidadeResponsavelId,
+                                        causouParada: causouParada === true,
+                                        tempoAtrasoMinutos: causouParada ? tempoAtrasoMinutos : null,
+                                    })
+                                }
+                                disabled={!formValido || iniciar.isPending}
+                                className="px-5 py-2 rounded-xl text-sm font-bold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+                            >
+                                {iniciar.isPending
+                                    ? "Iniciando..."
+                                    : causouParada
+                                        ? "Iniciar Atendimento e Copiar Aviso WhatsApp"
+                                        : "Iniciar Atendimento"}
+                            </button>
+                        </div>
+                    </>
                 )}
             </div>
         </div>
@@ -288,6 +829,7 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
     const [mostrarResolucao, setMostrarResolucao] = useState(false);
     const [mostrarNotificacao, setMostrarNotificacao] = useState(false);
     const [mostrarAtendimento, setMostrarAtendimento] = useState(false);
+    const [mostrarWhatsApp, setMostrarWhatsApp] = useState(false);
     const statusCfg = STATUS_CONFIG[oc.status as keyof typeof STATUS_CONFIG];
 
     // Contatos das bases da rota (sem a origem)
@@ -320,10 +862,15 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                     onClose={() => setMostrarNotificacao(false)}
                 />
             )}
+            {mostrarWhatsApp && (
+                <ModalMensagemWhatsApp
+                    ocorrenciaId={oc.id}
+                    onClose={() => setMostrarWhatsApp(false)}
+                />
+            )}
 
-            <div className={`bg-white rounded-2xl border-l-4 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
-                oc.status === "EM_ATENDIMENTO" ? "border-l-amber-400" : "border-l-red-500"
-            }`}>
+            <div className={`bg-white rounded-2xl border-l-4 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${oc.status === "EM_ATENDIMENTO" ? "border-l-amber-400" : "border-l-red-500"
+                }`}>
                 {/* Header */}
                 <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -332,6 +879,11 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                                 <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot} ${oc.status === "ABERTA" ? "animate-pulse" : ""}`} />
                                 {statusCfg.label}
                             </span>
+                            {oc.causouParada && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2.5 py-0.5 text-xs font-bold">
+                                    🛑 Parou veículo {oc.tempoAtrasoMinutos ? `(+${formatarDuracaoCurta(oc.tempoAtrasoMinutos)})` : ""}
+                                </span>
+                            )}
                             <span className="text-xs text-slate-400">{tempoAgo(oc.createdAt)}</span>
                         </div>
                         <p className="mt-1 font-bold text-slate-800">
@@ -355,13 +907,24 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                 {/* Descrição */}
                 <div className="px-5 py-3">
                     <p className="text-sm text-slate-600 leading-relaxed">{oc.descricao}</p>
-                    
+
                     {oc.status === "EM_ATENDIMENTO" && oc.notaTorre && (
-                        <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 mb-1">
-                                Atendimento em andamento
-                            </p>
-                            <p className="text-sm text-amber-800 leading-relaxed mb-2">
+                        <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                                    Atendimento em andamento
+                                </p>
+                                {oc.causouParada ? (
+                                    <span className="text-[11px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-md">
+                                        🛑 Parada do veículo • Atraso: +{formatarDuracaoCurta(oc.tempoAtrasoMinutos)}
+                                    </span>
+                                ) : (
+                                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                                        🚛 Sem parada do veículo
+                                    </span>
+                                )}
+                            </div>
+                            <p className="text-sm text-amber-800 leading-relaxed">
                                 <strong>Torre ({oc.acionadoPor?.name}):</strong> {oc.notaTorre}
                             </p>
                             <p className="text-xs text-amber-700">
@@ -397,13 +960,22 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                     <span className="text-xs text-slate-400">
                         Aberto por {oc.abertaPor?.name ?? "Sistema"} às {formatarHora(oc.createdAt)}
                     </span>
-                    <div className="ml-auto flex gap-2">
+                    <div className="ml-auto flex gap-2 flex-wrap">
+                        {oc.status === "EM_ATENDIMENTO" && (
+                            <button
+                                onClick={() => setMostrarWhatsApp(true)}
+                                title="Gerar / copiar mensagem de atraso para o WhatsApp"
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                                💬 Aviso WhatsApp
+                            </button>
+                        )}
                         {/* Botão: Notificar Responsável */}
                         <button
                             id={`btn-notificar-${oc.id}`}
                             onClick={() => setMostrarNotificacao(true)}
                             title="Enviar e-mail de notificação"
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors flex items-center gap-1 cursor-pointer"
                         >
                             📧 Notificar
                         </button>
@@ -416,14 +988,14 @@ function CardOcorrencia({ oc, onRefresh }: { oc: any; onRefresh: () => void }) {
                         {oc.status === "ABERTA" && (
                             <button
                                 onClick={() => setMostrarAtendimento(true)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors cursor-pointer"
                             >
                                 Iniciar Atendimento
                             </button>
                         )}
                         <button
                             onClick={() => setMostrarResolucao(true)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
                         >
                             ✓ Resolver
                         </button>
@@ -844,11 +1416,10 @@ export default function OcorrenciasPage() {
                                 type="button"
                                 onClick={alternarSom}
                                 title={somAtivo ? "Alerta sonoro ativado (clique para silenciar)" : "Alerta sonoro silenciado (clique para ativar)"}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                    somAtivo
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${somAtivo
                                         ? "bg-emerald-600 text-white shadow-xs hover:bg-emerald-700"
                                         : "bg-slate-200 text-slate-600 hover:bg-slate-300"
-                                }`}
+                                    }`}
                             >
                                 <span>{somAtivo ? "🔔" : "🔕"}</span>
                                 <span>{somAtivo ? "Alerta Sonoro: LIGADO" : "Alerta Sonoro: DESLIGADO"}</span>

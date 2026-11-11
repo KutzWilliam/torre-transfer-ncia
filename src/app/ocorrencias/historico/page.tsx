@@ -6,6 +6,7 @@ import Link from "next/link";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { LOGO_BASE64 } from "@/lib/logoBase64";
+import { ModalMensagemWhatsApp, formatarDuracaoCurta } from "../_components/ModalMensagemWhatsApp";
 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -102,11 +103,16 @@ function Timeline({ oc }: { oc: any }) {
                                 <p className="text-xs text-slate-500">{formatarDataHora(oc.acionadoEm)}</p>
                                 <p className="text-[11px] text-slate-400">por {oc.acionadoPor?.name ?? "—"}</p>
                                 {oc.notaTorre && (
-                                    <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-2">
-                                        <p className="text-xs text-amber-800 italic">"{oc.notaTorre}"</p>
-                                        <p className="text-[10px] text-amber-700 font-semibold mt-1">
+                                    <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-2 space-y-1">
+                                        <p className="text-xs text-amber-800 italic">&ldquo;{oc.notaTorre}&rdquo;</p>
+                                        <p className="text-[10px] text-amber-700 font-semibold">
                                             Repassado para: {oc.unidadeResponsavel?.nome ?? "—"}
                                         </p>
+                                        {oc.causouParada && (
+                                            <p className="text-[10px] text-red-700 font-bold">
+                                                🛑 Causou parada do veículo {oc.tempoAtrasoMinutos ? `• Atraso estimado: +${formatarDuracaoCurta(oc.tempoAtrasoMinutos)}` : ""}
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </>
@@ -155,85 +161,107 @@ function Timeline({ oc }: { oc: any }) {
 
 function CardOcorrenciaHistorico({ oc }: { oc: any }) {
     const [expandido, setExpandido] = useState(false);
+    const [mostrarWhatsApp, setMostrarWhatsApp] = useState(false);
     const statusCfg = STATUS_CONFIG[oc.status as keyof typeof STATUS_CONFIG];
 
     return (
-        <div className={`bg-white rounded-2xl border-l-4 overflow-hidden shadow-sm hover:shadow-md transition-all ${statusCfg.border}`}>
-            {/* Header do card */}
-            <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${statusCfg.bg} ${statusCfg.text}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
-                            {statusCfg.label}
-                        </span>
-                        <span className="text-xs text-slate-400">{formatarDataHora(oc.createdAt)}</span>
-                        <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5 font-mono">
-                            {oc.origem === "EMAIL_ANGELLIRA" ? "📧 AngelLira" : "👤 Manual"}
-                        </span>
+        <>
+            {mostrarWhatsApp && (
+                <ModalMensagemWhatsApp
+                    ocorrenciaId={oc.id}
+                    onClose={() => setMostrarWhatsApp(false)}
+                />
+            )}
+            <div className={`bg-white rounded-2xl border-l-4 overflow-hidden shadow-sm hover:shadow-md transition-all ${statusCfg.border}`}>
+                {/* Header do card */}
+                <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${statusCfg.bg} ${statusCfg.text}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+                                {statusCfg.label}
+                            </span>
+                            {oc.causouParada && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2.5 py-0.5 text-xs font-bold">
+                                    🛑 Parou veículo {oc.tempoAtrasoMinutos ? `(+${formatarDuracaoCurta(oc.tempoAtrasoMinutos)})` : ""}
+                                </span>
+                            )}
+                            <span className="text-xs text-slate-400">{formatarDataHora(oc.createdAt)}</span>
+                            <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5 font-mono">
+                                {oc.origem === "EMAIL_ANGELLIRA" ? "📧 AngelLira" : "👤 Manual"}
+                            </span>
+                        </div>
+                        <p className="mt-1 font-bold text-slate-800">⚠️ {oc.tipoOcorrencia}</p>
                     </div>
-                    <p className="mt-1 font-bold text-slate-800">⚠️ {oc.tipoOcorrencia}</p>
+                    <div className="text-right flex-shrink-0">
+                        <p className="text-base font-bold text-blue-600">{oc.viagem.veiculo.placa}</p>
+                        <p className="text-xs text-slate-400">#{oc.viagem.id.slice(0, 8)}</p>
+                    </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                    <p className="text-base font-bold text-blue-600">{oc.viagem.veiculo.placa}</p>
-                    <p className="text-xs text-slate-400">#{oc.viagem.id.slice(0, 8)}</p>
+
+                {/* Rota */}
+                <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 border-y border-slate-100 text-sm">
+                    <span className="font-semibold text-blue-700 truncate">{oc.viagem.baseOrigem.cidade}</span>
+                    <span className="text-slate-300">→</span>
+                    <span className="font-semibold text-emerald-700 truncate">{oc.viagem.baseDestino.cidade}</span>
+                    <span className="ml-auto text-xs text-slate-400 flex-shrink-0">{oc.viagem.motorista}</span>
                 </div>
-            </div>
 
-            {/* Rota */}
-            <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 border-y border-slate-100 text-sm">
-                <span className="font-semibold text-blue-700 truncate">{oc.viagem.baseOrigem.cidade}</span>
-                <span className="text-slate-300">→</span>
-                <span className="font-semibold text-emerald-700 truncate">{oc.viagem.baseDestino.cidade}</span>
-                <span className="ml-auto text-xs text-slate-400 flex-shrink-0">{oc.viagem.motorista}</span>
-            </div>
+                {/* Corpo */}
+                <div className="px-5 py-3">
+                    <p className="text-sm text-slate-600 leading-relaxed line-clamp-2">{oc.descricao}</p>
 
-            {/* Corpo */}
-            <div className="px-5 py-3">
-                <p className="text-sm text-slate-600 leading-relaxed line-clamp-2">{oc.descricao}</p>
-
-                {/* Pessoas envolvidas */}
-                <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="inline-flex items-center gap-1 text-xs bg-blue-50 border border-blue-100 rounded-lg px-2 py-1 text-blue-700">
-                        👤 <strong>Aberta:</strong>&nbsp;{oc.abertaPor?.name ?? "Sistema"}
-                    </span>
-                    {oc.resolvidaPor && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 text-emerald-700">
-                            ✅ <strong>Resolvida:</strong>&nbsp;{oc.resolvidaPor.name}
+                    {/* Pessoas envolvidas */}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="inline-flex items-center gap-1 text-xs bg-blue-50 border border-blue-100 rounded-lg px-2 py-1 text-blue-700">
+                            👤 <strong>Aberta:</strong>&nbsp;{oc.abertaPor?.name ?? "Sistema"}
                         </span>
+                        {oc.resolvidaPor && (
+                            <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 text-emerald-700">
+                                ✅ <strong>Resolvida:</strong>&nbsp;{oc.resolvidaPor.name}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Timeline (expansível) */}
+                    {expandido && <Timeline oc={oc} />}
+
+                    {/* Nota de resolução (se expandido e existir) */}
+                    {expandido && oc.resolucao && (
+                        <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Nota de Resolução</p>
+                            <p className="text-sm text-emerald-800 leading-relaxed">{oc.resolucao}</p>
+                        </div>
                     )}
                 </div>
 
-                {/* Timeline (expansível) */}
-                {expandido && <Timeline oc={oc} />}
-
-                {/* Nota de resolução (se expandido e existir) */}
-                {expandido && oc.resolucao && (
-                    <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-1">Nota de Resolução</p>
-                        <p className="text-sm text-emerald-800 leading-relaxed">{oc.resolucao}</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Rodapé */}
-            <div className="px-5 pb-4 flex items-center gap-2 border-t border-slate-100 pt-3">
-                <button
-                    onClick={() => setExpandido(e => !e)}
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors flex items-center gap-1"
-                >
-                    {expandido ? "▲ Recolher" : "▼ Ver linha do tempo"}
-                </button>
-                <div className="ml-auto flex gap-2">
-                    <Link
-                        href={`/viagens/${oc.viagemId}`}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors"
+                {/* Rodapé */}
+                <div className="px-5 pb-4 flex items-center gap-2 border-t border-slate-100 pt-3">
+                    <button
+                        onClick={() => setExpandido(e => !e)}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors flex items-center gap-1"
                     >
-                        Ver Viagem →
-                    </Link>
+                        {expandido ? "▲ Recolher" : "▼ Ver linha do tempo"}
+                    </button>
+                    <div className="ml-auto flex gap-2">
+                        {oc.notaTorre && (
+                            <button
+                                onClick={() => setMostrarWhatsApp(true)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                            >
+                                💬 Aviso WhatsApp
+                            </button>
+                        )}
+                        <Link
+                            href={`/viagens/${oc.viagemId}`}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors"
+                        >
+                            Ver Viagem →
+                        </Link>
+                    </div>
                 </div>
             </div>
-        </div>
+        </>
     );
 }
 
@@ -322,12 +350,12 @@ export default function HistoricoOcorrenciasPage() {
 
             // ─── Header ──────────────────────────────────────────────────
             doc.addImage(LOGO_BASE64, "PNG", 14, 10, 24, 24);
-            
+
             doc.setFont("helvetica", "bold");
             doc.setFontSize(16);
             doc.setTextColor(34, 197, 94); // Verde Princesa
             doc.text("Torre de Controle - Relatório de Ocorrências", 42, 20);
-            
+
             doc.setFont("helvetica", "normal");
             doc.setFontSize(10);
             doc.setTextColor(100, 100, 100);
@@ -339,7 +367,7 @@ export default function HistoricoOcorrenciasPage() {
             const abertas = dados.filter(o => o.status === "ABERTA").length;
             const emAtendimento = dados.filter(o => o.status === "EM_ATENDIMENTO").length;
             const resolvidas = dados.filter(o => o.status === "RESOLVIDA").length;
-            
+
             let tempoTotal = 0;
             let qtdResolvidasTempo = 0;
             dados.forEach(o => {
@@ -370,7 +398,7 @@ export default function HistoricoOcorrenciasPage() {
             doc.text(`Em Atend.: ${emAtendimento}`, 100, 51);
             doc.setTextColor(5, 150, 105);
             doc.text(`Resolvidas: ${resolvidas}`, 140, 51);
-            
+
             doc.setTextColor(50, 50, 50);
             doc.text(`Tempo Médio (Resolução): ${tempoMedioStr}`, 190, 51);
 
@@ -385,10 +413,10 @@ export default function HistoricoOcorrenciasPage() {
                 else if (statusLabel === "ABERTA") statusLabel = "Aberta";
 
                 const tempoTotal = formatarDuracaoMinutos(oc.createdAt, oc.resolvidaEm);
-                const abAc      = formatarDuracaoMinutos(oc.createdAt, oc.acionadoEm);
-                const acRes     = formatarDuracaoMinutos(oc.acionadoEm, oc.resolvidaEm);
+                const abAc = formatarDuracaoMinutos(oc.createdAt, oc.acionadoEm);
+                const acRes = formatarDuracaoMinutos(oc.acionadoEm, oc.resolvidaEm);
 
-                const abertura  = new Date(oc.createdAt).toLocaleString("pt-BR", {
+                const abertura = new Date(oc.createdAt).toLocaleString("pt-BR", {
                     day: "2-digit", month: "2-digit", year: "numeric",
                     hour: "2-digit", minute: "2-digit",
                     timeZone: "America/Sao_Paulo",
@@ -444,7 +472,7 @@ export default function HistoricoOcorrenciasPage() {
                 didParseCell: (data) => {
                     if (data.section === 'body' && data.column.index === 4) {
                         const status = data.cell.raw;
-                        if (status === "Aberta")     data.cell.styles.textColor = [220, 38, 38];
+                        if (status === "Aberta") data.cell.styles.textColor = [220, 38, 38];
                         else if (status === "EM ATEND.") data.cell.styles.textColor = [217, 119, 6];
                         else if (status === "Resolvida") data.cell.styles.textColor = [5, 150, 105];
                     }
@@ -679,11 +707,10 @@ export default function HistoricoOcorrenciasPage() {
                                     <button
                                         key={pg}
                                         onClick={() => setPagina(pg)}
-                                        className={`w-9 h-9 rounded-xl text-sm font-bold transition-colors ${
-                                            pg === pagina
+                                        className={`w-9 h-9 rounded-xl text-sm font-bold transition-colors ${pg === pagina
                                                 ? "bg-slate-800 text-white"
                                                 : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                                        }`}
+                                            }`}
                                     >
                                         {pg}
                                     </button>
@@ -710,12 +737,12 @@ export default function HistoricoOcorrenciasPage() {
                             <h2 className="font-bold text-slate-800 text-lg">Gerar Relatório PDF</h2>
                             <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
                         </div>
-                        
+
                         <div className="p-6 space-y-4">
                             <p className="text-sm text-slate-600">
                                 Selecione o período para gerar o relatório com KPIs e detalhamento de ocorrências:
                             </p>
-                            
+
                             <div className="space-y-2">
                                 {[
                                     { id: "DIA", label: "Do Dia (Hoje)" },
@@ -726,11 +753,10 @@ export default function HistoricoOcorrenciasPage() {
                                 ].map(opt => (
                                     <div key={opt.id} className="flex flex-col gap-2">
                                         <label
-                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                                                tipoRelatorio === opt.id 
-                                                    ? "border-blue-500 bg-blue-50" 
+                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${tipoRelatorio === opt.id
+                                                    ? "border-blue-500 bg-blue-50"
                                                     : "border-slate-200 hover:bg-slate-50"
-                                            }`}
+                                                }`}
                                         >
                                             <input
                                                 type="radio"
@@ -742,7 +768,7 @@ export default function HistoricoOcorrenciasPage() {
                                             />
                                             <span className="text-sm font-semibold text-slate-700">{opt.label}</span>
                                         </label>
-                                        
+
                                         {/* Date input for specific day */}
                                         {opt.id === "PERSONALIZADO" && tipoRelatorio === "PERSONALIZADO" && (
                                             <div className="pl-11 pr-3 pb-2">

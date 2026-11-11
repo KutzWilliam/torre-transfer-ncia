@@ -275,6 +275,9 @@ model Ocorrencia {
   // Qual unidade ficará responsável por resolver
   unidadeResponsavelId   String?
   unidadeResponsavel     Base?     @relation("OcorrenciasUnidade", fields: [unidadeResponsavelId], references: [id])
+  // Se a ocorrência causou a parada do veículo e quanto tempo de atraso trouxe (em minutos)
+  causouParada           Boolean?  @default(false)
+  tempoAtrasoMinutos     Int?
   
   // ── Fase 3: Resolução pela Unidade ───────────────────────────────────
   resolucao       String?          @db.Text
