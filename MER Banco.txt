@@ -1,0 +1,3198 @@
+# MER & Guia de Visualização de Tabelas — Base `torre_controle`
+
+> **Título:** Torre de Controle (Hub Central / DW)  
+> **Servidor / Porta:** `172.20.10.205:5432` | **Banco:** `torre_controle`  
+> **Resumo:** Banco central que consolida TMS (Cotações, Coletas, Minutas/CT-e, Notas, Volumes, Bipagens, Manifestos, Processos), Escalas/RH Protheus, Telemetria (Life/Sascar) e Automação de E-mails.  
+> **Total:** **83 tabelas/objetos** | **2981 colunas** | **67 relacionamentos mapeados** | **108 índices**
+
+---
+
+## 1. Índice Rápido de Tabelas (Para Visualização no DBeaver / SQL)
+
+| Tabela | Tipo | Linhas Estimadas | Tamanho | Chave Primária (PK) | Colunas com Índice Rápido (`⚡ Usar no WHERE`) |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+| **[automacao_email.batches](#tabela-batches)** | `TABLE` | 6 | 32 kB | `id` | `id` |
+| **[automacao_email.contact_uploads](#tabela-contact_uploads)** | `TABLE` | 6 | 32 kB | `id` | `id` |
+| **[automacao_email.contacts](#tabela-contacts)** | `TABLE` | 57.563 | 20 MB | `cnpj_key`, `email` | `cnpj_key`, `email` |
+| **[automacao_email.outbox](#tabela-outbox)** | `TABLE` | 174 | 216 kB | `id` | `batch_id`, `id`, `run_id`, `claimed_at`, `cnpj_key`, `cte_key`, `nf_key` |
+| **[automacao_email.schema_migrations](#tabela-schema_migrations)** | `TABLE` | 2 | 32 kB | `version` | `version` |
+| **[automacao_email.send_runs](#tabela-send_runs)** | `TABLE` | 36 | 32 kB | `id` | `id` |
+| **[public.LIFE](#tabela-life)** | `FOREIGN TABLE` | FDW/View | 0 bytes | *(Sem PK física)* | *(Sem índice)* |
+| **[public.rastreamento_life](#tabela-rastreamento_life)** | `FOREIGN TABLE` | FDW/View | 0 bytes | *(Sem PK física)* | *(Sem índice)* |
+| **[public.rastreamento_sascar](#tabela-rastreamento_sascar)** | `FOREIGN TABLE` | FDW/View | 0 bytes | *(Sem PK física)* | *(Sem índice)* |
+| **[public.veiculos_sascar](#tabela-veiculos_sascar)** | `FOREIGN TABLE` | FDW/View | 0 bytes | *(Sem PK física)* | *(Sem índice)* |
+| **[public.GI1010](#tabela-gi1010)** | `TABLE` | 22.612 | 9144 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.MDFe](#tabela-mdfe)** | `TABLE` | 0 | 8576 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public._hash_cotacao](#tabela-_hash_cotacao)** | `TABLE` | 995.548 | 65 MB | `id` | `id` |
+| **[public._hash_frete_hist](#tabela-_hash_frete_hist)** | `TABLE` | 39.147.119 | 2497 MB | `id` | `id` |
+| **[public._hash_pre_minuta](#tabela-_hash_pre_minuta)** | `TABLE` | 766.123 | 50 MB | `id` | `id` |
+| **[public._hash_volumes](#tabela-_hash_volumes)** | `TABLE` | 14.219.358 | 942 MB | `id` | `id` |
+| **[public.aero](#tabela-aero)** | `TABLE` | 0 | 56 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.alteracoes_coleta](#tabela-alteracoes_coleta)** | `TABLE` | 1.907.734 | 227 MB | `id` | `id`, `coleta` |
+| **[public.anexos](#tabela-anexos)** | `TABLE` | 2.090.695 | 517 MB | `id_anexo` | `id_anexo`, `id_coleta`, `id_manifesto`, `id_minuta`, `id_nota` |
+| **[public.apontamento_motoristas](#tabela-apontamento_motoristas)** | `TABLE` | 158.473 | 26 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.banco_horas](#tabela-banco_horas)** | `TABLE` | 39.408 | 6792 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.cadastro_motoristas](#tabela-cadastro_motoristas)** | `TABLE` | 3.217 | 984 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.coleta](#tabela-coleta)** | `TABLE` | 327.677 | 248 MB | `id_coleta` | `id_coleta`, `id_minuta` |
+| **[public.coleta_enderecos](#tabela-coleta_enderecos)** | `TABLE` | 35.544 | 5400 kB | `id` | `id`, `coleta` |
+| **[public.coleta_historico](#tabela-coleta_historico)** | `TABLE` | 1.905.462 | 265 MB | `id_log` | `id_log`, `coleta` |
+| **[public.cotacao](#tabela-cotacao)** | `TABLE` | 995.548 | 765 MB | `id_cotacao` | `id_cotacao` |
+| **[public.cte_status](#tabela-cte_status)** | `TABLE` | 17 | 32 kB | `id_status` | `id_status` |
+| **[public.cte_substituicao](#tabela-cte_substituicao)** | `TABLE` | 5.685 | 2320 kB | `id` | `id`, `cte_chave` |
+| **[public.cte_tipo](#tabela-cte_tipo)** | `TABLE` | 5 | 32 kB | `id` | `id` |
+| **[public.entrega_dias](#tabela-entrega_dias)** | `TABLE` | 4.732 | 520 kB | *(Sem PK física)* | `id_cidade`, `id` |
+| **[public.equipamento](#tabela-equipamento)** | `TABLE` | 104 | 136 kB | `id_equipamento` | `id_equipamento` |
+| **[public.escala_extraordinaria](#tabela-escala_extraordinaria)** | `TABLE` | 70.532 | 22 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.escala_motoristas](#tabela-escala_motoristas)** | `TABLE` | 1.090.363 | 338 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.estrutura_regioes](#tabela-estrutura_regioes)** | `TABLE` | 0 | 2936 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.etl_control](#tabela-etl_control)** | `TABLE` | 36 | 80 kB | `table_name` | `table_name` |
+| **[public.etl_control_frete_hist](#tabela-etl_control_frete_hist)** | `TABLE` | 1 | 64 kB | `id` | `id` |
+| **[public.ferias_motoristas](#tabela-ferias_motoristas)** | `TABLE` | 1.446 | 152 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.filiais_protheus](#tabela-filiais_protheus)** | `TABLE` | 1.272 | 272 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.fornecedores](#tabela-fornecedores)** | `TABLE` | 451.389 | 870 MB | `id_local` | `id_local`, `cnpj` |
+| **[public.frete_hist](#tabela-frete_hist)** | `TABLE` | 39.219.208 | 7199 MB | `id_log` | `id_log`, `coleta`, `created_at`, `frete`, `id_nf`, `data`, `status` |
+| **[public.funcionario](#tabela-funcionario)** | `TABLE` | 645 | 424 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.funcionarios_sra](#tabela-funcionarios_sra)** | `TABLE` | 2.610 | 696 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.historico_volume](#tabela-historico_volume)** | `TABLE` | 15.233.851 | 2886 MB | `id` | `id`, `id_volume`, `manifesto` |
+| **[public.manifesto](#tabela-manifesto)** | `TABLE` | 189.218 | 165 MB | `id_manifesto` | `veiculo`, `id_manifesto` |
+| **[public.manifesto_list](#tabela-manifesto_list)** | `TABLE` | 5.320.040 | 703 MB | `id` | `id_manifesto`, `minuta`, `id` |
+| **[public.manifesto_status](#tabela-manifesto_status)** | `TABLE` | 12 | 16 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.manifesto_tipo](#tabela-manifesto_tipo)** | `TABLE` | 7 | 16 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.marcacao_motoristas](#tabela-marcacao_motoristas)** | `TABLE` | 279.829 | 63 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.minuta](#tabela-minuta)** | `TABLE` | 1.984.398 | 4105 MB | `id_minuta` | `cte_data`, `id_minuta` |
+| **[public.minuta_status](#tabela-minuta_status)** | `TABLE` | 18 | 32 kB | `id_status` | `id_status` |
+| **[public.motorista_terceiro](#tabela-motorista_terceiro)** | `TABLE` | 750 | 312 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.motoristas_manifesto](#tabela-motoristas_manifesto)** | `TABLE` | 192.667 | 13 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.nf_tipo](#tabela-nf_tipo)** | `TABLE` | 4 | 16 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.notas_fiscais](#tabela-notas_fiscais)** | `TABLE` | 2.400.772 | 721 MB | `id_nf` | `id_minuta`, `nf`, `processo`, `id_nf` |
+| **[public.ocorrencias](#tabela-ocorrencias)** | `TABLE` | 0 | 67 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.picking](#tabela-picking)** | `TABLE` | 62.479 | 7728 kB | `id` | `id_manifesto`, `id` |
+| **[public.ponto_horas](#tabela-ponto_horas)** | `TABLE` | 202.115 | 16 MB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.pre_minuta](#tabela-pre_minuta)** | `TABLE` | 764.379 | 674 MB | `id` | `id_minuta`, `id` |
+| **[public.processo](#tabela-processo)** | `TABLE` | 4.874 | 3568 kB | `id_processo` | `id_minuta`, `id_processo` |
+| **[public.processo_anexos](#tabela-processo_anexos)** | `TABLE` | 17.582 | 3272 kB | `id_anexo` | `id_processo`, `id_anexo` |
+| **[public.processo_autorizacao](#tabela-processo_autorizacao)** | `TABLE` | 4.385 | 872 kB | `id_autorizacao` | `id_processo`, `id_autorizacao` |
+| **[public.processo_empresa](#tabela-processo_empresa)** | `TABLE` | 4.731 | 568 kB | `id_processo_empresa` | `id_processo`, `id_processo_empresa` |
+| **[public.processo_notas](#tabela-processo_notas)** | `TABLE` | 4.760 | 504 kB | `id_nota` | `processo`, `id_nota` |
+| **[public.processo_notas_fiscais](#tabela-processo_notas_fiscais)** | `TABLE` | 161 | 40 kB | `id_nota` | `processo`, `id_nota` |
+| **[public.processo_volumes](#tabela-processo_volumes)** | `TABLE` | 8.237 | 944 kB | `id_volume` | `id_processo`, `id_volume` |
+| **[public.rotas](#tabela-rotas)** | `TABLE` | 11.012 | 10 MB | `id` | `id_rota`, `id` |
+| **[public.roteiros](#tabela-roteiros)** | `TABLE` | 199 | 80 kB | `id_roteiro` | `id_roteiro` |
+| **[public.servico_padrao](#tabela-servico_padrao)** | `TABLE` | 1 | 32 kB | *(Sem PK física)* | `id_servico` |
+| **[public.status_entrega](#tabela-status_entrega)** | `TABLE` | 128 | 96 kB | `id` | `v_carga`, `id`, `e_seq` |
+| **[public.status_processo](#tabela-status_processo)** | `TABLE` | 4 | 24 kB | `id` | `id` |
+| **[public.status_processos](#tabela-status_processos)** | `TABLE` | 6 | 24 kB | `id` | `id` |
+| **[public.status_viagem](#tabela-status_viagem)** | `TABLE` | 531 | 248 kB | `id` | `atualizado_em`, `data_consulta`, `placa`, `v_status`, `id`, `v_carga` |
+| **[public.tabela_frete](#tabela-tabela_frete)** | `TABLE` | 6.064 | 1712 kB | `id_tabela` | `id_tabela` |
+| **[public.tabela_padrao](#tabela-tabela_padrao)** | `TABLE` | 10 | 32 kB | *(Sem PK física)* | `id_padrao` |
+| **[public.terceiros](#tabela-terceiros)** | `TABLE` | 446 | 240 kB | `id_terceiro` | `id_terceiro` |
+| **[public.tipo_minuta](#tabela-tipo_minuta)** | `TABLE` | 6 | 32 kB | `id` | `id` |
+| **[public.tipo_oco](#tabela-tipo_oco)** | `TABLE` | 398 | 160 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.turnos](#tabela-turnos)** | `TABLE` | 4.049 | 376 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.unidades](#tabela-unidades)** | `TABLE` | 402 | 2624 kB | `id_unidade` | `id_unidade` |
+| **[public.usuarios](#tabela-usuarios)** | `TABLE` | 4.813 | 7664 kB | *(Sem PK física)* | `id_usuario` |
+| **[public.veiculos](#tabela-veiculos)** | `TABLE` | 1.268 | 464 kB | `id_veiculo` | `id_veiculo` |
+| **[public.veiculos_carga_manual_bkp](#tabela-veiculos_carga_manual_bkp)** | `TABLE` | 1.130 | 656 kB | *(Sem PK física)* | *(Sem índice)* |
+| **[public.volumes](#tabela-volumes)** | `TABLE` | 14.349.375 | 5195 MB | `id_volume` | `id_coleta`, `id_minuta`, `id_nf`, `id_volume` |
+
+---
+
+## 2. Relacionamentos do MER (Como Juntar as Tabelas / `JOIN`)
+
+| Tabela Origem (N) | Cardinalidade | Tabela Destino (1) | Condição de `JOIN` | Tipo de Vínculo |
+| :--- | :---: | :--- | :--- | :---: |
+| `contacts` | `N:1` | `contact_uploads` | `contacts.upload_id = contact_uploads.id` | 🔒 **FK Física** |
+| `outbox` | `N:1` | `send_runs` | `outbox.run_id = send_runs.id` | 🔒 **FK Física** |
+| `outbox` | `N:1` | `batches` | `outbox.batch_id = batches.id` | 🔒 **FK Física** |
+| `processo` | `N:1` | `minuta` | `processo.id_minuta = minuta.id_minuta` | 🔒 **FK Física** |
+| `processo_anexos` | `N:1` | `processo` | `processo_anexos.id_processo = processo.id_processo` | 🔒 **FK Física** |
+| `processo_empresa` | `N:1` | `processo` | `processo_empresa.id_processo = processo.id_processo` | 🔒 **FK Física** |
+| `processo_notas` | `N:1` | `processo` | `processo_notas.processo = processo.id_processo` | 🔒 **FK Física** |
+| `processo_notas_fiscais` | `N:1` | `processo` | `processo_notas_fiscais.processo = processo.id_processo` | 🔒 **FK Física** |
+| `processo_volumes` | `N:1` | `processo` | `processo_volumes.id_processo = processo.id_processo` | 🔒 **FK Física** |
+| `status_entrega` | `N:1` | `status_viagem` | `status_entrega.v_carga = status_viagem.v_carga` | 🔒 **FK Física** |
+| `coleta` | `N:1` | `cotacao` | `coleta.cotacao = cotacao.id_cotacao` | 🔗 **FK Lógica** |
+| `coleta` | `N:1` | `minuta` | `coleta.id_minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `coleta` | `N:1` | `fornecedores` | `coleta.id_cliente = fornecedores.id_local` | 🔗 **FK Lógica** |
+| `coleta` | `N:1` | `unidades` | `coleta.unidade = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `coleta_enderecos` | `N:1` | `coleta` | `coleta_enderecos.coleta = coleta.id_coleta` | 🔗 **FK Lógica** |
+| `coleta_historico` | `N:1` | `coleta` | `coleta_historico.coleta = coleta.id_coleta` | 🔗 **FK Lógica** |
+| `alteracoes_coleta` | `N:1` | `coleta` | `alteracoes_coleta.coleta = coleta.id_coleta` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `cotacao` | `minuta.cotacao = cotacao.id_cotacao` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `minuta_status` | `minuta.status = minuta_status.id_status` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `tipo_minuta` | `minuta.tipo = tipo_minuta.id` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `cte_status` | `minuta.cte_status = cte_status.id_status` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `cte_tipo` | `minuta.cte_tipo_cte = cte_tipo.id` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `fornecedores` | `minuta.id_cliente = fornecedores.id_local` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `fornecedores` | `minuta.id_origem = fornecedores.id_local` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `fornecedores` | `minuta.id_destino = fornecedores.id_local` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `unidades` | `minuta.unidade = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `rotas` | `minuta.rota = rotas.id` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `rotas` | `minuta.origem = rotas.id_rota` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `rotas` | `minuta.destino = rotas.id_rota` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `aero` | `minuta.transf_origem = aero.id_aero` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `aero` | `minuta.transf_destino = aero.id_aero` | 🔗 **FK Lógica** |
+| `minuta` | `N:1` | `tabela_frete` | `minuta.tabela = tabela_frete.id_tabela` | 🔗 **FK Lógica** |
+| `notas_fiscais` | `N:1` | `minuta` | `notas_fiscais.id_minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `notas_fiscais` | `N:1` | `nf_tipo` | `notas_fiscais.nf_tipo = nf_tipo.id_tipo` | 🔗 **FK Lógica** |
+| `volumes` | `N:1` | `minuta` | `volumes.id_minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `volumes` | `N:1` | `notas_fiscais` | `volumes.id_nf = notas_fiscais.id_nf` | 🔗 **FK Lógica** |
+| `volumes` | `N:1` | `coleta` | `volumes.id_coleta = coleta.id_coleta` | 🔗 **FK Lógica** |
+| `volumes` | `N:1` | `cotacao` | `volumes.id_cotacao = cotacao.id_cotacao` | 🔗 **FK Lógica** |
+| `historico_volume` | `N:1` | `volumes` | `historico_volume.id_volume = volumes.id_volume` | 🔗 **FK Lógica** |
+| `historico_volume` | `N:1` | `manifesto` | `historico_volume.manifesto = manifesto.id_manifesto` | 🔗 **FK Lógica** |
+| `historico_volume` | `N:1` | `unidades` | `historico_volume.unidade = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `frete_hist` | `N:1` | `minuta` | `frete_hist.frete = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `frete_hist` | `N:1` | `coleta` | `frete_hist.coleta = coleta.id_coleta` | 🔗 **FK Lógica** |
+| `frete_hist` | `N:1` | `notas_fiscais` | `frete_hist.id_nf = notas_fiscais.id_nf` | 🔗 **FK Lógica** |
+| `frete_hist` | `N:1` | `tipo_oco` | `frete_hist.status = tipo_oco.id_oco` | 🔗 **FK Lógica** |
+| `frete_hist` | `N:1` | `unidades` | `frete_hist.unidade = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `anexos` | `N:1` | `minuta` | `anexos.id_minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `anexos` | `N:1` | `coleta` | `anexos.id_coleta = coleta.id_coleta` | 🔗 **FK Lógica** |
+| `anexos` | `N:1` | `manifesto` | `anexos.id_manifesto = manifesto.id_manifesto` | 🔗 **FK Lógica** |
+| `anexos` | `N:1` | `notas_fiscais` | `anexos.id_nota = notas_fiscais.id_nf` | 🔗 **FK Lógica** |
+| `pre_minuta` | `N:1` | `minuta` | `pre_minuta.id_minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `cte_substituicao` | `N:1` | `minuta` | `cte_substituicao.id_minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `manifesto_list` | `N:1` | `manifesto` | `manifesto_list.id_manifesto = manifesto.id_manifesto` | 🔗 **FK Lógica** |
+| `manifesto_list` | `N:1` | `minuta` | `manifesto_list.minuta = minuta.id_minuta` | 🔗 **FK Lógica** |
+| `picking` | `N:1` | `manifesto` | `picking.id_manifesto = manifesto.id_manifesto` | 🔗 **FK Lógica** |
+| `picking` | `N:1` | `unidades` | `picking.unidade = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `MDFe` | `N:1` | `manifesto` | `MDFe.id_manifesto = manifesto.id_manifesto` | 🔗 **FK Lógica** |
+| `motoristas_manifesto` | `N:1` | `manifesto` | `motoristas_manifesto.id_manifesto = manifesto.id_manifesto` | 🔗 **FK Lógica** |
+| `manifesto` | `N:1` | `veiculos` | `manifesto.veiculo = veiculos.id_veiculo` | 🔗 **FK Lógica** |
+| `manifesto` | `N:1` | `terceiros` | `manifesto.veiculo_terceiro = terceiros.id_terceiro` | 🔗 **FK Lógica** |
+| `manifesto` | `N:1` | `unidades` | `manifesto.base = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `manifesto` | `N:1` | `unidades` | `manifesto.destino = unidades.id_unidade` | 🔗 **FK Lógica** |
+| `manifesto` | `N:1` | `manifesto_status` | `manifesto.status = manifesto_status.id_status` | 🔗 **FK Lógica** |
+| `escala_motoristas` | `N:N` | `rastreamento_life` | `escala_motoristas.COD_VEICULO = rastreamento_life.veiculo` | 🔗 **FK Lógica** |
+| `escala_motoristas` | `N:1` | `GI1010` | `escala_motoristas.G55_LOCORI = GI1010.GI1_COD` | 🔗 **FK Lógica** |
+| `escala_motoristas` | `N:1` | `funcionarios_sra` | `escala_motoristas.COD_MOTORISTA = funcionarios_sra.RA_MAT` | 🔗 **FK Lógica** |
+| `rastreamento_sascar` | `N:1` | `veiculos_sascar` | `rastreamento_sascar.vehicleId = veiculos_sascar.idVeiculo` | 🔗 **FK Lógica** |
+
+---
+
+## 3. Fichas de Visualização de Cada Tabela
+
+<a id="tabela-batches"></a>
+### 📋 `automacao_email.batches` (6 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`outbox`** via `outbox.batch_id = batches.id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `status` | `text` | Não | - |
+| `file_name` | `text` | Não | - |
+| `created_at` | `timestamp with time zone` | Não | - |
+| `created_ip` | `text` | Sim | - |
+| `confirmed_at` | `timestamp with time zone` | Sim | - |
+| `confirmed_ip` | `text` | Sim | - |
+| `canceled_at` | `timestamp with time zone` | Sim | - |
+| `canceled_ip` | `text` | Sim | - |
+| `total_rows` | `integer` | Não | - |
+| `dropped_no_contact` | `integer` | Não | - |
+| `dropped_invalid` | `integer` | Não | - |
+
+---
+
+<a id="tabela-contact_uploads"></a>
+### 📋 `automacao_email.contact_uploads` (6 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`contacts`** via `contacts.upload_id = contact_uploads.id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `file_name` | `text` | Não | - |
+| `uploaded_at` | `timestamp with time zone` | Não | - |
+| `uploaded_ip` | `text` | Sim | - |
+| `total_rows` | `integer` | Não | - |
+| `accepted_rows` | `integer` | Não | - |
+| `rejected_rows` | `integer` | Não | - |
+
+---
+
+<a id="tabela-contacts"></a>
+### 📋 `automacao_email.contacts` (57.563 linhas • 20 MB)
+
+* **Chave Primária (PK):** `cnpj_key`, `email`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `cnpj_key`, `email`
+* **🔗 Conexões no MER:**
+  * Aponta para **`contact_uploads`** via `contacts.upload_id = contact_uploads.id` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `cnpj_key` | `text` | Não | 🔑 **PK** |
+| `email` | `text` | Não | 🔑 **PK** |
+| `cnpj_raw` | `text` | Não | - |
+| `client_name` | `text` | Sim | - |
+| `upload_id` | `bigint` | Não | 🔗 **FK** |
+
+---
+
+<a id="tabela-outbox"></a>
+### 📋 `automacao_email.outbox` (174 linhas • 216 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `batch_id`, `id`, `run_id`, `claimed_at`, `cnpj_key`, `cte_key`, `nf_key`
+* **🔗 Conexões no MER:**
+  * Aponta para **`send_runs`** via `outbox.run_id = send_runs.id` (FK Física)
+  * Aponta para **`batches`** via `outbox.batch_id = batches.id` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `batch_id` | `bigint` | Não | 🔗 **FK** ⚡ **Indexada** |
+| `sheet_row` | `integer` | Não | - |
+| `cnpj_raw` | `text` | Não | - |
+| `cnpj_key` | `text` | Não | ⚡ **Indexada** |
+| `tomador` | `text` | Não | - |
+| `cte` | `text` | Não | - |
+| `cte_key` | `text` | Não | ⚡ **Indexada** |
+| `nf` | `text` | Não | - |
+| `nf_key` | `text` | Não | ⚡ **Indexada** |
+| `valor` | `numeric(14,2)` | Não | - |
+| `data_pgto` | `date` | Não | - |
+| `to_emails` | `text[]` | Não | - |
+| `already_sent` | `boolean` | Não | - |
+| `status` | `text` | Não | - |
+| `error` | `text` | Sim | - |
+| `claimed_at` | `timestamp with time zone` | Sim | ⚡ **Indexada** |
+| `sent_at` | `timestamp with time zone` | Sim | - |
+| `run_id` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `created_at` | `timestamp with time zone` | Não | - |
+
+---
+
+<a id="tabela-schema_migrations"></a>
+### 📋 `automacao_email.schema_migrations` (2 linhas • 32 kB)
+
+* **Chave Primária (PK):** `version`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `version`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `version` | `text` | Não | 🔑 **PK** |
+| `applied_at` | `timestamp with time zone` | Não | - |
+
+---
+
+<a id="tabela-send_runs"></a>
+### 📋 `automacao_email.send_runs` (36 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`outbox`** via `outbox.run_id = send_runs.id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `started_at` | `timestamp with time zone` | Não | - |
+| `finished_at` | `timestamp with time zone` | Sim | - |
+| `sent` | `integer` | Não | - |
+| `failed` | `integer` | Não | - |
+| `recovered_stuck` | `integer` | Não | - |
+| `report_sent_at` | `timestamp with time zone` | Sim | - |
+| `error` | `text` | Sim | - |
+
+---
+
+<a id="tabela-life"></a>
+### 📋 `public.LIFE` (FDW • 0 bytes)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `UNID_EMP` | `text` | Sim | - |
+| `DATA_OCORRENCIA` | `text` | Sim | - |
+| `NOME_FUNCIONARIO` | `text` | Sim | - |
+| `NOME_VEICULO` | `text` | Sim | - |
+| `COD_VEICULO` | `text` | Sim | - |
+| `VEIC_NUM_SERIE` | `text` | Sim | - |
+| `FUSO_VEIC` | `text` | Sim | - |
+| `OCORRENCIA` | `text` | Sim | - |
+| `PARCODIGO` | `text` | Sim | - |
+| `NAO_CONFORMIDADE` | `text` | Sim | - |
+| `DURACAO` | `text` | Sim | - |
+| `LAT_LONG` | `text` | Sim | - |
+| `LATITUDE` | `text` | Sim | - |
+| `LONGITUDE` | `text` | Sim | - |
+| `ULTIMO_PC` | `text` | Sim | - |
+| `PROXIMO_PC` | `text` | Sim | - |
+| `LINHA` | `text` | Sim | - |
+| `ROTA` | `text` | Sim | - |
+| `VALOR_LIMITE` | `text` | Sim | - |
+| `DESVIO` | `text` | Sim | - |
+| `GRAVIDADE` | `text` | Sim | - |
+| `LIDA` | `text` | Sim | - |
+| `OBS_LIDA` | `text` | Sim | - |
+| `DATA_SMS` | `text` | Sim | - |
+| `OCORRENCIA_NOME_REDUZIDO` | `text` | Sim | - |
+| `USUARIO_ALTERACAO` | `text` | Sim | - |
+| `DATA_ALTERACAO` | `text` | Sim | - |
+| `ID` | `integer` | Sim | - |
+| `FUNCMATRICULA` | `text` | Sim | - |
+
+---
+
+<a id="tabela-rastreamento_life"></a>
+### 📋 `public.rastreamento_life` (FDW • 0 bytes)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`escala_motoristas`** via `escala_motoristas.COD_VEICULO = rastreamento_life.veiculo`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `datahora` | `timestamp without time zone` | Sim | - |
+| `veiculo` | `integer` | Sim | - |
+| `codigoempresa` | `character varying(20)` | Sim | - |
+| `placa` | `character varying(10)` | Sim | - |
+| `latitude` | `double precision` | Sim | - |
+| `longitude` | `double precision` | Sim | - |
+| `fuso_horario_veic` | `integer` | Sim | - |
+| `odometroviacan` | `numeric(12,1)` | Sim | - |
+| `dataodometro` | `timestamp without time zone` | Sim | - |
+| `perctanquecomb` | `character varying(10)` | Sim | - |
+| `datahoraperctanquecomb` | `timestamp without time zone` | Sim | - |
+| `ueid` | `integer` | Sim | - |
+| `disp_modelo_imei` | `character varying(50)` | Sim | - |
+
+---
+
+<a id="tabela-rastreamento_sascar"></a>
+### 📋 `public.rastreamento_sascar` (FDW • 0 bytes)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * Aponta para **`veiculos_sascar`** via `rastreamento_sascar.vehicleId = veiculos_sascar.idVeiculo` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `vehicleId` | `bigint` | Sim | 🔗 **FK** |
+| `positionDateUtc` | `timestamp without time zone` | Sim | - |
+| `packetDateUtc` | `timestamp without time zone` | Sim | - |
+| `latitude` | `double precision` | Sim | - |
+| `longitude` | `double precision` | Sim | - |
+| `direction` | `integer` | Sim | - |
+| `speed` | `integer` | Sim | - |
+| `ignition` | `integer` | Sim | - |
+| `odometer` | `integer` | Sim | - |
+| `horimeter` | `integer` | Sim | - |
+| `power` | `integer` | Sim | - |
+| `output1` | `integer` | Sim | - |
+| `output2` | `integer` | Sim | - |
+| `output3` | `integer` | Sim | - |
+| `output4` | `integer` | Sim | - |
+| `input1` | `integer` | Sim | - |
+| `input2` | `integer` | Sim | - |
+| `input3` | `integer` | Sim | - |
+| `input4` | `integer` | Sim | - |
+| `satellite` | `integer` | Sim | - |
+| `memory` | `integer` | Sim | - |
+| `referenceId` | `integer` | Sim | - |
+| `blocking` | `integer` | Sim | - |
+| `gps` | `integer` | Sim | - |
+| `state` | `character varying(10)` | Sim | - |
+| `macroCode` | `integer` | Sim | - |
+| `mdtType` | `integer` | Sim | - |
+| `anchorStatus` | `integer` | Sim | - |
+| `packetId` | `bigint` | Não | - |
+| `integratorId` | `bigint` | Sim | - |
+| `driverId` | `bigint` | Sim | - |
+| `humiditySerial` | `integer` | Sim | - |
+
+> *Exibindo as 32 colunas principais de um total de 64 colunas. Todas as 64 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-veiculos_sascar"></a>
+### 📋 `public.veiculos_sascar` (FDW • 0 bytes)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`rastreamento_sascar`** via `rastreamento_sascar.vehicleId = veiculos_sascar.idVeiculo`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `descricao` | `character varying(100)` | Sim | - |
+| `idAtuador1` | `integer` | Sim | - |
+| `idAtuador2` | `integer` | Sim | - |
+| `idAtuador3` | `integer` | Sim | - |
+| `idAtuador4` | `integer` | Sim | - |
+| `idAtuador5` | `integer` | Sim | - |
+| `idAtuador6` | `integer` | Sim | - |
+| `idAtuador7` | `integer` | Sim | - |
+| `idAtuador8` | `integer` | Sim | - |
+| `idCliente` | `bigint` | Sim | - |
+| `idEquipamento` | `bigint` | Sim | - |
+| `idEquipamentoDesc` | `character varying(50)` | Sim | - |
+| `idSensor1` | `integer` | Sim | - |
+| `idSensor2` | `integer` | Sim | - |
+| `idSensor3` | `integer` | Sim | - |
+| `idSensor4` | `integer` | Sim | - |
+| `idSensor5` | `integer` | Sim | - |
+| `idSensor6` | `integer` | Sim | - |
+| `idSensor7` | `integer` | Sim | - |
+| `idSensor8` | `integer` | Sim | - |
+| `idSerial0` | `integer` | Sim | - |
+| `idSerial1` | `integer` | Sim | - |
+| `idVeiculo` | `bigint` | Não | - |
+| `placa` | `character varying(10)` | Sim | - |
+| `portaBloqueio` | `integer` | Sim | - |
+| `portaPanico` | `integer` | Sim | - |
+| `satelital` | `boolean` | Sim | - |
+| `telemetria` | `boolean` | Sim | - |
+
+---
+
+<a id="tabela-gi1010"></a>
+### 📋 `public.GI1010` (22.612 linhas • 9144 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`escala_motoristas`** via `escala_motoristas.G55_LOCORI = GI1010.GI1_COD`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `GI1_FILIAL` | `text` | Sim | - |
+| `GI1_COD` | `text` | Sim | - |
+| `GI1_PAIS` | `text` | Sim | - |
+| `GI1_UF` | `text` | Sim | - |
+| `GI1_CDMUNI` | `text` | Sim | - |
+| `GI1_KMROD` | `double precision` | Sim | - |
+| `GI1_DSMUNI` | `text` | Sim | - |
+| `GI1_KMGAR` | `double precision` | Sim | - |
+| `GI1_MINUTO` | `double precision` | Sim | - |
+| `GI1_DTINC` | `text` | Sim | - |
+| `GI1_DTALT` | `text` | Sim | - |
+| `GI1_IBGE` | `text` | Sim | - |
+| `GI1_SIGLA` | `text` | Sim | - |
+| `GI1_TIPO` | `text` | Sim | - |
+| `GI1_FORMUN` | `text` | Sim | - |
+| `GI1_LJFRMN` | `text` | Sim | - |
+| `GI1_MSBLQL` | `text` | Sim | - |
+| `GI1_HRROD` | `text` | Sim | - |
+| `GI1_CODPAI` | `text` | Sim | - |
+| `GI1_HRGAR` | `text` | Sim | - |
+| `GI1_CODTIP` | `text` | Sim | - |
+| `GI1_AGENCI` | `text` | Sim | - |
+| `GI1_KMGRRD` | `double precision` | Sim | - |
+| `GI1_HRGRRD` | `text` | Sim | - |
+| `GI1_KMRDGR` | `double precision` | Sim | - |
+| `GI1_HRRDGR` | `text` | Sim | - |
+| `GI1_CODINT` | `text` | Sim | - |
+| `D_E_L_E_T_` | `text` | Sim | - |
+| `R_E_C_N_O_` | `bigint` | Sim | - |
+| `R_E_C_D_E_L_` | `bigint` | Sim | - |
+| `GI1_ZONA` | `text` | Sim | - |
+| `GI1_STATUS` | `text` | Sim | - |
+| `GI1_CEP` | `text` | Sim | - |
+| `GI1_ENDERE` | `text` | Sim | - |
+| `GI1_BAIRRO` | `text` | Sim | - |
+| `GI1_TPLOC` | `text` | Sim | - |
+| `GI1_URBANO` | `text` | Sim | - |
+| `GI1_DESCRI` | `text` | Sim | - |
+
+---
+
+<a id="tabela-mdfe"></a>
+### 📋 `public.MDFe` (0 linhas • 8576 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * Aponta para **`manifesto`** via `MDFe.id_manifesto = manifesto.id_manifesto` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_mdfe` | `bigint` | Sim | - |
+| `id_manifesto` | `bigint` | Sim | 🔗 **FK** |
+| `numero` | `bigint` | Sim | - |
+| `chave` | `text` | Sim | - |
+| `recibo` | `text` | Sim | - |
+| `protocolo` | `text` | Sim | - |
+| `prot_cancelamento` | `text` | Sim | - |
+| `prot_encerramento` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `data_emissao` | `date` | Sim | - |
+| `hora_emissao` | `text` | Sim | - |
+| `data_cancelamento` | `date` | Sim | - |
+| `hora_cancelamento` | `text` | Sim | - |
+| `data_encerramento` | `date` | Sim | - |
+| `hora_encerramento` | `text` | Sim | - |
+| `operador_emissao` | `bigint` | Sim | - |
+| `operador_encerramento` | `text` | Sim | - |
+| `operador_cancelamento` | `text` | Sim | - |
+| `ambiente` | `bigint` | Sim | - |
+| `tpemis` | `bigint` | Sim | - |
+| `serie` | `bigint` | Sim | - |
+| `mdfe_arquivo_aut` | `text` | Sim | - |
+| `mdfe_arquivo_canc` | `text` | Sim | - |
+| `mdfe_arquivo_enc` | `text` | Sim | - |
+| `destino` | `text` | Sim | - |
+| `origem` | `text` | Sim | - |
+| `base` | `bigint` | Sim | - |
+| `averbacao` | `text` | Sim | - |
+| `trecho` | `text` | Sim | - |
+| `nSeqEvento` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-_hash_cotacao"></a>
+### 📋 `public._hash_cotacao` (995.548 linhas • 65 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `h` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-_hash_frete_hist"></a>
+### 📋 `public._hash_frete_hist` (39.147.119 linhas • 2497 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `h` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-_hash_pre_minuta"></a>
+### 📋 `public._hash_pre_minuta` (766.123 linhas • 50 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `h` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-_hash_volumes"></a>
+### 📋 `public._hash_volumes` (14.219.358 linhas • 942 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `h` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-aero"></a>
+### 📋 `public.aero` (0 linhas • 56 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.transf_origem = aero.id_aero`
+  * É referenciada por **`minuta`** via `minuta.transf_destino = aero.id_aero`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_aero` | `bigint` | Sim | - |
+| `sigla` | `text` | Sim | - |
+| `aeroporto` | `text` | Sim | - |
+| `end` | `text` | Sim | - |
+| `bairro` | `text` | Sim | - |
+| `cidade` | `text` | Sim | - |
+| `uf` | `text` | Sim | - |
+| `telefone` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `agente` | `text` | Sim | - |
+| `icao` | `text` | Sim | - |
+| `lat` | `double precision` | Sim | - |
+| `lng` | `double precision` | Sim | - |
+| `base` | `text` | Sim | - |
+| `referencia` | `text` | Sim | - |
+| `updated_at` | `timestamp without time zone` | Sim | - |
+| `obriga_conferencia` | `bigint` | Sim | - |
+| `alertaAeroporto` | `text` | Sim | - |
+| `diaAlerta` | `text` | Sim | - |
+| `statusAlerta` | `text` | Sim | - |
+
+---
+
+<a id="tabela-alteracoes_coleta"></a>
+### 📋 `public.alteracoes_coleta` (1.907.734 linhas • 227 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`, `coleta`
+* **🔗 Conexões no MER:**
+  * Aponta para **`coleta`** via `alteracoes_coleta.coleta = coleta.id_coleta` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `data` | `timestamp without time zone` | Sim | - |
+| `v_a` | `character varying(250)` | Sim | - |
+| `v_n` | `character varying(250)` | Sim | - |
+| `coluna` | `character varying(45)` | Sim | - |
+| `operador` | `integer` | Sim | - |
+| `coleta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+
+---
+
+<a id="tabela-anexos"></a>
+### 📋 `public.anexos` (2.090.695 linhas • 517 MB)
+
+* **Chave Primária (PK):** `id_anexo`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_anexo`, `id_coleta`, `id_manifesto`, `id_minuta`, `id_nota`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `anexos.id_minuta = minuta.id_minuta` (FK Lógica)
+  * Aponta para **`coleta`** via `anexos.id_coleta = coleta.id_coleta` (FK Lógica)
+  * Aponta para **`manifesto`** via `anexos.id_manifesto = manifesto.id_manifesto` (FK Lógica)
+  * Aponta para **`notas_fiscais`** via `anexos.id_nota = notas_fiscais.id_nf` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_anexo` | `integer` | Não | 🔑 **PK** |
+| `chave` | `character varying(255)` | Sim | - |
+| `id_minuta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `imagem` | `character varying(255)` | Não | - |
+| `data` | `date` | Não | - |
+| `hora` | `time without time zone` | Não | - |
+| `operador` | `integer` | Sim | - |
+| `id_coleta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `id_fatura` | `integer` | Sim | - |
+| `id_lancamento` | `integer` | Sim | - |
+| `id_nota` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `tipo` | `smallint` | Sim | - |
+| `id_agente` | `integer` | Sim | - |
+| `id_local` | `integer` | Sim | - |
+| `tipo_cadastro` | `smallint` | Sim | - |
+| `id_reclamacao` | `integer` | Sim | - |
+| `provider` | `smallint` | Sim | - |
+| `id_manifesto` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `created_at` | `timestamp without time zone` | Sim | - |
+
+---
+
+<a id="tabela-apontamento_motoristas"></a>
+### 📋 `public.apontamento_motoristas` (158.473 linhas • 26 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `Filial` | `text` | Sim | - |
+| `Matricula` | `text` | Sim | - |
+| `Centro_Custo` | `text` | Sim | - |
+| `RJ_DESC` | `text` | Sim | - |
+| `NOME` | `text` | Sim | - |
+| `PI_DATA` | `text` | Sim | - |
+| `PI_PD` | `text` | Sim | - |
+| `TipoHoras` | `text` | Sim | - |
+| `PI_QUANT` | `double precision` | Sim | - |
+| `PI_STATUS` | `text` | Sim | - |
+| `Tipo` | `text` | Sim | - |
+
+---
+
+<a id="tabela-banco_horas"></a>
+### 📋 `public.banco_horas` (39.408 linhas • 6792 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `PI_FILIAL` | `text` | Sim | - |
+| `PI_MAT` | `text` | Sim | - |
+| `CTT_DESC01` | `text` | Sim | - |
+| `RA_NOME` | `text` | Sim | - |
+| `PI_DATA` | `text` | Sim | - |
+| `PI_PD` | `text` | Sim | - |
+| `P9_DESC` | `text` | Sim | - |
+| `PI_QUANT` | `double precision` | Sim | - |
+| `PI_STATUS` | `text` | Sim | - |
+| `P9_TIPOCOD` | `text` | Sim | - |
+
+---
+
+<a id="tabela-cadastro_motoristas"></a>
+### 📋 `public.cadastro_motoristas` (3.217 linhas • 984 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `Filial` | `text` | Sim | - |
+| `Matrícula` | `text` | Sim | - |
+| `Nome` | `text` | Sim | - |
+| `TURNO` | `text` | Sim | - |
+| `ID_CentroCusto` | `text` | Sim | - |
+| `Desc_CentroCusto` | `text` | Sim | - |
+| `Sexo` | `text` | Sim | - |
+| `Nascimento` | `text` | Sim | - |
+| `Estado Civil` | `text` | Sim | - |
+| `Estado Origem` | `text` | Sim | - |
+| `Município Natural` | `text` | Sim | - |
+| `Centro de Custo` | `text` | Sim | - |
+| `Cod Função` | `text` | Sim | - |
+| `Descriçao Função` | `text` | Sim | - |
+| `Data Admissão` | `text` | Sim | - |
+| `Data Demissão` | `text` | Sim | - |
+| `Horas Semanais` | `double precision` | Sim | - |
+| `Cod Recisão` | `text` | Sim | - |
+| `Horas Turno` | `double precision` | Sim | - |
+| `PCD` | `text` | Sim | - |
+
+---
+
+<a id="tabela-coleta"></a>
+### 📋 `public.coleta` (327.677 linhas • 248 MB)
+
+* **Chave Primária (PK):** `id_coleta`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_coleta`, `id_minuta`
+* **🔗 Conexões no MER:**
+  * Aponta para **`cotacao`** via `coleta.cotacao = cotacao.id_cotacao` (FK Lógica)
+  * Aponta para **`minuta`** via `coleta.id_minuta = minuta.id_minuta` (FK Lógica)
+  * Aponta para **`fornecedores`** via `coleta.id_cliente = fornecedores.id_local` (FK Lógica)
+  * Aponta para **`unidades`** via `coleta.unidade = unidades.id_unidade` (FK Lógica)
+  * É referenciada por **`coleta_enderecos`** via `coleta_enderecos.coleta = coleta.id_coleta`
+  * É referenciada por **`coleta_historico`** via `coleta_historico.coleta = coleta.id_coleta`
+  * É referenciada por **`alteracoes_coleta`** via `alteracoes_coleta.coleta = coleta.id_coleta`
+  * É referenciada por **`volumes`** via `volumes.id_coleta = coleta.id_coleta`
+  * É referenciada por **`frete_hist`** via `frete_hist.coleta = coleta.id_coleta`
+  * É referenciada por **`anexos`** via `anexos.id_coleta = coleta.id_coleta`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_coleta` | `bigint` | Não | 🔑 **PK** |
+| `id_cliente` | `bigint` | Sim | 🔗 **FK** |
+| `centro_custo` | `text` | Sim | - |
+| `tabela` | `bigint` | Sim | - |
+| `servico` | `bigint` | Sim | - |
+| `cotacao` | `bigint` | Sim | 🔗 **FK** |
+| `modal` | `bigint` | Sim | - |
+| `forma_transp` | `bigint` | Sim | - |
+| `id_origem` | `bigint` | Sim | - |
+| `id_destino` | `bigint` | Sim | - |
+| `transf_origem` | `text` | Sim | - |
+| `transf_destino` | `text` | Sim | - |
+| `cia_transf` | `bigint` | Sim | - |
+| `cia_servico` | `bigint` | Sim | - |
+| `obs` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `data` | `date` | Sim | - |
+| `operador` | `bigint` | Sim | - |
+| `unidade` | `bigint` | Sim | 🔗 **FK** |
+| `coleta_data` | `date` | Sim | - |
+| `coleta_hora` | `text` | Sim | - |
+| `chave` | `text` | Sim | - |
+| `total_nf` | `bigint` | Sim | - |
+| `total_nf_valor` | `double precision` | Sim | - |
+| `total_volumes` | `double precision` | Sim | - |
+| `total_peso` | `double precision` | Sim | - |
+| `total_cubo` | `double precision` | Sim | - |
+| `total_taxado` | `double precision` | Sim | - |
+| `tipo_frequencia` | `bigint` | Sim | - |
+| `coleta_hora_de` | `text` | Sim | - |
+| `coleta_resp` | `bigint` | Sim | - |
+| `coleta_resp_id` | `bigint` | Sim | - |
+| `coleta_resp_servico` | `bigint` | Sim | - |
+| `coleta_veiculo` | `text` | Sim | - |
+| `coleta_custo` | `double precision` | Sim | - |
+| `coletado_data` | `text` | Sim | - |
+| `coletado_hora` | `text` | Sim | - |
+| `coletaEmails` | `text` | Sim | - |
+| `entrega_data` | `text` | Sim | - |
+| `id_seguro` | `bigint` | Sim | - |
+| `tipo_pagamento` | `bigint` | Sim | - |
+| `entrega_resp_id` | `text` | Sim | - |
+| `agendamento_coleta` | `text` | Sim | - |
+| `coleta_fatura` | `text` | Sim | - |
+| `coleta_minuta` | `text` | Sim | - |
+| `id_minuta` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `coleta_custo_novo` | `text` | Sim | - |
+| `id_expedidor` | `text` | Sim | - |
+| `id_entrega` | `text` | Sim | - |
+| `id_endereco_expedidor` | `text` | Sim | - |
+| `id_endereco_entrega` | `text` | Sim | - |
+| `data_limite` | `text` | Sim | - |
+| `coleta_motorista` | `text` | Sim | - |
+| `valor_total_notas` | `double precision` | Sim | - |
+| `valor_total_produto` | `double precision` | Sim | - |
+| `tipo_valor_nota` | `bigint` | Sim | - |
+| `coleta_taxa_emergencia` | `text` | Sim | - |
+| `data_agendada` | `text` | Sim | - |
+| `previsao_chegada_data` | `text` | Sim | - |
+| `tipoColeta` | `bigint` | Sim | - |
+
+> *Exibindo as 61 colunas principais de um total de 108 colunas. Todas as 108 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-coleta_enderecos"></a>
+### 📋 `public.coleta_enderecos` (35.544 linhas • 5400 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`, `coleta`
+* **🔗 Conexões no MER:**
+  * Aponta para **`coleta`** via `coleta_enderecos.coleta = coleta.id_coleta` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `integer` | Não | 🔑 **PK** |
+| `tipo` | `smallint` | Sim | - |
+| `coleta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `endereco` | `character varying(60)` | Sim | - |
+| `bairro` | `character varying(60)` | Sim | - |
+| `cep` | `character varying(8)` | Sim | - |
+| `cidade` | `character varying(50)` | Sim | - |
+| `numero` | `character varying(45)` | Sim | - |
+| `telefone` | `character varying(12)` | Sim | - |
+| `complemento` | `character varying(45)` | Sim | - |
+| `contato` | `character varying(55)` | Sim | - |
+| `fantasia` | `character varying(60)` | Sim | - |
+| `latitude` | `character varying(16)` | Sim | - |
+| `longitude` | `character varying(16)` | Sim | - |
+
+---
+
+<a id="tabela-coleta_historico"></a>
+### 📋 `public.coleta_historico` (1.905.462 linhas • 265 MB)
+
+* **Chave Primária (PK):** `id_log`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_log`, `coleta`
+* **🔗 Conexões no MER:**
+  * Aponta para **`coleta`** via `coleta_historico.coleta = coleta.id_coleta` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_log` | `integer` | Não | 🔑 **PK** |
+| `data` | `date` | Sim | - |
+| `hora` | `time without time zone` | Sim | - |
+| `status` | `smallint` | Sim | - |
+| `operador` | `integer` | Sim | - |
+| `obs` | `character varying(255)` | Sim | - |
+| `edi` | `smallint` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `hora_incluido` | `time without time zone` | Sim | - |
+| `ocorrencia` | `smallint` | Sim | - |
+| `coleta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `unidade` | `character varying(5)` | Sim | - |
+| `fornecedor` | `integer` | Sim | - |
+| `created_at` | `timestamp without time zone` | Sim | - |
+
+---
+
+<a id="tabela-cotacao"></a>
+### 📋 `public.cotacao` (995.548 linhas • 765 MB)
+
+* **Chave Primária (PK):** `id_cotacao`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_cotacao`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`coleta`** via `coleta.cotacao = cotacao.id_cotacao`
+  * É referenciada por **`minuta`** via `minuta.cotacao = cotacao.id_cotacao`
+  * É referenciada por **`volumes`** via `volumes.id_cotacao = cotacao.id_cotacao`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_cotacao` | `integer` | Não | 🔑 **PK** |
+| `unidade` | `bigint` | Sim | - |
+| `servico` | `bigint` | Sim | - |
+| `tabela` | `bigint` | Sim | - |
+| `tabela_origem` | `character varying(11)` | Sim | - |
+| `tabela_destino` | `character varying(11)` | Sim | - |
+| `cliente` | `bigint` | Sim | - |
+| `nome` | `character varying(45)` | Sim | - |
+| `telefone` | `character varying(45)` | Sim | - |
+| `id_origem` | `character varying(11)` | Sim | - |
+| `origemCidade` | `character varying(11)` | Sim | - |
+| `id_destino` | `character varying(11)` | Sim | - |
+| `destinoCidade` | `character varying(11)` | Sim | - |
+| `totalPeso` | `numeric(12,2)` | Sim | - |
+| `totalCubo` | `numeric(12,3)` | Sim | - |
+| `totalTaxado` | `numeric(12,3)` | Sim | - |
+| `cubagem_aereo` | `numeric(12,3)` | Sim | - |
+| `cubagem_rodoviario` | `numeric(12,3)` | Sim | - |
+| `TotalNotas` | `numeric(12,2)` | Sim | - |
+| `notas_fiscais` | `character varying(45)` | Sim | - |
+| `mercadoria` | `bigint` | Sim | - |
+| `transf_origem` | `character varying(11)` | Sim | - |
+| `transf_destino` | `character varying(11)` | Sim | - |
+| `coleta_data` | `date` | Sim | - |
+| `prev_entrega_data` | `date` | Sim | - |
+| `coleta_resp` | `bigint` | Sim | - |
+| `coleta_resp_id` | `bigint` | Sim | - |
+| `coleta_custo` | `numeric(12,2)` | Sim | - |
+| `entrega_resp_id` | `bigint` | Sim | - |
+| `frete_coleta` | `numeric(12,2)` | Sim | - |
+| `frete_nf` | `numeric(12,2)` | Sim | - |
+| `frete_advalorem` | `numeric(12,2)` | Sim | - |
+| `frete_peso` | `numeric(12,2)` | Sim | - |
+| `frete_total` | `numeric(12,2)` | Sim | - |
+| `validade` | `date` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `hora_incluido` | `time without time zone` | Sim | - |
+| `totalVolumes` | `bigint` | Sim | - |
+| `percentAdvalorem` | `numeric(12,3)` | Sim | - |
+| `id_cliente` | `integer` | Sim | - |
+| `id_seguro` | `integer` | Sim | - |
+| `data` | `date` | Sim | - |
+| `data_prazo` | `date` | Sim | - |
+| `coleta_hora` | `character varying(10)` | Sim | - |
+| `coleta_hora_de` | `character varying(10)` | Sim | - |
+| `total_nf` | `integer` | Sim | - |
+| `total_nf_valor` | `numeric(15,2)` | Sim | - |
+| `total_volumes` | `character varying(15)` | Sim | - |
+| `total_peso` | `numeric(10,2)` | Sim | - |
+| `total_cubo` | `numeric(12,3)` | Sim | - |
+| `cte_imposto_tipo` | `integer` | Sim | - |
+| `tipo_pagamento` | `integer` | Sim | - |
+| `tipo_icms` | `smallint` | Sim | - |
+| `id_empresa` | `integer` | Sim | - |
+| `coleta_veiculo` | `bigint` | Sim | - |
+| `id` | `bigint` | Sim | - |
+| `id_expedidor` | `integer` | Sim | - |
+| `id_entrega` | `integer` | Sim | - |
+| `id_transportadora` | `integer` | Sim | - |
+| `transp_minuta` | `character varying(40)` | Sim | - |
+| `ctrc_valor` | `numeric(12,2)` | Sim | - |
+| `id_armador` | `integer` | Sim | - |
+| `armador_minuta` | `character varying(40)` | Sim | - |
+| `fatura_id` | `integer` | Sim | - |
+| `fatura_status` | `integer` | Sim | - |
+| `data_saida` | `date` | Sim | - |
+| `data_prev_saida` | `date` | Sim | - |
+| `data_entrega` | `date` | Sim | - |
+| `entrega_nome` | `character varying(40)` | Sim | - |
+| `chave` | `character varying(255)` | Sim | - |
+| `edi_oco_recebido` | `integer` | Sim | - |
+| `id_motorista` | `bigint` | Sim | - |
+| `id_terceiro` | `bigint` | Sim | - |
+| `motivo_coleta` | `character varying(100)` | Sim | - |
+| `tx_emergencia_coleta` | `smallint` | Sim | - |
+| `calcula_custo_coleta` | `smallint` | Sim | - |
+| `diversos_adicional_minuta` | `smallint` | Sim | - |
+| `data_aprovada` | `date` | Sim | - |
+| `manter_valor` | `smallint` | Sim | - |
+| `tipo_emissao` | `smallint` | Sim | - |
+| `origem_cep` | `character varying(8)` | Sim | - |
+| `destino_cep` | `character varying(8)` | Sim | - |
+| `coleta_resp_servico` | `integer` | Sim | - |
+| `tipo_base_desconto` | `smallint` | Sim | - |
+| `agenda_data` | `date` | Sim | - |
+| `seg_valor` | `numeric(12,2)` | Sim | - |
+| `despacho_resp_id` | `bigint` | Sim | - |
+| `data_limite_aprovacao` | `date` | Sim | - |
+| `cod_trecho` | `integer` | Sim | - |
+| `ret_despacho_resp_id` | `bigint` | Sim | - |
+| `id_endereco_expedidor` | `integer` | Sim | - |
+| `id_endereco_entrega` | `integer` | Sim | - |
+
+> *Exibindo as 93 colunas principais de um total de 194 colunas. Todas as 194 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-cte_status"></a>
+### 📋 `public.cte_status` (17 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id_status`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_status`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.cte_status = cte_status.id_status`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_status` | `bigint` | Não | 🔑 **PK** |
+| `status` | `text` | Sim | - |
+| `descricao` | `text` | Sim | - |
+| `cor` | `text` | Sim | - |
+
+---
+
+<a id="tabela-cte_substituicao"></a>
+### 📋 `public.cte_substituicao` (5.685 linhas • 2320 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`, `cte_chave`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `cte_substituicao.id_minuta = minuta.id_minuta` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `id_minuta` | `bigint` | Sim | 🔗 **FK** |
+| `data` | `text` | Sim | - |
+| `numero` | `bigint` | Sim | - |
+| `serie` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `valor` | `double precision` | Sim | - |
+| `chave` | `text` | Sim | - |
+| `cnpj` | `text` | Sim | - |
+| `cte_chave` | `text` | Sim | ⚡ **Indexada** |
+
+---
+
+<a id="tabela-cte_tipo"></a>
+### 📋 `public.cte_tipo` (5 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.cte_tipo_cte = cte_tipo.id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `tipo` | `text` | Sim | - |
+| `codigo` | `text` | Sim | - |
+
+---
+
+<a id="tabela-entrega_dias"></a>
+### 📋 `public.entrega_dias` (4.732 linhas • 520 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_cidade`, `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Sim | ⚡ **Indexada** |
+| `id_cidade` | `bigint` | Sim | ⚡ **Indexada** |
+| `dias` | `text` | Sim | - |
+
+---
+
+<a id="tabela-equipamento"></a>
+### 📋 `public.equipamento` (104 linhas • 136 kB)
+
+* **Chave Primária (PK):** `id_equipamento`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_equipamento`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_equipamento` | `bigint` | Não | 🔑 **PK** |
+| `equipamento` | `text` | Sim | - |
+| `data` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `valor` | `double precision` | Sim | - |
+| `tipo_calculo` | `bigint` | Sim | - |
+| `tipo_find` | `bigint` | Sim | - |
+| `tipo_feriado` | `bigint` | Sim | - |
+| `tipo_sabado` | `bigint` | Sim | - |
+| `saida_sabado` | `bigint` | Sim | - |
+| `saida_fim_semana` | `bigint` | Sim | - |
+| `saida_feriados` | `bigint` | Sim | - |
+| `percentual` | `double precision` | Sim | - |
+| `modal` | `bigint` | Sim | - |
+| `tipo_comercial` | `bigint` | Sim | - |
+| `codigo` | `text` | Sim | - |
+| `cor` | `text` | Sim | - |
+| `valorKm` | `text` | Sim | - |
+| `carro_dedicado` | `bigint` | Sim | - |
+| `cubagem` | `bigint` | Sim | - |
+| `modal_cubagem` | `bigint` | Sim | - |
+| `modalcte` | `bigint` | Sim | - |
+| `temperatura` | `bigint` | Sim | - |
+| `lotacao` | `bigint` | Sim | - |
+| `tpserv` | `bigint` | Sim | - |
+| `cubagem_total` | `bigint` | Sim | - |
+| `limite_peso` | `text` | Sim | - |
+| `limite_volume` | `text` | Sim | - |
+| `limite_peso_volume` | `text` | Sim | - |
+| `origem_calcFrete` | `bigint` | Sim | - |
+| `destino_calcFrete` | `bigint` | Sim | - |
+| `valor_container` | `text` | Sim | - |
+| `limite_servico_volumes` | `text` | Sim | - |
+| `limite_servico_peso` | `double precision` | Sim | - |
+| `limite_servico_total_transportado` | `text` | Sim | - |
+| `limite_servico_frete_total` | `text` | Sim | - |
+
+> *Exibindo as 36 colunas principais de um total de 55 colunas. Todas as 55 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-escala_extraordinaria"></a>
+### 📋 `public.escala_extraordinaria` (70.532 linhas • 22 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `GQK_FILIAL` | `text` | Sim | - |
+| `GQK_CODIGO` | `text` | Sim | - |
+| `GQK_RECURS` | `text` | Sim | - |
+| `GQK_DRECUR` | `text` | Sim | - |
+| `GQK_TCOLAB` | `text` | Sim | - |
+| `GQK_DTREF` | `text` | Sim | - |
+| `GQK_TPDIA` | `text` | Sim | - |
+| `GQK_LOCORI` | `text` | Sim | - |
+| `GQK_DTINI` | `text` | Sim | - |
+| `GQK_HRINI` | `text` | Sim | - |
+| `GQK_LOCDES` | `text` | Sim | - |
+| `GQK_DTFIM` | `text` | Sim | - |
+| `GQK_HRFIM` | `text` | Sim | - |
+| `GQK_CODGYQ` | `text` | Sim | - |
+| `GQK_CODGZS` | `text` | Sim | - |
+| `GQK_JUSTIF` | `text` | Sim | - |
+| `GQK_CONF` | `text` | Sim | - |
+| `GQK_OCOVIA` | `text` | Sim | - |
+| `GQK_ESPHIN` | `text` | Sim | - |
+| `GQK_ESPHFM` | `text` | Sim | - |
+| `GQK_STATUS` | `text` | Sim | - |
+| `GQK_MARCAD` | `text` | Sim | - |
+| `GQK_CODLOC` | `text` | Sim | - |
+| `GQK_TRECUR` | `text` | Sim | - |
+| `GQK_TIPOCO` | `text` | Sim | - |
+| `GQK_OBSERV` | `text` | Sim | - |
+| `GQK_FUNCIO` | `text` | Sim | - |
+| `GQK_TPCONF` | `text` | Sim | - |
+| `GQK_USRCON` | `text` | Sim | - |
+| `GQK_CODVIA` | `text` | Sim | - |
+| `GQK_TERC` | `text` | Sim | - |
+| `GQK_INTERV` | `text` | Sim | - |
+| `D_E_L_E_T_` | `text` | Sim | - |
+| `R_E_C_N_O_` | `bigint` | Sim | - |
+| `R_E_C_D_E_L_` | `bigint` | Sim | - |
+| `GZS_DESCRI` | `text` | Sim | - |
+| `GZS_HRPGTO` | `text` | Sim | - |
+| `GZS_VOLANT` | `text` | Sim | - |
+
+---
+
+<a id="tabela-escala_motoristas"></a>
+### 📋 `public.escala_motoristas` (1.090.363 linhas • 338 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * Aponta para **`rastreamento_life`** via `escala_motoristas.COD_VEICULO = rastreamento_life.veiculo` (FK Lógica)
+  * Aponta para **`GI1010`** via `escala_motoristas.G55_LOCORI = GI1010.GI1_COD` (FK Lógica)
+  * Aponta para **`funcionarios_sra`** via `escala_motoristas.COD_MOTORISTA = funcionarios_sra.RA_MAT` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `GQE_FILIAL` | `text` | Sim | - |
+| `GYN_CODIGO` | `text` | Sim | - |
+| `G55_CODVIA` | `text` | Sim | - |
+| `GYN_LINCOD` | `text` | Sim | - |
+| `G55_SEQ` | `text` | Sim | - |
+| `G55_LOCORI` | `text` | Sim | 🔗 **FK** |
+| `ORIGEM` | `text` | Sim | - |
+| `G55_LOCDES` | `text` | Sim | - |
+| `DESTINO` | `text` | Sim | - |
+| `COD_MOTORISTA` | `text` | Sim | 🔗 **FK** |
+| `NOME_MOTORISTA` | `text` | Sim | - |
+| `COD_VEICULO` | `text` | Sim | 🔗 **FK** |
+| `G55_DTPART` | `text` | Sim | - |
+| `G55_HRINI` | `text` | Sim | - |
+| `G55_DTCHEG` | `text` | Sim | - |
+| `G55_HRFIM` | `text` | Sim | - |
+| `DURACAO` | `text` | Sim | - |
+| `G55_CONF` | `text` | Sim | - |
+
+---
+
+<a id="tabela-estrutura_regioes"></a>
+### 📋 `public.estrutura_regioes` (0 linhas • 2936 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `DUY_FILIAL` | `text` | Sim | - |
+| `DUY_GRPVEN` | `text` | Sim | - |
+| `DUY_DESCRI` | `text` | Sim | - |
+| `DUY_GRPSUP` | `text` | Sim | - |
+| `DUY_EST` | `text` | Sim | - |
+| `DUY_FILDES` | `text` | Sim | - |
+| `DUY_CDRCOL` | `text` | Sim | - |
+| `DUY_CATREG` | `text` | Sim | - |
+| `DUY_CDRTAX` | `text` | Sim | - |
+| `DUY_CATGRP` | `text` | Sim | - |
+| `DUY_REGISE` | `text` | Sim | - |
+| `DUY_ALQISS` | `double precision` | Sim | - |
+| `DUY_PAIS` | `text` | Sim | - |
+| `DUY_CODMUN` | `text` | Sim | - |
+| `DUY_PORTMS` | `text` | Sim | - |
+| `DUY_PERDES` | `double precision` | Sim | - |
+| `D_E_L_E_T_` | `text` | Sim | - |
+| `R_E_C_N_O_` | `bigint` | Sim | - |
+| `DUY_XAGRUP` | `text` | Sim | - |
+| `R_E_C_D_E_L_` | `bigint` | Sim | - |
+| `DUY_USERGI` | `text` | Sim | - |
+| `DUY_USERGA` | `text` | Sim | - |
+| `DUY_CODFOR` | `text` | Sim | - |
+| `DUY_LOJFOR` | `text` | Sim | - |
+
+---
+
+<a id="tabela-etl_control"></a>
+### 📋 `public.etl_control` (36 linhas • 80 kB)
+
+* **Chave Primária (PK):** `table_name`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `table_name`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `table_name` | `text` | Não | 🔑 **PK** |
+| `mode` | `text` | Sim | - |
+| `last_watermark` | `text` | Sim | - |
+| `last_run_at` | `timestamp with time zone` | Sim | - |
+| `last_run_ok` | `boolean` | Sim | - |
+| `last_reconcile_at` | `timestamp with time zone` | Sim | - |
+| `rows_read` | `bigint` | Sim | - |
+| `rows_upserted` | `bigint` | Sim | - |
+| `rows_deleted` | `bigint` | Sim | - |
+| `last_error` | `text` | Sim | - |
+| `last_change_id` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-etl_control_frete_hist"></a>
+### 📋 `public.etl_control_frete_hist` (1 linhas • 64 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `boolean` | Não | 🔑 **PK** |
+| `last_id` | `bigint` | Sim | - |
+| `sweep_cursor` | `bigint` | Sim | - |
+| `sweep_cycle_started` | `timestamp with time zone` | Sim | - |
+| `last_sweep_completed` | `timestamp with time zone` | Sim | - |
+| `last_run_at` | `timestamp with time zone` | Sim | - |
+| `last_run_ok` | `boolean` | Sim | - |
+| `rows_read` | `bigint` | Sim | - |
+| `rows_upserted` | `bigint` | Sim | - |
+| `rows_deleted` | `bigint` | Sim | - |
+| `last_error` | `text` | Sim | - |
+
+---
+
+<a id="tabela-ferias_motoristas"></a>
+### 📋 `public.ferias_motoristas` (1.446 linhas • 152 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `RH_FILIAL` | `text` | Sim | - |
+| `RH_MAT` | `text` | Sim | - |
+| `RH_DATAINI` | `text` | Sim | - |
+| `RH_DATAFIM` | `text` | Sim | - |
+| `RH_DATABAS` | `text` | Sim | - |
+
+---
+
+<a id="tabela-filiais_protheus"></a>
+### 📋 `public.filiais_protheus` (1.272 linhas • 272 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `codigo_filial` | `text` | Sim | - |
+| `descricao_filial` | `text` | Sim | - |
+| `descricao_empresa` | `bigint` | Sim | - |
+| `data_registro` | `timestamp without time zone` | Sim | - |
+| `agencia_sae` | `bigint` | Sim | - |
+| `caixa_agencia` | `bigint` | Sim | - |
+| `maior_receita` | `text` | Sim | - |
+| `cgc` | `bigint` | Sim | - |
+| `agrupadora` | `text` | Sim | - |
+| `cidade` | `text` | Sim | - |
+| `Supervisor` | `text` | Sim | - |
+| `COORDENADAS` | `text` | Sim | - |
+| `FILIAL_RH` | `text` | Sim | - |
+| `TIPO` | `text` | Sim | - |
+| `PACK_LOCATOR` | `text` | Sim | - |
+| `APP_COLENT` | `text` | Sim | - |
+| `propria_terceira` | `text` | Sim | - |
+
+---
+
+<a id="tabela-fornecedores"></a>
+### 📋 `public.fornecedores` (451.389 linhas • 870 MB)
+
+* **Chave Primária (PK):** `id_local`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_local`, `cnpj`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`coleta`** via `coleta.id_cliente = fornecedores.id_local`
+  * É referenciada por **`minuta`** via `minuta.id_cliente = fornecedores.id_local`
+  * É referenciada por **`minuta`** via `minuta.id_origem = fornecedores.id_local`
+  * É referenciada por **`minuta`** via `minuta.id_destino = fornecedores.id_local`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_local` | `numeric` | Não | 🔑 **PK** |
+| `conta` | `text` | Sim | - |
+| `cnpj_tipo` | `numeric` | Sim | - |
+| `cnpj` | `text` | Sim | ⚡ **Indexada** |
+| `fantasia` | `text` | Sim | - |
+| `razao` | `text` | Sim | - |
+| `ramo` | `text` | Sim | - |
+| `endereco` | `text` | Sim | - |
+| `bairro` | `text` | Sim | - |
+| `cep` | `text` | Sim | - |
+| `cidade` | `text` | Sim | - |
+| `ref_cidade` | `text` | Sim | - |
+| `cob_endereco` | `text` | Sim | - |
+| `cob_bairro` | `text` | Sim | - |
+| `cob_cep` | `text` | Sim | - |
+| `cob_cidade` | `text` | Sim | - |
+| `cob_pais` | `text` | Sim | - |
+| `contato` | `text` | Sim | - |
+| `telefone` | `text` | Sim | - |
+| `fax` | `text` | Sim | - |
+| `celular` | `text` | Sim | - |
+| `email` | `text` | Sim | - |
+| `site` | `text` | Sim | - |
+| `insc_estadual` | `text` | Sim | - |
+| `insc_municipal` | `text` | Sim | - |
+| `cliente_tipo` | `numeric` | Sim | - |
+| `tipo_pagamento` | `numeric` | Sim | - |
+| `status` | `numeric` | Sim | - |
+| `data_incluido` | `text` | Sim | - |
+| `unidade` | `text` | Sim | - |
+| `unidade_faturamento` | `numeric` | Sim | - |
+| `unidade_cotacao` | `numeric` | Sim | - |
+| `chave` | `text` | Sim | - |
+| `id_tabela` | `numeric` | Sim | - |
+| `tipo_cadastro` | `numeric` | Sim | - |
+| `id_cliente` | `text` | Sim | - |
+| `obs_coleta` | `text` | Sim | - |
+| `obs_minuta` | `text` | Sim | - |
+| `obs_coleta_re` | `numeric` | Sim | - |
+| `obs_coleta_dest` | `numeric` | Sim | - |
+| `obs_coleta_toma` | `numeric` | Sim | - |
+| `obs_minuta_re` | `numeric` | Sim | - |
+| `obs_minuta_dest` | `numeric` | Sim | - |
+| `obs_minuta_toma` | `numeric` | Sim | - |
+| `dt_fundacao` | `text` | Sim | - |
+| `resp_1_nome` | `text` | Sim | - |
+| `resp_1_cpf` | `text` | Sim | - |
+| `resp_2_nome` | `text` | Sim | - |
+| `resp_2_cpf` | `text` | Sim | - |
+| `numero` | `text` | Sim | - |
+| `valor_max_fatura` | `text` | Sim | - |
+| `data_atualizado` | `text` | Sim | - |
+| `data_cancelado` | `text` | Sim | - |
+| `emiteMinuta` | `numeric` | Sim | - |
+| `serasaData` | `text` | Sim | - |
+| `serasavalidade` | `text` | Sim | - |
+| `cobNfse` | `numeric` | Sim | - |
+| `cobMinuta` | `numeric` | Sim | - |
+| `codigofiscal` | `numeric` | Sim | - |
+| `cidade_s` | `text` | Sim | - |
+| `cidade_cob_s` | `text` | Sim | - |
+| `tipo_faturamento` | `numeric` | Sim | - |
+| `valor_gr` | `double precision` | Sim | - |
+| `dataDDR` | `text` | Sim | - |
+| `nf_fatura` | `numeric` | Sim | - |
+| `base_coleta` | `text` | Sim | - |
+| `data_vigencia` | `text` | Sim | - |
+| `tipo_imposto` | `text` | Sim | - |
+| `validaNf` | `numeric` | Sim | - |
+| `tipoPeso` | `numeric` | Sim | - |
+| `data_vigencia_2` | `text` | Sim | - |
+| `arredondamento_peso` | `numeric` | Sim | - |
+| `consumidor_final` | `numeric` | Sim | - |
+| `cod_seguradora` | `numeric` | Sim | - |
+| `agrupa_nfe` | `numeric` | Sim | - |
+| `tipo_cliente` | `numeric` | Sim | - |
+| `peso_padrao` | `double precision` | Sim | - |
+| `rateio_valor` | `double precision` | Sim | - |
+| `rateio_tipo` | `numeric` | Sim | - |
+| `abc_tipo` | `text` | Sim | - |
+| `abc_valor` | `double precision` | Sim | - |
+| `fob_dirigido` | `numeric` | Sim | - |
+| `base_resp_coleta` | `text` | Sim | - |
+| `imprimir_minuta` | `numeric` | Sim | - |
+| `ocorrencia_minuta` | `numeric` | Sim | - |
+| `ocorrencia_coleta` | `numeric` | Sim | - |
+| `valor_nf_tipo` | `numeric` | Sim | - |
+| `codigo_contabil` | `text` | Sim | - |
+| `controle_qualidade` | `numeric` | Sim | - |
+| `volume_padrao` | `numeric` | Sim | - |
+| `edi_nome_destinatario` | `text` | Sim | - |
+| `analise_manifesto` | `numeric` | Sim | - |
+| `pedidonf_autfrete` | `numeric` | Sim | - |
+| `baixa_por_nf` | `numeric` | Sim | - |
+| `tempo_coleta` | `text` | Sim | - |
+| `tomador_fixo_nfe` | `numeric` | Sim | - |
+| `calcula_trt_minuta` | `numeric` | Sim | - |
+| `conf_entrega_app` | `numeric` | Sim | - |
+| `doc_coleta` | `numeric` | Sim | - |
+| `cob_numero` | `text` | Sim | - |
+| `calcula_tde_minuta` | `numeric` | Sim | - |
+| `calcula_advalorem_minuta` | `numeric` | Sim | - |
+| `tipo_cambio` | `numeric` | Sim | - |
+| `emite_manifesto` | `numeric` | Sim | - |
+| `visualizar_imprimir_nf` | `numeric` | Sim | - |
+| `altera_custo_manifesto` | `numeric` | Sim | - |
+| `agente_cubagem_coleta` | `numeric` | Sim | - |
+| `servico_padrao_coleta` | `text` | Sim | - |
+| `seleciona_servico_manifesto` | `numeric` | Sim | - |
+| `data_inativado` | `text` | Sim | - |
+| `valida_data_nf` | `numeric` | Sim | - |
+| `define_data_nf` | `numeric` | Sim | - |
+| `valida_pedido_nf` | `numeric` | Sim | - |
+| `desconsiderar_volumes` | `numeric` | Sim | - |
+| `servico_padrao_manifesto` | `numeric` | Sim | - |
+| `tipoEtiquetaPeso` | `numeric` | Sim | - |
+| `restricao_trecho_destino` | `numeric` | Sim | - |
+| `tipo_empresa` | `text` | Sim | - |
+
+> *Exibindo as 118 colunas principais de um total de 323 colunas. Todas as 323 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-frete_hist"></a>
+### 📋 `public.frete_hist` (39.219.208 linhas • 7199 MB)
+
+* **Chave Primária (PK):** `id_log`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_log`, `coleta`, `created_at`, `frete`, `id_nf`, `data`, `status`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `frete_hist.frete = minuta.id_minuta` (FK Lógica)
+  * Aponta para **`coleta`** via `frete_hist.coleta = coleta.id_coleta` (FK Lógica)
+  * Aponta para **`notas_fiscais`** via `frete_hist.id_nf = notas_fiscais.id_nf` (FK Lógica)
+  * Aponta para **`tipo_oco`** via `frete_hist.status = tipo_oco.id_oco` (FK Lógica)
+  * Aponta para **`unidades`** via `frete_hist.unidade = unidades.id_unidade` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_log` | `integer` | Não | 🔑 **PK** |
+| `frete` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `data` | `date` | Sim | ⚡ **Indexada** |
+| `hora` | `character varying(12)` | Sim | - |
+| `status` | `smallint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `operador` | `integer` | Sim | - |
+| `obs` | `character varying(255)` | Sim | - |
+| `edi` | `smallint` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `hora_incluido` | `time without time zone` | Sim | - |
+| `ocorrencia` | `smallint` | Sim | - |
+| `coleta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `unidade` | `integer` | Sim | 🔗 **FK** |
+| `agente` | `integer` | Sim | - |
+| `data_entrega` | `timestamp without time zone` | Sim | - |
+| `entrega_nome` | `character varying(40)` | Sim | - |
+| `entrega_grau` | `character varying(20)` | Sim | - |
+| `entrega_rg` | `character varying(20)` | Sim | - |
+| `placa` | `character varying(8)` | Sim | - |
+| `ineficiencia` | `smallint` | Sim | - |
+| `created_at` | `timestamp without time zone` | Sim | ⚡ **Indexada** |
+| `id_nf` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+
+---
+
+<a id="tabela-funcionario"></a>
+### 📋 `public.funcionario` (645 linhas • 424 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_funcionario` | `bigint` | Sim | - |
+| `base` | `bigint` | Sim | - |
+| `nome` | `text` | Sim | - |
+| `endereco` | `text` | Sim | - |
+| `bairro` | `text` | Sim | - |
+| `cidade` | `bigint` | Sim | - |
+| `telefone_c` | `text` | Sim | - |
+| `telefone_f` | `text` | Sim | - |
+| `nome_pai` | `text` | Sim | - |
+| `nome_mae` | `text` | Sim | - |
+| `rg` | `text` | Sim | - |
+| `cpf` | `text` | Sim | - |
+| `habilitacao` | `text` | Sim | - |
+| `h_categoria` | `text` | Sim | - |
+| `h_validade` | `text` | Sim | - |
+| `esposa` | `text` | Sim | - |
+| `nascimento` | `text` | Sim | - |
+| `nextel` | `text` | Sim | - |
+| `matricula` | `text` | Sim | - |
+| `funcao` | `text` | Sim | - |
+| `salario` | `double precision` | Sim | - |
+| `alimentacao` | `double precision` | Sim | - |
+| `vale_transp` | `double precision` | Sim | - |
+| `inss` | `double precision` | Sim | - |
+| `banco` | `text` | Sim | - |
+| `data` | `date` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `seguro_status` | `bigint` | Sim | - |
+| `seguro_validade` | `text` | Sim | - |
+| `seguro_data` | `text` | Sim | - |
+| `tipo` | `bigint` | Sim | - |
+| `nome_vizinho` | `text` | Sim | - |
+| `serasaData` | `text` | Sim | - |
+| `serasavalidade` | `text` | Sim | - |
+| `id_tabela` | `bigint` | Sim | - |
+| `ti_numero` | `text` | Sim | - |
+| `ti_data` | `text` | Sim | - |
+| `ctps_data` | `text` | Sim | - |
+| `numero` | `text` | Sim | - |
+| `mopp_validade` | `text` | Sim | - |
+| `nextel_numero` | `text` | Sim | - |
+| `id_fornecedor` | `bigint` | Sim | - |
+| `tipo_conta` | `bigint` | Sim | - |
+| `cod_seguranca_cnh` | `text` | Sim | - |
+| `escolaridade` | `text` | Sim | - |
+| `tipo_pix` | `bigint` | Sim | - |
+| `permitir_manifestos` | `bigint` | Sim | - |
+
+> *Exibindo as 47 colunas principais de um total de 90 colunas. Todas as 90 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-funcionarios_sra"></a>
+### 📋 `public.funcionarios_sra` (2.610 linhas • 696 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`escala_motoristas`** via `escala_motoristas.COD_MOTORISTA = funcionarios_sra.RA_MAT`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `RA_FILIAL` | `text` | Sim | - |
+| `RA_MAT` | `text` | Sim | - |
+| `RA_NOME` | `text` | Sim | - |
+| `RA_CC` | `text` | Sim | - |
+| `CTT_DESC01` | `text` | Sim | - |
+| `RA_SEXO` | `text` | Sim | - |
+| `RA_NASC` | `text` | Sim | - |
+| `RA_ESTCIVI` | `text` | Sim | - |
+| `RA_NATURAL` | `text` | Sim | - |
+| `RA_MUNNASC` | `text` | Sim | - |
+| `RA_CODFUNC` | `text` | Sim | - |
+| `RJ_DESC` | `text` | Sim | - |
+| `RA_ADMISSA` | `text` | Sim | - |
+| `RA_DEMISSA` | `text` | Sim | - |
+| `RA_CTPCD` | `text` | Sim | - |
+| `RA_RACACOR` | `text` | Sim | - |
+| `R_E_C_N_O_` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-historico_volume"></a>
+### 📋 `public.historico_volume` (15.233.851 linhas • 2886 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`, `id_volume`, `manifesto`
+* **🔗 Conexões no MER:**
+  * Aponta para **`volumes`** via `historico_volume.id_volume = volumes.id_volume` (FK Lógica)
+  * Aponta para **`manifesto`** via `historico_volume.manifesto = manifesto.id_manifesto` (FK Lógica)
+  * Aponta para **`unidades`** via `historico_volume.unidade = unidades.id_unidade` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `id_volume` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `base` | `bigint` | Sim | - |
+| `operador` | `bigint` | Sim | - |
+| `tipo` | `bigint` | Sim | - |
+| `data` | `timestamp without time zone` | Sim | - |
+| `manifesto` | `double precision` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `barra` | `text` | Sim | - |
+| `hora` | `time without time zone` | Sim | - |
+| `unidade` | `bigint` | Sim | 🔗 **FK** |
+| `status` | `double precision` | Sim | - |
+
+---
+
+<a id="tabela-manifesto"></a>
+### 📋 `public.manifesto` (189.218 linhas • 165 MB)
+
+* **Chave Primária (PK):** `id_manifesto`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `veiculo`, `id_manifesto`
+* **🔗 Conexões no MER:**
+  * Aponta para **`veiculos`** via `manifesto.veiculo = veiculos.id_veiculo` (FK Lógica)
+  * Aponta para **`terceiros`** via `manifesto.veiculo_terceiro = terceiros.id_terceiro` (FK Lógica)
+  * Aponta para **`unidades`** via `manifesto.base = unidades.id_unidade` (FK Lógica)
+  * Aponta para **`unidades`** via `manifesto.destino = unidades.id_unidade` (FK Lógica)
+  * Aponta para **`manifesto_status`** via `manifesto.status = manifesto_status.id_status` (FK Lógica)
+  * É referenciada por **`historico_volume`** via `historico_volume.manifesto = manifesto.id_manifesto`
+  * É referenciada por **`anexos`** via `anexos.id_manifesto = manifesto.id_manifesto`
+  * É referenciada por **`manifesto_list`** via `manifesto_list.id_manifesto = manifesto.id_manifesto`
+  * É referenciada por **`picking`** via `picking.id_manifesto = manifesto.id_manifesto`
+  * É referenciada por **`MDFe`** via `MDFe.id_manifesto = manifesto.id_manifesto`
+  * É referenciada por **`motoristas_manifesto`** via `motoristas_manifesto.id_manifesto = manifesto.id_manifesto`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_manifesto` | `bigint` | Não | 🔑 **PK** |
+| `tipo` | `bigint` | Sim | - |
+| `lacre_direita` | `text` | Sim | - |
+| `lacre_traseira` | `text` | Sim | - |
+| `lacre_esquerda` | `text` | Sim | - |
+| `lacre_outro` | `text` | Sim | - |
+| `cheque` | `text` | Sim | - |
+| `id_agente` | `double precision` | Sim | - |
+| `id_transf` | `double precision` | Sim | - |
+| `minuta_transf` | `text` | Sim | - |
+| `custo_transf` | `text` | Sim | - |
+| `peso_transf` | `text` | Sim | - |
+| `prev_saida_data` | `text` | Sim | - |
+| `prev_saida_hora` | `text` | Sim | - |
+| `prev_chegada_data` | `text` | Sim | - |
+| `prev_chegada_hora` | `text` | Sim | - |
+| `modal` | `bigint` | Sim | - |
+| `saida_efetiva_data` | `date` | Sim | - |
+| `saida_efetiva_hora` | `text` | Sim | - |
+| `data_emissao` | `date` | Sim | - |
+| `hora_emissao` | `text` | Sim | - |
+| `motorista` | `bigint` | Sim | - |
+| `gerenciadora` | `bigint` | Sim | - |
+| `operador` | `text` | Sim | - |
+| `base` | `text` | Sim | 🔗 **FK** |
+| `status` | `bigint` | Sim | 🔗 **FK** |
+| `veiculo` | `double precision` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `chegada_efetiva_data` | `text` | Sim | - |
+| `valor_aprovado` | `text` | Sim | - |
+| `data_conferencia` | `text` | Sim | - |
+| `hora_conferencia` | `text` | Sim | - |
+| `chave` | `text` | Sim | - |
+| `volumes_transf` | `text` | Sim | - |
+| `transf_origem` | `text` | Sim | - |
+| `transf_destino` | `text` | Sim | - |
+| `chave_awb` | `text` | Sim | - |
+| `mdfe_num` | `text` | Sim | - |
+| `chaveMDFE` | `text` | Sim | - |
+| `dataMDFE` | `text` | Sim | - |
+| `mdf_status` | `text` | Sim | - |
+| `destino` | `text` | Sim | 🔗 **FK** |
+| `statusMDFE` | `bigint` | Sim | - |
+| `tipo_ve` | `bigint` | Sim | - |
+| `partidaVoo` | `text` | Sim | - |
+| `partidaCusto` | `double precision` | Sim | - |
+| `data_conferencia_saida` | `text` | Sim | - |
+| `hora_conferencia_saida` | `text` | Sim | - |
+| `tipoMotorista` | `bigint` | Sim | - |
+| `tipoManifesto` | `bigint` | Sim | - |
+| `origem_mdfe` | `bigint` | Sim | - |
+| `destino_mdfe` | `text` | Sim | - |
+| `data_conferencia_saita` | `text` | Sim | - |
+| `veiculo_terceiro` | `double precision` | Sim | 🔗 **FK** |
+| `conferente_doca` | `bigint` | Sim | - |
+| `conferente_inicio` | `text` | Sim | - |
+| `conferente_fim` | `text` | Sim | - |
+| `data_finalizado` | `text` | Sim | - |
+| `total_nf_valor` | `double precision` | Sim | - |
+| `avaliacao_manifesto` | `double precision` | Sim | - |
+| `tipo_rateio` | `bigint` | Sim | - |
+| `valor_total_km` | `double precision` | Sim | - |
+| `codigo` | `text` | Sim | - |
+| `valor_minimo_km` | `double precision` | Sim | - |
+| `valor_diaria` | `text` | Sim | - |
+| `local_descarga_id` | `text` | Sim | - |
+| `valor_fiscal` | `text` | Sim | - |
+| `piso_minimo_tipo_carga` | `text` | Sim | - |
+| `piso_minimo_valor` | `text` | Sim | - |
+
+> *Exibindo as 68 colunas principais de um total de 119 colunas. Todas as 119 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-manifesto_list"></a>
+### 📋 `public.manifesto_list` (5.320.040 linhas • 703 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_manifesto`, `minuta`, `id`
+* **🔗 Conexões no MER:**
+  * Aponta para **`manifesto`** via `manifesto_list.id_manifesto = manifesto.id_manifesto` (FK Lógica)
+  * Aponta para **`minuta`** via `manifesto_list.minuta = minuta.id_minuta` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `id_manifesto` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `minuta` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `tipo` | `bigint` | Sim | - |
+| `custo` | `double precision` | Sim | - |
+| `ordem` | `text` | Sim | - |
+| `id_usuario` | `text` | Sim | - |
+| `updated_at` | `timestamp without time zone` | Sim | - |
+| `dist_entre_rota` | `text` | Sim | - |
+| `tempo_entre_rota` | `text` | Sim | - |
+
+---
+
+<a id="tabela-manifesto_status"></a>
+### 📋 `public.manifesto_status` (12 linhas • 16 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`manifesto`** via `manifesto.status = manifesto_status.id_status`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_status` | `bigint` | Sim | - |
+| `descricao` | `text` | Sim | - |
+| `cor_fundo` | `text` | Sim | - |
+
+---
+
+<a id="tabela-manifesto_tipo"></a>
+### 📋 `public.manifesto_tipo` (7 linhas • 16 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_tipo` | `bigint` | Sim | - |
+| `tipo` | `text` | Sim | - |
+
+---
+
+<a id="tabela-marcacao_motoristas"></a>
+### 📋 `public.marcacao_motoristas` (279.829 linhas • 63 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `FILIAL` | `text` | Sim | - |
+| `MATRICULA` | `text` | Sim | - |
+| `DATA` | `text` | Sim | - |
+| `HORA` | `double precision` | Sim | - |
+| `CENTROCUSTO` | `text` | Sim | - |
+| `DESC_CC` | `text` | Sim | - |
+| `MARCACAO` | `text` | Sim | - |
+| `DATAAPONTAMENTO` | `text` | Sim | - |
+| `MOTIVO` | `text` | Sim | - |
+
+---
+
+<a id="tabela-minuta"></a>
+### 📋 `public.minuta` (1.984.398 linhas • 4105 MB)
+
+* **Chave Primária (PK):** `id_minuta`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `cte_data`, `id_minuta`
+* **🔗 Conexões no MER:**
+  * Aponta para **`cotacao`** via `minuta.cotacao = cotacao.id_cotacao` (FK Lógica)
+  * Aponta para **`minuta_status`** via `minuta.status = minuta_status.id_status` (FK Lógica)
+  * Aponta para **`tipo_minuta`** via `minuta.tipo = tipo_minuta.id` (FK Lógica)
+  * Aponta para **`cte_status`** via `minuta.cte_status = cte_status.id_status` (FK Lógica)
+  * Aponta para **`cte_tipo`** via `minuta.cte_tipo_cte = cte_tipo.id` (FK Lógica)
+  * Aponta para **`fornecedores`** via `minuta.id_cliente = fornecedores.id_local` (FK Lógica)
+  * Aponta para **`fornecedores`** via `minuta.id_origem = fornecedores.id_local` (FK Lógica)
+  * Aponta para **`fornecedores`** via `minuta.id_destino = fornecedores.id_local` (FK Lógica)
+  * Aponta para **`unidades`** via `minuta.unidade = unidades.id_unidade` (FK Lógica)
+  * Aponta para **`rotas`** via `minuta.rota = rotas.id` (FK Lógica)
+  * Aponta para **`rotas`** via `minuta.origem = rotas.id_rota` (FK Lógica)
+  * Aponta para **`rotas`** via `minuta.destino = rotas.id_rota` (FK Lógica)
+  * Aponta para **`aero`** via `minuta.transf_origem = aero.id_aero` (FK Lógica)
+  * Aponta para **`aero`** via `minuta.transf_destino = aero.id_aero` (FK Lógica)
+  * Aponta para **`tabela_frete`** via `minuta.tabela = tabela_frete.id_tabela` (FK Lógica)
+  * É referenciada por **`processo`** via `processo.id_minuta = minuta.id_minuta`
+  * É referenciada por **`coleta`** via `coleta.id_minuta = minuta.id_minuta`
+  * É referenciada por **`notas_fiscais`** via `notas_fiscais.id_minuta = minuta.id_minuta`
+  * É referenciada por **`volumes`** via `volumes.id_minuta = minuta.id_minuta`
+  * É referenciada por **`frete_hist`** via `frete_hist.frete = minuta.id_minuta`
+  * É referenciada por **`anexos`** via `anexos.id_minuta = minuta.id_minuta`
+  * É referenciada por **`pre_minuta`** via `pre_minuta.id_minuta = minuta.id_minuta`
+  * É referenciada por **`cte_substituicao`** via `cte_substituicao.id_minuta = minuta.id_minuta`
+  * É referenciada por **`manifesto_list`** via `manifesto_list.minuta = minuta.id_minuta`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_minuta` | `bigint` | Não | 🔑 **PK** |
+| `tipo_emissao` | `bigint` | Sim | - |
+| `id_cliente` | `bigint` | Sim | 🔗 **FK** |
+| `referencia` | `text` | Sim | - |
+| `awb` | `double precision` | Sim | - |
+| `tabela` | `double precision` | Sim | 🔗 **FK** |
+| `servico` | `bigint` | Sim | - |
+| `cotacao` | `double precision` | Sim | 🔗 **FK** |
+| `modal` | `double precision` | Sim | - |
+| `forma_transp` | `bigint` | Sim | - |
+| `id_origem` | `bigint` | Sim | 🔗 **FK** |
+| `id_destino` | `bigint` | Sim | 🔗 **FK** |
+| `id_expedidor` | `double precision` | Sim | - |
+| `id_entrega` | `double precision` | Sim | - |
+| `id_transportadora` | `double precision` | Sim | - |
+| `transp_minuta` | `text` | Sim | - |
+| `transp_custo` | `double precision` | Sim | - |
+| `id_seguro` | `double precision` | Sim | - |
+| `seg_valor` | `double precision` | Sim | - |
+| `seguro_resp` | `bigint` | Sim | - |
+| `ctrc_cliente` | `text` | Sim | - |
+| `ctrc_valor` | `double precision` | Sim | - |
+| `id_armador` | `double precision` | Sim | - |
+| `armador_minuta` | `text` | Sim | - |
+| `armador_custo` | `double precision` | Sim | - |
+| `transf_origem` | `text` | Sim | 🔗 **FK** |
+| `transf_destino` | `text` | Sim | 🔗 **FK** |
+| `fatura_id` | `bigint` | Sim | - |
+| `fatura_status` | `bigint` | Sim | - |
+| `status` | `bigint` | Sim | 🔗 **FK** |
+| `data_incluido` | `date` | Sim | - |
+| `data` | `date` | Sim | - |
+| `data_saida` | `text` | Sim | - |
+| `data_prev_saida` | `text` | Sim | - |
+| `unidade` | `bigint` | Sim | 🔗 **FK** |
+| `data_entrega` | `text` | Sim | - |
+| `entrega_nome` | `text` | Sim | - |
+| `coleta_data` | `text` | Sim | - |
+| `coleta_hora` | `text` | Sim | - |
+| `chave` | `text` | Sim | - |
+| `total_nf` | `double precision` | Sim | - |
+| `total_nf_valor` | `double precision` | Sim | - |
+| `valor_unitario` | `double precision` | Sim | - |
+| `total_volumes` | `bigint` | Sim | - |
+| `total_peso` | `double precision` | Sim | - |
+| `total_cubo` | `double precision` | Sim | - |
+| `frete_coleta` | `double precision` | Sim | - |
+| `frete_peso` | `double precision` | Sim | - |
+| `frete_nf` | `double precision` | Sim | - |
+| `tipo_icms` | `bigint` | Sim | - |
+| `frete_total` | `double precision` | Sim | - |
+| `id_manifesto` | `bigint` | Sim | - |
+| `edi_oco_recebido` | `double precision` | Sim | - |
+| `id_motorista` | `double precision` | Sim | - |
+| `id_terceiro` | `double precision` | Sim | - |
+| `cte_numero` | `bigint` | Sim | - |
+| `cte_unidade` | `bigint` | Sim | - |
+| `cte_chave` | `text` | Sim | - |
+| `cte_dv_chave` | `text` | Sim | - |
+| `cte_codigo` | `double precision` | Sim | - |
+| `cte_data` | `text` | Sim | ⚡ **Indexada** |
+| `cte_status` | `bigint` | Sim | 🔗 **FK** |
+| `cte_tipo_cte` | `bigint` | Sim | 🔗 **FK** |
+| `cte_aut_data` | `date` | Sim | - |
+| `cte_canc_data` | `date` | Sim | - |
+| `cte_imposto_tipo` | `bigint` | Sim | - |
+| `armador_cte_id` | `double precision` | Sim | - |
+| `coleta_resp` | `double precision` | Sim | - |
+| `coleta_resp_id` | `double precision` | Sim | - |
+| `coleta_resp_servico` | `bigint` | Sim | - |
+| `coleta_custo` | `double precision` | Sim | - |
+| `coleta_minuta` | `text` | Sim | - |
+| `entrega_resp_id` | `double precision` | Sim | - |
+| `entrega_minuta` | `text` | Sim | - |
+| `tabela_origem` | `text` | Sim | - |
+| `tabela_destino` | `text` | Sim | - |
+| `coleta_numero` | `double precision` | Sim | - |
+| `minuta_comp` | `double precision` | Sim | - |
+| `coleta_veiculo` | `double precision` | Sim | - |
+| `coleta_fatura` | `bigint` | Sim | - |
+| `tipo_pagamento` | `double precision` | Sim | - |
+| `id_entrega_endereco` | `double precision` | Sim | - |
+| `valorKGFaixa` | `double precision` | Sim | - |
+| `data_hora` | `timestamp without time zone` | Sim | - |
+| `coleta_taxa_emergencia` | `double precision` | Sim | - |
+| `tipo` | `bigint` | Sim | 🔗 **FK** |
+| `despacho_resp_id` | `double precision` | Sim | - |
+| `id_expedidor_endereco` | `double precision` | Sim | - |
+| `id_nfse` | `double precision` | Sim | - |
+| `agenda_data` | `text` | Sim | - |
+| `prev_saida_hora` | `time without time zone` | Sim | - |
+| `coleta_custo_novo` | `double precision` | Sim | - |
+| `despacho_minuta` | `text` | Sim | - |
+| `coleta_motorista` | `double precision` | Sim | - |
+| `minuta_anterior` | `double precision` | Sim | - |
+| `valor_total_notas` | `double precision` | Sim | - |
+| `valor_total_produto` | `double precision` | Sim | - |
+| `tipo_valor_nota` | `bigint` | Sim | - |
+| `origem` | `text` | Sim | 🔗 **FK** |
+| `destino` | `text` | Sim | 🔗 **FK** |
+| `id_campanha` | `double precision` | Sim | - |
+| `cod_trecho` | `double precision` | Sim | - |
+| `perecivel_data` | `text` | Sim | - |
+| `total_taxado` | `double precision` | Sim | - |
+| `despacho_resp_id_retira` | `double precision` | Sim | - |
+| `despacho_minuta_retira` | `text` | Sim | - |
+| `rota` | `double precision` | Sim | 🔗 **FK** |
+| `base_comissionada_coleta` | `bigint` | Sim | - |
+| `pedido_cliente` | `text` | Sim | - |
+| `coleta_custo_liquido` | `double precision` | Sim | - |
+| `entrega_custo_liquido` | `double precision` | Sim | - |
+| `base_coleta_avista` | `bigint` | Sim | - |
+| `resp_baixa_id` | `double precision` | Sim | - |
+
+> *Exibindo as 113 colunas principais de um total de 244 colunas. Todas as 244 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-minuta_status"></a>
+### 📋 `public.minuta_status` (18 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id_status`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_status`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.status = minuta_status.id_status`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_status` | `bigint` | Não | 🔑 **PK** |
+| `descricao` | `text` | Sim | - |
+| `cor` | `text` | Sim | - |
+| `descricao_b2w` | `text` | Sim | - |
+| `tipo` | `bigint` | Sim | - |
+| `editar` | `bigint` | Sim | - |
+| `descricao_ingles` | `text` | Sim | - |
+| `prazo_padrao` | `double precision` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `updated_at` | `timestamp without time zone` | Sim | - |
+| `perm_manifesto` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-motorista_terceiro"></a>
+### 📋 `public.motorista_terceiro` (750 linhas • 312 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Sim | - |
+| `id_terceiro` | `bigint` | Sim | - |
+| `id_local` | `double precision` | Sim | - |
+| `nome` | `text` | Sim | - |
+| `nome_completo` | `text` | Sim | - |
+| `nome_mae` | `text` | Sim | - |
+| `rg` | `text` | Sim | - |
+| `cpf` | `text` | Sim | - |
+| `telefone_c` | `text` | Sim | - |
+| `nextel` | `text` | Sim | - |
+| `habilitacao` | `text` | Sim | - |
+| `h_emissao` | `date` | Sim | - |
+| `h_validade` | `date` | Sim | - |
+| `h_categoria` | `text` | Sim | - |
+| `seguro_status` | `bigint` | Sim | - |
+| `seguro_validade` | `text` | Sim | - |
+| `mopp` | `bigint` | Sim | - |
+| `dono` | `text` | Sim | - |
+| `pis` | `text` | Sim | - |
+| `mopp_validade` | `text` | Sim | - |
+| `seguro_autorizacao` | `text` | Sim | - |
+| `seguro_data` | `text` | Sim | - |
+| `memo` | `text` | Sim | - |
+| `doc_cnh` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `cod_seguranca_cnh` | `text` | Sim | - |
+| `data_nascimento` | `text` | Sim | - |
+| `numero` | `text` | Sim | - |
+| `cidade` | `text` | Sim | - |
+| `rg_expedidor` | `double precision` | Sim | - |
+| `rg_data` | `date` | Sim | - |
+| `propriedade_tipo` | `double precision` | Sim | - |
+| `cnh_cidade` | `text` | Sim | - |
+| `permitir_manifestos` | `bigint` | Sim | - |
+| `nome_pai` | `text` | Sim | - |
+
+> *Exibindo as 35 colunas principais de um total de 56 colunas. Todas as 56 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-motoristas_manifesto"></a>
+### 📋 `public.motoristas_manifesto` (192.667 linhas • 13 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * Aponta para **`manifesto`** via `motoristas_manifesto.id_manifesto = manifesto.id_manifesto` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Sim | - |
+| `id_manifesto` | `bigint` | Sim | 🔗 **FK** |
+| `id_motorista` | `bigint` | Sim | - |
+| `principal` | `bigint` | Sim | - |
+| `prot_evento_mdfe` | `text` | Sim | - |
+
+---
+
+<a id="tabela-nf_tipo"></a>
+### 📋 `public.nf_tipo` (4 linhas • 16 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`notas_fiscais`** via `notas_fiscais.nf_tipo = nf_tipo.id_tipo`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_tipo` | `bigint` | Sim | - |
+| `tipo` | `text` | Sim | - |
+
+---
+
+<a id="tabela-notas_fiscais"></a>
+### 📋 `public.notas_fiscais` (2.400.772 linhas • 721 MB)
+
+* **Chave Primária (PK):** `id_nf`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_minuta`, `nf`, `processo`, `id_nf`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `notas_fiscais.id_minuta = minuta.id_minuta` (FK Lógica)
+  * Aponta para **`nf_tipo`** via `notas_fiscais.nf_tipo = nf_tipo.id_tipo` (FK Lógica)
+  * É referenciada por **`volumes`** via `volumes.id_nf = notas_fiscais.id_nf`
+  * É referenciada por **`frete_hist`** via `frete_hist.id_nf = notas_fiscais.id_nf`
+  * É referenciada por **`anexos`** via `anexos.id_nota = notas_fiscais.id_nf`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_nf` | `bigint` | Não | 🔑 **PK** |
+| `id_minuta` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `empresa` | `bigint` | Sim | - |
+| `data` | `text` | Sim | - |
+| `cfop` | `text` | Sim | - |
+| `nf` | `text` | Sim | ⚡ **Indexada** |
+| `serie` | `text` | Sim | - |
+| `natureza` | `bigint` | Sim | - |
+| `especie` | `bigint` | Sim | - |
+| `volumes` | `bigint` | Sim | - |
+| `peso` | `double precision` | Sim | - |
+| `nf_valor` | `double precision` | Sim | - |
+| `nf_valor_prod` | `double precision` | Sim | - |
+| `pedido` | `text` | Sim | - |
+| `pin_suframa` | `text` | Sim | - |
+| `pedido_tipo` | `text` | Sim | - |
+| `nf_tipo` | `text` | Sim | 🔗 **FK** |
+| `chave` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `volumes_unidade` | `text` | Sim | - |
+| `peso_unidade` | `text` | Sim | - |
+| `chave_nfe` | `text` | Sim | - |
+| `tipo` | `text` | Sim | - |
+| `entrega_nome` | `text` | Sim | - |
+| `entrega_grau` | `text` | Sim | - |
+| `entrega_rg` | `text` | Sim | - |
+| `data_entrega` | `text` | Sim | - |
+| `hora_entrega` | `text` | Sim | - |
+| `cnpj_destinatario` | `text` | Sim | - |
+| `id_ctrc` | `text` | Sim | - |
+| `nf_valor_ocul` | `text` | Sim | - |
+| `vBC` | `text` | Sim | - |
+| `vICMS` | `text` | Sim | - |
+| `vBCST` | `text` | Sim | - |
+| `vST` | `text` | Sim | - |
+| `processo` | `text` | Sim | ⚡ **Indexada** |
+
+---
+
+<a id="tabela-ocorrencias"></a>
+### 📋 `public.ocorrencias` (0 linhas • 67 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `COD_VEICULO` | `text` | Sim | - |
+| `VEIC_NUM_SERIE` | `text` | Sim | - |
+| `FUSO_VEIC` | `text` | Sim | - |
+| `OCORRENCIA` | `text` | Sim | - |
+| `PARCODIGO` | `text` | Sim | - |
+| `NAO_CONFORMIDADE` | `text` | Sim | - |
+| `DURACAO` | `text` | Sim | - |
+| `LAT_LONG` | `text` | Sim | - |
+| `LATITUDE` | `text` | Sim | - |
+| `LONGITUDE` | `text` | Sim | - |
+| `ULTIMO_PC` | `text` | Sim | - |
+| `PROXIMO_PC` | `text` | Sim | - |
+| `LINHA` | `text` | Sim | - |
+| `ROTA` | `text` | Sim | - |
+| `VALOR_LIMITE` | `text` | Sim | - |
+| `DESVIO` | `text` | Sim | - |
+| `GRAVIDADE` | `text` | Sim | - |
+| `LIDA` | `text` | Sim | - |
+| `OBS_LIDA` | `text` | Sim | - |
+| `DATA_SMS` | `text` | Sim | - |
+| `OCORRENCIA_NOME_REDUZIDO` | `text` | Sim | - |
+| `USUARIO_ALTERACAO` | `text` | Sim | - |
+| `DATA_ALTERACAO` | `text` | Sim | - |
+| `UNID_EMP` | `text` | Sim | - |
+| `FUNCMATRICULA` | `text` | Sim | - |
+
+---
+
+<a id="tabela-picking"></a>
+### 📋 `public.picking` (62.479 linhas • 7728 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_manifesto`, `id`
+* **🔗 Conexões no MER:**
+  * Aponta para **`manifesto`** via `picking.id_manifesto = manifesto.id_manifesto` (FK Lógica)
+  * Aponta para **`unidades`** via `picking.unidade = unidades.id_unidade` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `id_manifesto` | `bigint` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `tipo` | `bigint` | Sim | - |
+| `unidade` | `bigint` | Sim | 🔗 **FK** |
+| `iniciado` | `timestamp without time zone` | Sim | - |
+| `finalizado` | `timestamp without time zone` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `unblocked_at` | `timestamp without time zone` | Sim | - |
+
+---
+
+<a id="tabela-ponto_horas"></a>
+### 📋 `public.ponto_horas` (202.115 linhas • 16 MB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `FILIAL` | `text` | Sim | - |
+| `MATRICULA` | `text` | Sim | - |
+| `DATA` | `text` | Sim | - |
+| `HORA` | `double precision` | Sim | - |
+| `CENTROCUSTO` | `text` | Sim | - |
+| `MARCACAO` | `text` | Sim | - |
+| `DATAAPONTAMENTO` | `text` | Sim | - |
+
+---
+
+<a id="tabela-pre_minuta"></a>
+### 📋 `public.pre_minuta` (764.379 linhas • 674 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_minuta`, `id`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `pre_minuta.id_minuta = minuta.id_minuta` (FK Lógica)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `integer` | Não | 🔑 **PK** |
+| `data_hora` | `timestamp without time zone` | Sim | - |
+| `malote` | `character varying(20)` | Sim | - |
+| `peso` | `numeric(10,2)` | Sim | - |
+| `id_minuta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `id_usuario` | `integer` | Sim | - |
+| `roteiriza_entrega` | `smallint` | Sim | - |
+| `dados` | `text` | Sim | - |
+| `ocorrencia` | `character varying(250)` | Sim | - |
+| `base_atual` | `integer` | Sim | - |
+| `base_proxima` | `integer` | Sim | - |
+| `tentativas` | `smallint` | Sim | - |
+
+---
+
+<a id="tabela-processo"></a>
+### 📋 `public.processo` (4.874 linhas • 3568 kB)
+
+* **Chave Primária (PK):** `id_processo`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_minuta`, `id_processo`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `processo.id_minuta = minuta.id_minuta` (FK Física)
+  * É referenciada por **`processo_anexos`** via `processo_anexos.id_processo = processo.id_processo`
+  * É referenciada por **`processo_empresa`** via `processo_empresa.id_processo = processo.id_processo`
+  * É referenciada por **`processo_notas`** via `processo_notas.processo = processo.id_processo`
+  * É referenciada por **`processo_notas_fiscais`** via `processo_notas_fiscais.processo = processo.id_processo`
+  * É referenciada por **`processo_volumes`** via `processo_volumes.id_processo = processo.id_processo`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_processo` | `integer` | Não | 🔑 **PK** |
+| `id_minuta` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `tipo` | `integer` | Sim | - |
+| `id_oco` | `integer` | Sim | - |
+| `obs` | `text` | Sim | - |
+| `operador` | `integer` | Sim | - |
+| `base` | `integer` | Sim | - |
+| `data_evento` | `date` | Sim | - |
+| `hora_evento` | `time without time zone` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `hora_incluido` | `time without time zone` | Sim | - |
+| `status` | `smallint` | Sim | - |
+| `valor` | `numeric(10,2)` | Sim | - |
+| `data_finalizado` | `timestamp without time zone` | Sim | - |
+| `protocolo` | `character varying(45)` | Sim | - |
+| `processo_sac` | `integer` | Sim | - |
+| `lancamento` | `integer` | Sim | - |
+| `categoria` | `integer` | Sim | - |
+| `detalhes_itens` | `text` | Sim | - |
+| `totais_itens` | `text` | Sim | - |
+
+---
+
+<a id="tabela-processo_anexos"></a>
+### 📋 `public.processo_anexos` (17.582 linhas • 3272 kB)
+
+* **Chave Primária (PK):** `id_anexo`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_processo`, `id_anexo`
+* **🔗 Conexões no MER:**
+  * Aponta para **`processo`** via `processo_anexos.id_processo = processo.id_processo` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_anexo` | `integer` | Não | 🔑 **PK** |
+| `arquivo` | `character varying(255)` | Sim | - |
+| `id_processo` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+
+---
+
+<a id="tabela-processo_autorizacao"></a>
+### 📋 `public.processo_autorizacao` (4.385 linhas • 872 kB)
+
+* **Chave Primária (PK):** `id_autorizacao`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_processo`, `id_autorizacao`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_autorizacao` | `integer` | Não | 🔑 **PK** |
+| `logim` | `character varying(45)` | Sim | - |
+| `data_autorizado` | `date` | Sim | - |
+| `hora_autorizado` | `time without time zone` | Sim | - |
+| `obs` | `text` | Sim | - |
+| `id_processo` | `integer` | Sim | ⚡ **Indexada** |
+| `id_lancamento` | `integer` | Sim | - |
+
+---
+
+<a id="tabela-processo_empresa"></a>
+### 📋 `public.processo_empresa` (4.731 linhas • 568 kB)
+
+* **Chave Primária (PK):** `id_processo_empresa`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_processo`, `id_processo_empresa`
+* **🔗 Conexões no MER:**
+  * Aponta para **`processo`** via `processo_empresa.id_processo = processo.id_processo` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_processo_empresa` | `integer` | Não | 🔑 **PK** |
+| `id_processo` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `id_empresa` | `integer` | Sim | - |
+| `valor` | `numeric(10,2)` | Sim | - |
+| `percentual` | `numeric(7,2)` | Sim | - |
+| `id_tipo_cadastro` | `smallint` | Sim | - |
+
+---
+
+<a id="tabela-processo_notas"></a>
+### 📋 `public.processo_notas` (4.760 linhas • 504 kB)
+
+* **Chave Primária (PK):** `id_nota`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `processo`, `id_nota`
+* **🔗 Conexões no MER:**
+  * Aponta para **`processo`** via `processo_notas.processo = processo.id_processo` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_nota` | `integer` | Não | 🔑 **PK** |
+| `processo` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `nota` | `integer` | Sim | - |
+
+---
+
+<a id="tabela-processo_notas_fiscais"></a>
+### 📋 `public.processo_notas_fiscais` (161 linhas • 40 kB)
+
+* **Chave Primária (PK):** `id_nota`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `processo`, `id_nota`
+* **🔗 Conexões no MER:**
+  * Aponta para **`processo`** via `processo_notas_fiscais.processo = processo.id_processo` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_nota` | `integer` | Não | 🔑 **PK** |
+| `processo` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `nota` | `integer` | Sim | - |
+
+---
+
+<a id="tabela-processo_volumes"></a>
+### 📋 `public.processo_volumes` (8.237 linhas • 944 kB)
+
+* **Chave Primária (PK):** `id_volume`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_processo`, `id_volume`
+* **🔗 Conexões no MER:**
+  * Aponta para **`processo`** via `processo_volumes.id_processo = processo.id_processo` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_volume` | `integer` | Não | 🔑 **PK** |
+| `barra_volume` | `character varying(19)` | Sim | - |
+| `id_processo` | `integer` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `id_proc_ocorrencia` | `integer` | Sim | - |
+
+---
+
+<a id="tabela-rotas"></a>
+### 📋 `public.rotas` (11.012 linhas • 10 MB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_rota`, `id`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.rota = rotas.id`
+  * É referenciada por **`minuta`** via `minuta.origem = rotas.id_rota`
+  * É referenciada por **`minuta`** via `minuta.destino = rotas.id_rota`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `rota` | `text` | Sim | - |
+| `uf` | `text` | Sim | - |
+| `uf_ibge` | `bigint` | Sim | - |
+| `cep_inicial` | `text` | Sim | - |
+| `cep_final` | `text` | Sim | - |
+| `id_rota` | `text` | Sim | ⚡ **Indexada** |
+| `capital` | `bigint` | Sim | - |
+| `sigla` | `text` | Sim | - |
+| `risco` | `bigint` | Sim | - |
+| `redespacho` | `bigint` | Sim | - |
+| `pais` | `text` | Sim | - |
+| `id_pais` | `bigint` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `praca` | `text` | Sim | - |
+| `kmcapital` | `double precision` | Sim | - |
+| `nivercidade` | `text` | Sim | - |
+| `siafi` | `text` | Sim | - |
+| `dipam` | `text` | Sim | - |
+| `zona` | `double precision` | Sim | - |
+| `zona_cep` | `double precision` | Sim | - |
+| `agente` | `text` | Sim | - |
+| `id_resp` | `text` | Sim | - |
+| `resp` | `double precision` | Sim | - |
+| `servico_resp` | `text` | Sim | - |
+| `prefixo` | `text` | Sim | - |
+| `latitude` | `double precision` | Sim | - |
+| `longitude` | `double precision` | Sim | - |
+| `cod_tom` | `text` | Sim | - |
+| `json_resp` | `text` | Sim | - |
+| `frete_cif` | `bigint` | Sim | - |
+| `frete_fob` | `bigint` | Sim | - |
+| `valida_pagador` | `text` | Sim | - |
+
+---
+
+<a id="tabela-roteiros"></a>
+### 📋 `public.roteiros` (199 linhas • 80 kB)
+
+* **Chave Primária (PK):** `id_roteiro`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_roteiro`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_roteiro` | `integer` | Não | 🔑 **PK** |
+| `roteiro` | `character varying(120)` | Sim | - |
+| `redespacho` | `integer` | Sim | - |
+| `proprio` | `integer` | Sim | - |
+| `transferencia` | `integer` | Sim | - |
+| `status` | `integer` | Sim | - |
+| `operador` | `integer` | Sim | - |
+| `unidade` | `integer` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `chave` | `character varying(255)` | Sim | - |
+| `prefixo` | `character varying(45)` | Sim | - |
+| `origem` | `character varying(45)` | Sim | - |
+| `destino` | `character varying(45)` | Sim | - |
+| `km` | `smallint` | Sim | - |
+| `tempo` | `time without time zone` | Sim | - |
+| `responsavel` | `smallint` | Sim | - |
+| `updated_at` | `timestamp without time zone` | Sim | - |
+| `id_resp` | `integer` | Sim | - |
+| `servico` | `integer` | Sim | - |
+| `dias_roteiro` | `integer` | Sim | - |
+| `tipo_operacao` | `smallint` | Sim | - |
+| `identifica_etq_minuta` | `smallint` | Sim | - |
+
+---
+
+<a id="tabela-servico_padrao"></a>
+### 📋 `public.servico_padrao` (1 linhas • 32 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_servico`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_servico` | `bigint` | Sim | ⚡ **Indexada** |
+| `status` | `bigint` | Sim | - |
+| `campo` | `text` | Sim | - |
+| `condicao` | `text` | Sim | - |
+| `valor` | `double precision` | Sim | - |
+
+---
+
+<a id="tabela-status_entrega"></a>
+### 📋 `public.status_entrega` (128 linhas • 96 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `v_carga`, `id`, `e_seq`
+* **🔗 Conexões no MER:**
+  * Aponta para **`status_viagem`** via `status_entrega.v_carga = status_viagem.v_carga` (FK Física)
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `integer` | Não | 🔑 **PK** |
+| `v_carga` | `character varying(50)` | Não | 🔗 **FK** ⚡ **Indexada** |
+| `e_seq` | `smallint` | Não | ⚡ **Indexada** |
+| `e_codigo` | `character varying(50)` | Sim | - |
+| `e_cliente` | `character varying(50)` | Sim | - |
+| `e_chegada` | `timestamp without time zone` | Sim | - |
+| `e_saida` | `timestamp without time zone` | Sim | - |
+| `e_prev_chegada` | `timestamp without time zone` | Sim | - |
+| `e_prev_saida` | `timestamp without time zone` | Sim | - |
+| `e_prev_chegada_original` | `timestamp without time zone` | Sim | - |
+| `e_prev_saida_original` | `timestamp without time zone` | Sim | - |
+| `e_distancia` | `numeric(12,4)` | Sim | - |
+| `criado_em` | `timestamp without time zone` | Não | - |
+| `atualizado_em` | `timestamp without time zone` | Não | - |
+
+---
+
+<a id="tabela-status_processo"></a>
+### 📋 `public.status_processo` (4 linhas • 24 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `integer` | Não | 🔑 **PK** |
+| `situacao` | `character varying(50)` | Sim | - |
+| `status` | `smallint` | Sim | - |
+
+---
+
+<a id="tabela-status_processos"></a>
+### 📋 `public.status_processos` (6 linhas • 24 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `integer` | Não | 🔑 **PK** |
+| `descricao` | `character varying(150)` | Sim | - |
+| `status` | `integer` | Sim | - |
+
+---
+
+<a id="tabela-status_viagem"></a>
+### 📋 `public.status_viagem` (531 linhas • 248 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `atualizado_em`, `data_consulta`, `placa`, `v_status`, `id`, `v_carga`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`status_entrega`** via `status_entrega.v_carga = status_viagem.v_carga`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `integer` | Não | 🔑 **PK** |
+| `placa` | `character varying(20)` | Não | ⚡ **Indexada** |
+| `data_consulta` | `date` | Não | ⚡ **Indexada** |
+| `v_carga` | `character varying(50)` | Não | ⚡ **Indexada** |
+| `v_codigo` | `character varying(50)` | Sim | - |
+| `v_veiculo` | `character varying(50)` | Sim | - |
+| `v_reboque` | `character varying(50)` | Sim | - |
+| `v_origem_vinculo` | `character varying(50)` | Sim | - |
+| `v_origem` | `text` | Sim | - |
+| `v_destino` | `text` | Sim | - |
+| `v_motorista_cpf` | `character varying(50)` | Sim | - |
+| `v_prev_inicio` | `timestamp without time zone` | Sim | - |
+| `v_prev_fim` | `timestamp without time zone` | Sim | - |
+| `v_chegada_origem` | `timestamp without time zone` | Sim | - |
+| `v_inicio` | `timestamp without time zone` | Sim | - |
+| `v_fim` | `timestamp without time zone` | Sim | - |
+| `v_status` | `character varying(100)` | Sim | ⚡ **Indexada** |
+| `v_procedimento_embarque` | `character varying(50)` | Sim | - |
+| `v_cadastro` | `timestamp without time zone` | Sim | - |
+| `v_distancia_prevista` | `numeric(12,4)` | Sim | - |
+| `v_distancia_percorrida` | `numeric(12,4)` | Sim | - |
+| `v_distancia_veiculo_origem` | `numeric(12,4)` | Sim | - |
+| `v_previsao_veiculo_origem` | `timestamp without time zone` | Sim | - |
+| `v_distancia_veiculo_destino` | `numeric(12,4)` | Sim | - |
+| `v_previsao_veiculo_destino` | `timestamp without time zone` | Sim | - |
+| `posicao_data` | `timestamp without time zone` | Sim | - |
+| `posicao_latitude` | `numeric(12,7)` | Sim | - |
+| `posicao_longitude` | `numeric(12,7)` | Sim | - |
+| `mensagem_data` | `timestamp without time zone` | Sim | - |
+| `mensagem_texto` | `text` | Sim | - |
+| `mensagem_descricao` | `character varying(255)` | Sim | - |
+| `mensagem_coord_latitude` | `numeric(12,7)` | Sim | - |
+| `mensagem_coord_longitude` | `numeric(12,7)` | Sim | - |
+| `mensagem_coord_descricao` | `text` | Sim | - |
+| `http_status` | `smallint` | Sim | - |
+| `erro` | `text` | Sim | - |
+| `criado_em` | `timestamp without time zone` | Não | - |
+| `atualizado_em` | `timestamp without time zone` | Não | ⚡ **Indexada** |
+
+---
+
+<a id="tabela-tabela_frete"></a>
+### 📋 `public.tabela_frete` (6.064 linhas • 1712 kB)
+
+* **Chave Primária (PK):** `id_tabela`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_tabela`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.tabela = tabela_frete.id_tabela`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_tabela` | `bigint` | Não | 🔑 **PK** |
+| `nome` | `text` | Sim | - |
+| `referencia` | `text` | Sim | - |
+| `imposto` | `bigint` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `hora` | `time without time zone` | Sim | - |
+| `operador` | `bigint` | Sim | - |
+| `tipo` | `bigint` | Sim | - |
+| `negocia` | `bigint` | Sim | - |
+| `tx_coleta` | `double precision` | Sim | - |
+| `unidade` | `bigint` | Sim | - |
+| `data_vigencia` | `text` | Sim | - |
+| `padrao` | `bigint` | Sim | - |
+| `id_grupo` | `double precision` | Sim | - |
+| `desconto_imposto` | `bigint` | Sim | - |
+| `decimais` | `bigint` | Sim | - |
+| `origem` | `text` | Sim | - |
+| `obs` | `text` | Sim | - |
+| `anexo` | `text` | Sim | - |
+| `horario_corte` | `time without time zone` | Sim | - |
+| `permite_desconto` | `bigint` | Sim | - |
+| `permite_acrescimo` | `bigint` | Sim | - |
+| `servicos` | `text` | Sim | - |
+| `empresa` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-tabela_padrao"></a>
+### 📋 `public.tabela_padrao` (10 linhas • 32 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_padrao`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_padrao` | `bigint` | Sim | ⚡ **Indexada** |
+| `id_tabela` | `bigint` | Sim | - |
+| `id_usuario` | `bigint` | Sim | - |
+| `data_hora` | `timestamp without time zone` | Sim | - |
+| `motivo` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-terceiros"></a>
+### 📋 `public.terceiros` (446 linhas • 240 kB)
+
+* **Chave Primária (PK):** `id_terceiro`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_terceiro`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`manifesto`** via `manifesto.veiculo_terceiro = terceiros.id_terceiro`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_terceiro` | `integer` | Não | 🔑 **PK** |
+| `fornecedor` | `integer` | Sim | - |
+| `nome` | `character varying(50)` | Sim | - |
+| `motorista` | `character varying(255)` | Sim | - |
+| `cpf` | `character varying(15)` | Sim | - |
+| `rg` | `character varying(25)` | Sim | - |
+| `habilitacao` | `integer` | Sim | - |
+| `validade` | `date` | Sim | - |
+| `categoria` | `character varying(2)` | Sim | - |
+| `endereco` | `character varying(150)` | Sim | - |
+| `bairro` | `character varying(80)` | Sim | - |
+| `cep` | `character varying(8)` | Sim | - |
+| `cidade` | `character varying(11)` | Sim | - |
+| `telefone` | `character varying(13)` | Sim | - |
+| `celular` | `character varying(13)` | Sim | - |
+| `nextel` | `character varying(18)` | Sim | - |
+| `ve_placa` | `character varying(9)` | Sim | - |
+| `ve_renavam` | `character varying(12)` | Sim | - |
+| `ve_marca` | `character varying(55)` | Sim | - |
+| `ve_modelo` | `character varying(55)` | Sim | - |
+| `ve_ano` | `integer` | Sim | - |
+| `ve_cor` | `character varying(25)` | Sim | - |
+| `ve_chassi` | `character varying(20)` | Sim | - |
+| `ve_seguro` | `integer` | Sim | - |
+| `ve_rastreador` | `character varying(25)` | Sim | - |
+| `ve_capacidade` | `numeric(12,2)` | Sim | - |
+| `ve_cidade` | `integer` | Sim | - |
+| `aco_placa` | `character varying(9)` | Sim | - |
+| `aco_capacidade` | `numeric(15,2)` | Sim | - |
+| `aco_tipo` | `integer` | Sim | - |
+| `aco_cidade` | `integer` | Sim | - |
+| `status` | `integer` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `unidade` | `integer` | Sim | - |
+| `percentual_trt_coleta` | `numeric(15,2)` | Sim | - |
+| `percentual_tde_coleta` | `numeric(15,2)` | Sim | - |
+| `percentual_tda_coleta` | `numeric(15,2)` | Sim | - |
+| `custo_evento_coleta` | `numeric(15,2)` | Sim | - |
+| `evento_coleta_etq` | `numeric(15,2)` | Sim | - |
+| `tipo_ve` | `integer` | Sim | - |
+| `seguro_status` | `integer` | Sim | - |
+| `seguro_validade` | `date` | Sim | - |
+| `seguro_data` | `date` | Sim | - |
+| `mopp_validade` | `date` | Sim | - |
+| `ve_placa_uf` | `character varying(2)` | Sim | - |
+| `tipo_dono` | `integer` | Sim | - |
+| `tipo_documento` | `character varying(4)` | Sim | - |
+| `validate_checklist` | `date` | Sim | - |
+| `tipo_rastreador` | `smallint` | Sim | - |
+| `id_local` | `integer` | Sim | - |
+| `fantasia` | `character varying(60)` | Sim | - |
+| `cnpj` | `character varying(15)` | Sim | - |
+| `numero` | `integer` | Sim | - |
+| `id_tabela` | `integer` | Sim | - |
+| `rg_expedidor` | `smallint` | Sim | - |
+| `rg_data` | `date` | Sim | - |
+| `propriedade_tipo` | `smallint` | Sim | - |
+| `data_nascimento` | `date` | Sim | - |
+| `validade_antt` | `date` | Sim | - |
+| `numero_dependentes` | `smallint` | Sim | - |
+| `data_inativado` | `timestamp without time zone` | Sim | - |
+| `servico_padrao_manifesto` | `integer` | Sim | - |
+| `tipo_comissao` | `smallint` | Sim | - |
+
+> *Exibindo as 63 colunas principais de um total de 117 colunas. Todas as 117 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-tipo_minuta"></a>
+### 📋 `public.tipo_minuta` (6 linhas • 32 kB)
+
+* **Chave Primária (PK):** `id`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`minuta`** via `minuta.tipo = tipo_minuta.id`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id` | `bigint` | Não | 🔑 **PK** |
+| `descricao` | `text` | Sim | - |
+| `edita` | `bigint` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `calcula_devolucao` | `bigint` | Sim | - |
+| `calcula_reentrega` | `bigint` | Sim | - |
+| `tipo_imposto` | `bigint` | Sim | - |
+| `consolida_awb` | `bigint` | Sim | - |
+| `permitir_duplicidade_nota` | `bigint` | Sim | - |
+| `gera_ocorrencia` | `bigint` | Sim | - |
+| `operador` | `bigint` | Sim | - |
+| `emissao_cte` | `bigint` | Sim | - |
+| `prefixo` | `text` | Sim | - |
+| `base_retira` | `text` | Sim | - |
+| `inverte` | `bigint` | Sim | - |
+| `confirma_copia` | `bigint` | Sim | - |
+| `coleta` | `bigint` | Sim | - |
+
+---
+
+<a id="tabela-tipo_oco"></a>
+### 📋 `public.tipo_oco` (398 linhas • 160 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+* **🔗 Conexões no MER:**
+  * É referenciada por **`frete_hist`** via `frete_hist.status = tipo_oco.id_oco`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_oco` | `bigint` | Sim | - |
+| `descricao` | `text` | Sim | - |
+| `descricao_ingles` | `text` | Sim | - |
+| `sigla` | `text` | Sim | - |
+| `view_cliente` | `bigint` | Sim | - |
+| `status_minuta` | `double precision` | Sim | - |
+| `gera_oco` | `bigint` | Sim | - |
+| `exclui` | `bigint` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `awb` | `bigint` | Sim | - |
+| `coleta` | `bigint` | Sim | - |
+| `agente` | `bigint` | Sim | - |
+| `movel` | `bigint` | Sim | - |
+| `vincular` | `bigint` | Sim | - |
+| `principal` | `bigint` | Sim | - |
+| `agendamento` | `bigint` | Sim | - |
+| `recebedor_obrigatorio` | `bigint` | Sim | - |
+| `falha_cliente` | `bigint` | Sim | - |
+| `comprovante_obrigatorio` | `bigint` | Sim | - |
+| `insucesso` | `bigint` | Sim | - |
+| `hora_futura` | `bigint` | Sim | - |
+| `updated_at` | `timestamp without time zone` | Sim | - |
+| `minuta` | `bigint` | Sim | - |
+| `vincula_multimodal` | `bigint` | Sim | - |
+| `vicula_multimodal` | `bigint` | Sim | - |
+| `assinatura_obrigatoria` | `bigint` | Sim | - |
+| `gerar_oco_manifesto` | `bigint` | Sim | - |
+| `falha_agente` | `double precision` | Sim | - |
+| `status_tracking` | `text` | Sim | - |
+| `comprovante_obrigatorio_api` | `bigint` | Sim | - |
+| `modo_log` | `bigint` | Sim | - |
+| `config_ocorrencias` | `text` | Sim | - |
+| `permite_remover` | `bigint` | Sim | - |
+| `foto_pacote_obrigatorio` | `bigint` | Sim | - |
+| `evento_insucesso` | `bigint` | Sim | - |
+| `motivo_insucesso` | `text` | Sim | - |
+
+---
+
+<a id="tabela-turnos"></a>
+### 📋 `public.turnos` (4.049 linhas • 376 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `FILIAL` | `text` | Sim | - |
+| `MES` | `text` | Sim | - |
+| `ANO` | `text` | Sim | - |
+| `PERIODO` | `text` | Sim | - |
+| `TURNO` | `text` | Sim | - |
+| `DIAS_UTEIS` | `double precision` | Sim | - |
+| `DIAS_TRABALHADOS` | `double precision` | Sim | - |
+| `HORAS_TRABALHADAS` | `double precision` | Sim | - |
+
+---
+
+<a id="tabela-unidades"></a>
+### 📋 `public.unidades` (402 linhas • 2624 kB)
+
+* **Chave Primária (PK):** `id_unidade`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_unidade`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`coleta`** via `coleta.unidade = unidades.id_unidade`
+  * É referenciada por **`minuta`** via `minuta.unidade = unidades.id_unidade`
+  * É referenciada por **`historico_volume`** via `historico_volume.unidade = unidades.id_unidade`
+  * É referenciada por **`frete_hist`** via `frete_hist.unidade = unidades.id_unidade`
+  * É referenciada por **`picking`** via `picking.unidade = unidades.id_unidade`
+  * É referenciada por **`manifesto`** via `manifesto.base = unidades.id_unidade`
+  * É referenciada por **`manifesto`** via `manifesto.destino = unidades.id_unidade`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_unidade` | `bigint` | Não | 🔑 **PK** |
+| `id_local` | `bigint` | Sim | - |
+| `fantasia` | `text` | Sim | - |
+| `razao` | `text` | Sim | - |
+| `cnpj` | `text` | Sim | - |
+| `insc_estadual` | `text` | Sim | - |
+| `insc_municipal` | `text` | Sim | - |
+| `endereco` | `text` | Sim | - |
+| `complemento` | `text` | Sim | - |
+| `numero` | `text` | Sim | - |
+| `bairro` | `text` | Sim | - |
+| `cep` | `text` | Sim | - |
+| `cidade` | `text` | Sim | - |
+| `telefone` | `text` | Sim | - |
+| `email` | `text` | Sim | - |
+| `nextel` | `text` | Sim | - |
+| `base_iss` | `double precision` | Sim | - |
+| `base_icms` | `double precision` | Sim | - |
+| `comissao` | `double precision` | Sim | - |
+| `ctrc_numero` | `double precision` | Sim | - |
+| `fatura` | `double precision` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `data` | `text` | Sim | - |
+| `sigla` | `text` | Sim | - |
+| `companhia` | `text` | Sim | - |
+| `tipo_imposto` | `text` | Sim | - |
+| `par_coleta` | `bigint` | Sim | - |
+| `par_printMinuta` | `bigint` | Sim | - |
+| `par_printValorMinuta` | `bigint` | Sim | - |
+| `par_nfdupla` | `bigint` | Sim | - |
+| `EtiqColeta` | `bigint` | Sim | - |
+| `obsMinuta` | `text` | Sim | - |
+| `obsColeta` | `text` | Sim | - |
+| `valorFreteManifesto` | `bigint` | Sim | - |
+| `par_ManifestoMotorista` | `bigint` | Sim | - |
+| `par_ManifestoAgente` | `bigint` | Sim | - |
+| `par_notasManifesto` | `double precision` | Sim | - |
+| `peso` | `bigint` | Sim | - |
+| `volumes` | `bigint` | Sim | - |
+| `coleta` | `bigint` | Sim | - |
+| `c_respColeta` | `bigint` | Sim | - |
+| `c_peso` | `bigint` | Sim | - |
+| `c_volumes` | `bigint` | Sim | - |
+| `statusAwb` | `bigint` | Sim | - |
+| `iss_retido` | `text` | Sim | - |
+| `km_manifesto` | `bigint` | Sim | - |
+| `emite_manifesto` | `bigint` | Sim | - |
+| `finaliza_manifesto` | `bigint` | Sim | - |
+| `finaliza_manifesto_minuta_status` | `bigint` | Sim | - |
+| `altera_remetente_coleta` | `bigint` | Sim | - |
+| `saida_data_retroativa` | `bigint` | Sim | - |
+| `coleta_manifesto` | `bigint` | Sim | - |
+| `valida_checklist` | `bigint` | Sim | - |
+| `rateio_manifesto` | `bigint` | Sim | - |
+| `cte_tipo_minuta` | `bigint` | Sim | - |
+| `valida_capacidade_veiculo` | `bigint` | Sim | - |
+| `codigo_fiscal` | `bigint` | Sim | - |
+| `coleta_pdf_agente` | `bigint` | Sim | - |
+| `coleta_pdf_cliente` | `bigint` | Sim | - |
+| `memo_coleta_minuta` | `bigint` | Sim | - |
+| `arredonda_peso_nf` | `bigint` | Sim | - |
+| `minuta_lote_sem_pod` | `bigint` | Sim | - |
+| `minuta_lote` | `bigint` | Sim | - |
+| `altera_minuta` | `bigint` | Sim | - |
+| `tipo_emissao_edi` | `bigint` | Sim | - |
+| `tipo_pagamento` | `bigint` | Sim | - |
+| `bloqueio_emissao_nf` | `bigint` | Sim | - |
+| `duplicidade_mdfe` | `bigint` | Sim | - |
+| `codigo_contabil` | `text` | Sim | - |
+| `unidade_administrativa` | `text` | Sim | - |
+| `minuta_copia` | `bigint` | Sim | - |
+| `cal_comissao_coleta` | `bigint` | Sim | - |
+| `comissao_coleta` | `double precision` | Sim | - |
+| `valida_awb` | `bigint` | Sim | - |
+| `cte_data` | `bigint` | Sim | - |
+| `emite_minuta_coleta_app` | `bigint` | Sim | - |
+| `tipo_imp_dim_min` | `bigint` | Sim | - |
+| `tipo_imp_dim_cot` | `bigint` | Sim | - |
+| `tipo_imp_dim_col` | `bigint` | Sim | - |
+| `tipo` | `bigint` | Sim | - |
+| `validade_cotacao` | `bigint` | Sim | - |
+| `valida_estado_remetente_cotacao` | `bigint` | Sim | - |
+| `validar_limite_dep` | `double precision` | Sim | - |
+| `validar_limite_nat` | `double precision` | Sim | - |
+| `bloqueio_minuta_nao_averbada` | `bigint` | Sim | - |
+| `liquida_lancamento_apos_fechamento` | `bigint` | Sim | - |
+| `data_saida_emissao` | `bigint` | Sim | - |
+| `idioma_imp_minuta` | `bigint` | Sim | - |
+| `enviar_nfse` | `bigint` | Sim | - |
+| `seleciona_nf_emissao` | `bigint` | Sim | - |
+| `excedente_peso_add` | `bigint` | Sim | - |
+| `validar_cnpj_cotacao` | `bigint` | Sim | - |
+| `obrigatorio_rota_manifesto` | `bigint` | Sim | - |
+| `servico_minuta` | `bigint` | Sim | - |
+| `bloqueia_minutas_coleta` | `bigint` | Sim | - |
+| `cubagem_total` | `bigint` | Sim | - |
+| `par_calc_agente_origem` | `bigint` | Sim | - |
+| `obriga_chave_cte_subcontratado` | `bigint` | Sim | - |
+| `calcular_manifesto_ao_finalizar` | `bigint` | Sim | - |
+| `bloqueia_minuta_com_frete_zerado` | `bigint` | Sim | - |
+| `hora_saida_emissao` | `bigint` | Sim | - |
+| `hora_saida_padrao` | `time without time zone` | Sim | - |
+| `validar_cotacao` | `bigint` | Sim | - |
+| `bloqueio_checklist_manifesto` | `bigint` | Sim | - |
+| `valida_gerenciadora` | `bigint` | Sim | - |
+| `confirmacao_sonora` | `bigint` | Sim | - |
+| `exibir_tipo_cliente` | `bigint` | Sim | - |
+| `permissao_data` | `bigint` | Sim | - |
+| `dt_emissao_minuta` | `bigint` | Sim | - |
+| `finaliza_manifesto_coleta_status` | `bigint` | Sim | - |
+| `statusLancamento_gnre` | `bigint` | Sim | - |
+| `id_contas_bancaria` | `double precision` | Sim | - |
+| `memo_cotacao_minuta` | `bigint` | Sim | - |
+| `obriga_servico_manifesto` | `bigint` | Sim | - |
+| `data_saida_coleta` | `bigint` | Sim | - |
+| `unidade_faturamento` | `bigint` | Sim | - |
+| `frete_peso_soma_peso_add` | `bigint` | Sim | - |
+| `obrigatorio_custo_manifesto` | `bigint` | Sim | - |
+| `obs_email_cobranca_vencida` | `text` | Sim | - |
+| `custos_manifesto_prop` | `bigint` | Sim | - |
+| `custos_manifesto_agen` | `bigint` | Sim | - |
+| `custos_manifesto_terc` | `bigint` | Sim | - |
+| `todas_notas_imp_coleta` | `bigint` | Sim | - |
+| `permite_cotacao_minutas` | `bigint` | Sim | - |
+| `emite_manifesto_agente` | `bigint` | Sim | - |
+| `emite_manifesto_terceiro` | `bigint` | Sim | - |
+| `emite_manifesto_transf` | `bigint` | Sim | - |
+| `bloqueia_minuta_rota_diferente` | `bigint` | Sim | - |
+| `rateio_manifesto_transf` | `bigint` | Sim | - |
+| `rateio_manifesto_agente` | `bigint` | Sim | - |
+| `rateio_manifesto_terceiro` | `bigint` | Sim | - |
+| `cte_num_minuta` | `bigint` | Sim | - |
+| `valida_valor_emissao_carta_viagem` | `bigint` | Sim | - |
+| `qr_code_baixa_facil` | `bigint` | Sim | - |
+| `exibe_saida_mdfe` | `bigint` | Sim | - |
+| `coleta_imp` | `double precision` | Sim | - |
+| `valida_uf_origem` | `bigint` | Sim | - |
+| `tipo_empresa` | `text` | Sim | - |
+| `emite_nfse` | `double precision` | Sim | - |
+
+> *Exibindo as 139 colunas principais de um total de 291 colunas. Todas as 291 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-usuarios"></a>
+### 📋 `public.usuarios` (4.813 linhas • 7664 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_usuario`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_usuario` | `bigint` | Sim | ⚡ **Indexada** |
+| `logim` | `text` | Sim | - |
+| `senha` | `text` | Sim | - |
+| `primeiro_nome` | `text` | Sim | - |
+| `nome_completo` | `text` | Sim | - |
+| `data_nascimento` | `text` | Sim | - |
+| `email` | `text` | Sim | - |
+| `cadastro` | `bigint` | Sim | - |
+| `comercial` | `bigint` | Sim | - |
+| `gerencia` | `bigint` | Sim | - |
+| `financeiro` | `bigint` | Sim | - |
+| `operacional` | `bigint` | Sim | - |
+| `ctrc` | `bigint` | Sim | - |
+| `limite_emissao_cte` | `bigint` | Sim | - |
+| `sistema` | `bigint` | Sim | - |
+| `unidade` | `bigint` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `usuario_sistema` | `bigint` | Sim | - |
+| `data` | `timestamp without time zone` | Sim | - |
+| `tempo` | `text` | Sim | - |
+| `fiscal` | `bigint` | Sim | - |
+| `pre_alerta` | `bigint` | Sim | - |
+| `notificacao` | `bigint` | Sim | - |
+| `sac` | `bigint` | Sim | - |
+| `wms` | `bigint` | Sim | - |
+| `salvaMinuta` | `bigint` | Sim | - |
+| `liquidar_pagamentos` | `bigint` | Sim | - |
+| `aprova_manifesto` | `bigint` | Sim | - |
+| `tipo` | `bigint` | Sim | - |
+| `id_movel` | `double precision` | Sim | - |
+| `movel_exclui_coleta` | `bigint` | Sim | - |
+| `valornf` | `bigint` | Sim | - |
+| `status_tabela` | `bigint` | Sim | - |
+| `cotar_pedido_compra` | `bigint` | Sim | - |
+| `autorizar_pedido_compra` | `bigint` | Sim | - |
+| `altera_forma_pagamento_minuta` | `bigint` | Sim | - |
+| `salva_coleta` | `bigint` | Sim | - |
+| `alerta_manifesto` | `bigint` | Sim | - |
+| `ordem_minuta` | `bigint` | Sim | - |
+| `ordem_coleta` | `bigint` | Sim | - |
+| `preview_coleta` | `bigint` | Sim | - |
+| `altera_valor_receber` | `bigint` | Sim | - |
+| `altera_valor_pagar` | `bigint` | Sim | - |
+| `remove_minuta_manifesto` | `bigint` | Sim | - |
+| `avalia_manifesto` | `bigint` | Sim | - |
+| `acompanha_manifesto` | `bigint` | Sim | - |
+| `remove_anexo_minuta` | `bigint` | Sim | - |
+| `remove_anexo_coleta` | `bigint` | Sim | - |
+| `ordem_coleta_responsavel` | `bigint` | Sim | - |
+| `recebe_email_manifesto` | `bigint` | Sim | - |
+| `valida_cotacao` | `bigint` | Sim | - |
+| `visualiza_coletas_app` | `bigint` | Sim | - |
+| `altera_pagamento_coleta` | `bigint` | Sim | - |
+| `negocia_frete_manifesto` | `bigint` | Sim | - |
+| `tipo_desconto_bonificacao` | `text` | Sim | - |
+| `tipo_valor_bonificacao` | `text` | Sim | - |
+| `valor_bonificacao` | `text` | Sim | - |
+| `ve_custo_coleta` | `bigint` | Sim | - |
+| `ve_custo_manifesto` | `bigint` | Sim | - |
+| `ve_custo_minuta` | `bigint` | Sim | - |
+| `estorna_manifesto` | `bigint` | Sim | - |
+| `pesquisa_cnpj_cotacao` | `bigint` | Sim | - |
+| `pesquisa_cnpj_minuta` | `bigint` | Sim | - |
+| `pesquisa_cnpj_coleta` | `bigint` | Sim | - |
+| `manter_valor_transportado` | `bigint` | Sim | - |
+| `id_mercado_pago` | `text` | Sim | - |
+| `data_atualizacao_cadastro` | `text` | Sim | - |
+| `status_autDoisFatores` | `bigint` | Sim | - |
+| `receber_memo_minuta` | `double precision` | Sim | - |
+| `saida_efetiva` | `double precision` | Sim | - |
+| `id_brudam` | `double precision` | Sim | - |
+| `altera_data_manifesto` | `bigint` | Sim | - |
+| `acesso_app_conferencia` | `bigint` | Sim | - |
+| `data_codigo_recuperar_senha` | `timestamp without time zone` | Sim | - |
+| `valor_maximo_emissao_cte` | `double precision` | Sim | - |
+| `desbloquear_conferencia` | `bigint` | Sim | - |
+| `altera_unidade_emissora` | `bigint` | Sim | - |
+| `visualizacao_por_unidade` | `text` | Sim | - |
+| `unidades_extras` | `text` | Sim | - |
+| `emite_duplicidade` | `bigint` | Sim | - |
+| `codigo_verificacao_sms` | `text` | Sim | - |
+
+> *Exibindo as 81 colunas principais de um total de 184 colunas. Todas as 184 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-veiculos"></a>
+### 📋 `public.veiculos` (1.268 linhas • 464 kB)
+
+* **Chave Primária (PK):** `id_veiculo`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_veiculo`
+* **🔗 Conexões no MER:**
+  * É referenciada por **`manifesto`** via `manifesto.veiculo = veiculos.id_veiculo`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_veiculo` | `integer` | Não | 🔑 **PK** |
+| `placa` | `character varying(9)` | Sim | - |
+| `renavam` | `character varying(20)` | Sim | - |
+| `marca` | `character varying(60)` | Sim | - |
+| `modelo` | `character varying(60)` | Sim | - |
+| `cor` | `character varying(60)` | Sim | - |
+| `seguro` | `integer` | Sim | - |
+| `rastreador` | `integer` | Sim | - |
+| `chassi` | `character varying(60)` | Sim | - |
+| `ano` | `integer` | Sim | - |
+| `ano_modelo` | `integer` | Sim | - |
+| `capacidade` | `numeric(14,2)` | Sim | - |
+| `venc_licenciamento` | `date` | Sim | - |
+| `compra` | `date` | Sim | - |
+| `venda` | `date` | Sim | - |
+| `valor_licenciamento` | `numeric(20,2)` | Sim | - |
+| `aco_placa` | `character varying(8)` | Sim | - |
+| `aco_chassi` | `character varying(60)` | Sim | - |
+| `aco_marca` | `character varying(60)` | Sim | - |
+| `aco_modelo` | `character varying(60)` | Sim | - |
+| `aco_capacidade` | `numeric(14,2)` | Sim | - |
+| `aco_cubagem` | `numeric(14,2)` | Sim | - |
+| `aco_tipo` | `integer` | Sim | - |
+| `status` | `integer` | Sim | - |
+| `data_incluido` | `date` | Sim | - |
+| `unidade` | `integer` | Sim | - |
+| `tipo_veiculo` | `bigint` | Sim | - |
+| `tipo_proprietario` | `integer` | Sim | - |
+| `seguro_status` | `integer` | Sim | - |
+| `seguro_validade` | `date` | Sim | - |
+| `seguro_data` | `date` | Sim | - |
+| `id_tabela` | `integer` | Sim | - |
+| `validade_checklist` | `date` | Sim | - |
+| `tipo_rastreador` | `smallint` | Sim | - |
+| `cidade` | `character varying(11)` | Sim | - |
+| `validade_tacografo` | `date` | Sim | - |
+| `medidas_rodado` | `character varying(45)` | Sim | - |
+| `valor` | `numeric(10,2)` | Sim | - |
+| `data_rastreador` | `timestamp without time zone` | Sim | - |
+| `id_categoria_veiculos` | `integer` | Sim | - |
+| `tipo_resp` | `smallint` | Sim | - |
+| `id_resp` | `integer` | Sim | - |
+| `validade_antt` | `date` | Sim | - |
+| `capacidade_tanque` | `numeric(5,2)` | Sim | - |
+| `validade_checklist_rastreador` | `date` | Sim | - |
+| `codigo_analise_gerenciadora` | `character varying(20)` | Sim | - |
+| `tipo_proprietario_prop` | `integer` | Sim | - |
+| `unidade_prop` | `integer` | Sim | - |
+
+> *Exibindo as 48 colunas principais de um total de 93 colunas. Todas as 93 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-veiculos_carga_manual_bkp"></a>
+### 📋 `public.veiculos_carga_manual_bkp` (1.130 linhas • 656 kB)
+
+* **Chave Primária (PK):** Nenhuma
+* **⚡ Filtro Rápido (Colunas Indexadas):** ⚠️ Nenhuma coluna indexada — use LIMIT ao visualizar!
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_veiculo` | `bigint` | Sim | - |
+| `placa` | `text` | Sim | - |
+| `renavam` | `text` | Sim | - |
+| `marca` | `text` | Sim | - |
+| `modelo` | `text` | Sim | - |
+| `cor` | `text` | Sim | - |
+| `seguro` | `double precision` | Sim | - |
+| `rastreador` | `double precision` | Sim | - |
+| `chassi` | `text` | Sim | - |
+| `ano` | `bigint` | Sim | - |
+| `ano_modelo` | `double precision` | Sim | - |
+| `capacidade` | `double precision` | Sim | - |
+| `venc_licenciamento` | `text` | Sim | - |
+| `compra` | `text` | Sim | - |
+| `venda` | `text` | Sim | - |
+| `valor_licenciamento` | `text` | Sim | - |
+| `aco_placa` | `text` | Sim | - |
+| `aco_chassi` | `text` | Sim | - |
+| `aco_marca` | `text` | Sim | - |
+| `aco_modelo` | `text` | Sim | - |
+| `aco_capacidade` | `text` | Sim | - |
+| `aco_cubagem` | `text` | Sim | - |
+| `aco_tipo` | `text` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `data_incluido` | `text` | Sim | - |
+| `unidade` | `double precision` | Sim | - |
+| `tipo_veiculo` | `bigint` | Sim | - |
+| `tipo_proprietario` | `bigint` | Sim | - |
+| `seguro_status` | `bigint` | Sim | - |
+| `seguro_validade` | `text` | Sim | - |
+| `seguro_data` | `text` | Sim | - |
+| `id_tabela` | `double precision` | Sim | - |
+| `validade_checklist` | `text` | Sim | - |
+| `tipo_rastreador` | `bigint` | Sim | - |
+| `cidade` | `text` | Sim | - |
+| `validade_tacografo` | `text` | Sim | - |
+| `medidas_rodado` | `text` | Sim | - |
+| `valor` | `double precision` | Sim | - |
+| `data_rastreador` | `text` | Sim | - |
+| `id_categoria_veiculos` | `text` | Sim | - |
+| `tipo_resp` | `double precision` | Sim | - |
+| `id_resp` | `double precision` | Sim | - |
+| `validade_antt` | `text` | Sim | - |
+| `capacidade_tanque` | `text` | Sim | - |
+| `validade_checklist_rastreador` | `text` | Sim | - |
+| `codigo_analise_gerenciadora` | `text` | Sim | - |
+| `tipo_proprietario_prop` | `bigint` | Sim | - |
+| `unidade_prop` | `double precision` | Sim | - |
+
+> *Exibindo as 48 colunas principais de um total de 93 colunas. Todas as 93 colunas estão disponíveis no buscador do Painel Global HTML.*
+
+---
+
+<a id="tabela-volumes"></a>
+### 📋 `public.volumes` (14.349.375 linhas • 5195 MB)
+
+* **Chave Primária (PK):** `id_volume`
+* **⚡ Filtro Rápido (Colunas Indexadas):** `id_coleta`, `id_minuta`, `id_nf`, `id_volume`
+* **🔗 Conexões no MER:**
+  * Aponta para **`minuta`** via `volumes.id_minuta = minuta.id_minuta` (FK Lógica)
+  * Aponta para **`notas_fiscais`** via `volumes.id_nf = notas_fiscais.id_nf` (FK Lógica)
+  * Aponta para **`coleta`** via `volumes.id_coleta = coleta.id_coleta` (FK Lógica)
+  * Aponta para **`cotacao`** via `volumes.id_cotacao = cotacao.id_cotacao` (FK Lógica)
+  * É referenciada por **`historico_volume`** via `historico_volume.id_volume = volumes.id_volume`
+
+| Coluna | Tipo | Nulo? | Papel / Índice |
+| :--- | :--- | :---: | :--- |
+| `id_volume` | `bigint` | Não | 🔑 **PK** |
+| `id_minuta` | `double precision` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `parcial` | `bigint` | Sim | - |
+| `total` | `bigint` | Sim | - |
+| `peso` | `double precision` | Sim | - |
+| `status` | `bigint` | Sim | - |
+| `lote` | `text` | Sim | - |
+| `comprimento` | `double precision` | Sim | - |
+| `largura` | `double precision` | Sim | - |
+| `altura` | `double precision` | Sim | - |
+| `cubagem` | `double precision` | Sim | - |
+| `barra` | `text` | Sim | - |
+| `id_coleta` | `double precision` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `id_cotacao` | `double precision` | Sim | 🔗 **FK** |
+| `etiqueta` | `text` | Sim | - |
+| `id_nf` | `double precision` | Sim | 🔗 **FK** ⚡ **Indexada** |
+| `chave` | `text` | Sim | - |
+| `pacote` | `double precision` | Sim | - |
+| `id_awb` | `text` | Sim | - |
+| `barras` | `text` | Sim | - |
+
+---
+

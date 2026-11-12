@@ -976,7 +976,9 @@ export default function AproveitamentoFrotaPage() {
                                                                                                 </td>
                                                                                                 <td className="px-3 py-2 whitespace-nowrap">
                                                                                                     <span className="font-bold text-slate-700">{v.totalVolumes}</span>
-                                                                                                    <span className="text-[10px] text-gray-400 block">{v.totalMinutas} minuta(s)</span>
+                                                                                                    <span className="text-[10px] text-gray-400 block">
+                                                                                                        {v.totalMinutas} minuta(s){v.totalColetas > 0 ? ` • ${v.totalColetas} coleta(s)` : ""}
+                                                                                                    </span>
                                                                                                 </td>
                                                                                                 <td className="px-3 py-2 whitespace-nowrap">
                                                                                                     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-black border ${corOcupV}`}>{v.ocupacaoGeralPct}%</span>
@@ -1003,7 +1005,7 @@ export default function AproveitamentoFrotaPage() {
                                                                                                         }}
                                                                                                         className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all active:scale-95"
                                                                                                     >
-                                                                                                        🔍 Minutas ({v.totalMinutas})
+                                                                                                        🔍 {v.totalMinutas > 0 ? `Minutas (${v.totalMinutas})` : v.totalColetas > 0 ? `Coletas (${v.totalColetas})` : `Minutas (0)`}
                                                                                                     </button>
                                                                                                 </td>
                                                                                             </tr>
@@ -1193,25 +1195,49 @@ export default function AproveitamentoFrotaPage() {
                                                     return (
                                                         <tr key={m.idMinuta} className="group hover:bg-slate-50/80 transition-colors">
                                                             <td className="px-2.5 py-2 whitespace-nowrap font-bold text-blue-600 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] transition-colors">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <a
-                                                                        href={getBrudamMinutaUrl(m.idMinuta)}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        title={`Abrir minuta #${m.idMinuta} no Brudam`}
-                                                                        className="hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
-                                                                    >
-                                                                        <span>#{m.idMinuta}</span>
-                                                                        <span className="text-[10px] opacity-60">↗</span>
-                                                                    </a>
+                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                    {m.tipoRegistro === "COLETA" ? (
+                                                                        <span className="text-emerald-700 font-extrabold inline-flex items-center gap-1">
+                                                                            📦 Coleta #{m.idColeta}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <a
+                                                                            href={getBrudamMinutaUrl(m.idMinuta)}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            title={`Abrir minuta #${m.idMinuta} no Brudam`}
+                                                                            className="hover:underline inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                                                        >
+                                                                            <span>#{m.idMinuta}</span>
+                                                                            <span className="text-[10px] opacity-60">↗</span>
+                                                                        </a>
+                                                                    )}
+                                                                    {m.idColeta && m.tipoRegistro !== "COLETA" && (
+                                                                        <span
+                                                                            className="text-[9px] font-extrabold px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full"
+                                                                            title={m.remetenteColeta ? `Coleta #${m.idColeta} — ${m.remetenteColeta}` : `Gerada pela Coleta #${m.idColeta}`}
+                                                                        >
+                                                                            Coleta #{m.idColeta}
+                                                                        </span>
+                                                                    )}
                                                                     {m.totalManifestos > 1 && (
                                                                         <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded-full" title={`Carga multitrecho: transportada em ${m.totalManifestos} manifestos`}>
                                                                             {m.totalManifestos} trechos
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                {m.cteNumero && <span className="block text-[10px] text-gray-400 font-normal">CTE: {m.cteNumero}</span>}
+                                                                {m.tipoRegistro === "COLETA" ? (
+                                                                    <span className="block text-[10px] text-gray-500 font-normal truncate max-w-[210px]" title={m.remetenteColeta || undefined}>
+                                                                        {m.remetenteColeta || "Coleta sem minuta vinculada"}
+                                                                    </span>
+                                                                ) : (
+                                                                    m.cteNumero && (
+                                                                        <span className="block text-[10px] text-gray-400 font-normal">
+                                                                            CTE: {m.cteNumero}{m.remetenteColeta ? ` • ${m.remetenteColeta}` : ""}
+                                                                        </span>
+                                                                    )
+                                                                )}
                                                                 {m.anomaliaVolume && (
                                                                     <span
                                                                         className="block mt-0.5 text-[9px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1 py-0.5 rounded cursor-help"

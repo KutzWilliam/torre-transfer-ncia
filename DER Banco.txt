@@ -1,0 +1,2071 @@
+# Diagrama Entidade-Relacionamento (DER) — Banco `torre_controle`
+
+> **Servidor:** `172.20.10.205:5432` | **Banco:** `torre_controle`
+> Os diagramas abaixo utilizam a notação **Pé de Galinha (Crow's Foot / Mermaid `erDiagram`)** divididos por domínio funcional para máxima legibilidade, além do mapa arquitetural integrado.
+
+---
+
+## 1. Mapa Arquitetural e Fluxo Geral de Entidades
+
+```mermaid
+flowchart TB
+    subgraph FONTES["Fontes Externas & FDW (srv_remoto)"]
+        LIFE_FDW["rastreamento_life / LIFE (FDW)"]
+        SASCAR_FDW["rastreamento_sascar / veiculos_sascar (FDW)"]
+        PROTHEUS["ERP Protheus (GTP / RH / Ponto)"]
+        BRUDAM["ERP Carga / TMS (Staging -> Public)"]
+    end
+
+    subgraph CORE_TMS["1. Core TMS: Coleta, Minuta (CT-e) e Volumes"]
+        COT["cotacao (995k)"]
+        COL["coleta (327k)"]
+        MIN["minuta (1.98M)"]
+        NF["notas_fiscais (2.40M)"]
+        VOL["volumes (14.3M)"]
+        FH["frete_hist (39.2M)"]
+        ANX["anexos (2.09M)"]
+    end
+
+    subgraph MANIFESTO_BIP["2. Manifestos, MDF-e e Bipagem"]
+        MAN["manifesto (189k)"]
+        ML["manifesto_list (5.32M)"]
+        PICK["picking (62k)"]
+        HVOL["historico_volume (15.2M)"]
+        MDFE["MDFe (18k)"]
+    end
+
+    subgraph PROCESSOS["3. Processos e Avarias (FKs Físicas)"]
+        PROC["processo (4.8k)"]
+        P_VOL["processo_volumes"]
+        P_NF["processo_notas"]
+        P_ANX["processo_anexos"]
+        P_EMP["processo_empresa"]
+    end
+
+    subgraph CADASTROS["4. Cadastros Mestres e Frota"]
+        FORN["fornecedores (451k)"]
+        UNID["unidades (402)"]
+        ROT["rotas (11k) / aero (187)"]
+        FROTA["veiculos (1.2k) / terceiros (446)"]
+    end
+
+    subgraph ESCALA_TELEMETRIA["5. Escala Rodoviária & Rastreamento"]
+        ESC["escala_motoristas (1.09M)"]
+        RH["funcionarios_sra / ponto_horas / banco_horas"]
+        SV["status_viagem / status_entrega"]
+    end
+
+    BRUDAM --> COT & COL & MIN
+    COT -->|cotacao| COL
+    COT -->|cotacao| MIN
+    COL -->|id_minuta| MIN
+    MIN -->|id_minuta| NF
+    MIN -->|id_minuta| VOL
+    MIN -->|frete| FH
+    MIN -->|id_minuta| ANX
+
+    MIN -->|minuta| ML
+    MAN -->|id_manifesto| ML
+    MAN -->|id_manifesto| PICK
+    MAN -->|id_manifesto| MDFE
+    VOL -->|id_volume / barra| HVOL
+    PICK -->|id_manifesto + tipo| HVOL
+
+    MIN ==>|FK id_minuta| PROC
+    PROC ==>|FK id_processo| P_VOL & P_NF & P_ANX & P_EMP
+
+    FORN -.->|id_local| MIN & COL
+    UNID -.->|id_unidade| MIN & MAN & PICK
+    ROT -.->|id / id_rota| MIN & MAN
+    FROTA -.->|id_veiculo / id_terceiro| MAN
+
+    PROTHEUS --> ESC & RH
+    LIFE_FDW -.->|veiculo = COD_VEICULO| ESC
+    SASCAR_FDW -.->|placa| FROTA & SV
+```
+
+---
+
+## 2. DER Módulo 1 — Core Operacional TMS (Cotação, Coleta, Minuta, Notas, Volumes e Ocorrências)
+
+```mermaid
+erDiagram
+    cotacao ||--o{ coleta : "cotacao (lógica)"
+    cotacao ||--o{ minuta : "cotacao (lógica)"
+    cotacao ||--o{ volumes : "id_cotacao (lógica)"
+
+    coleta ||--o{ coleta_enderecos : "coleta (idx)"
+    coleta ||--o{ coleta_historico : "coleta (idx)"
+    coleta ||--o{ alteracoes_coleta : "coleta (idx)"
+    coleta ||--o{ volumes : "id_coleta (idx)"
+    coleta ||--o{ frete_hist : "coleta (idx)"
+    coleta ||--o{ anexos : "id_coleta (idx)"
+    coleta }o--o| minuta : "id_minuta (idx)"
+
+    minuta ||--o{ notas_fiscais : "id_minuta (idx)"
+    minuta ||--o{ volumes : "id_minuta (idx)"
+    minuta ||--o{ frete_hist : "frete (idx)"
+    minuta ||--o{ pre_minuta : "id_minuta (idx)"
+    minuta ||--o{ cte_substituicao : "id_minuta / cte_chave (idx)"
+    minuta ||--o{ anexos : "id_minuta (idx)"
+
+    notas_fiscais ||--o{ volumes : "id_nf (idx)"
+    notas_fiscais ||--o{ frete_hist : "id_nf (idx)"
+    notas_fiscais ||--o{ anexos : "id_nota (idx)"
+    nf_tipo ||--o{ notas_fiscais : "nf_tipo"
+
+    minuta_status ||--o{ minuta : "status"
+    tipo_minuta ||--o{ minuta : "tipo"
+    cte_status ||--o{ minuta : "cte_status"
+    cte_tipo ||--o{ minuta : "cte_tipo_cte"
+    tipo_oco ||--o{ frete_hist : "status / ocorrencia"
+    tipo_oco ||--o{ coleta_historico : "ocorrencia"
+
+    cotacao {
+        integer id_cotacao PK
+        bigint unidade
+        bigint cliente "FK lógica -> fornecedores.id_local"
+        varchar id_origem
+        varchar id_destino
+        bigint tabela "FK lógica -> tabela_frete.id_tabela"
+        bigint servico
+        numeric totalPeso
+        numeric totalCubo
+        numeric frete_total
+        bigint status
+        date data
+        date validade
+    }
+
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente "FK lógica -> fornecedores.id_local"
+        bigint cotacao "FK lógica -> cotacao.id_cotacao"
+        bigint id_minuta "FK lógica -> minuta.id_minuta (idx)"
+        bigint unidade "FK lógica -> unidades.id_unidade"
+        bigint id_origem
+        bigint id_destino
+        date data
+        date coleta_data
+        bigint status
+        double total_volumes
+        double total_peso
+        double total_nf_valor
+    }
+
+    coleta_enderecos {
+        integer id PK
+        integer coleta "FK lógica -> coleta.id_coleta (idx)"
+        smallint tipo
+        varchar cep
+        varchar endereco
+        varchar cidade
+        varchar latitude
+        varchar longitude
+    }
+
+    coleta_historico {
+        integer id_log PK
+        integer coleta "FK lógica -> coleta.id_coleta (idx)"
+        date data
+        time hora
+        smallint status
+        smallint ocorrencia "FK lógica -> tipo_oco.id_oco"
+        integer operador
+        varchar obs
+    }
+
+    alteracoes_coleta {
+        bigint id PK
+        integer coleta "FK lógica -> coleta.id_coleta (idx)"
+        timestamp data
+        varchar coluna
+        varchar v_a "Valor anterior"
+        varchar v_n "Valor novo"
+        integer operador
+    }
+
+    minuta {
+        bigint id_minuta PK
+        bigint cte_numero "Número do CT-e"
+        text cte_chave "Chave 44 dígitos SEFAZ"
+        text cte_data "Data emissão CT-e (idx)"
+        bigint cte_status "FK lógica -> cte_status.id_status"
+        bigint status "FK lógica -> minuta_status.id_status"
+        bigint tipo "FK lógica -> tipo_minuta.id"
+        bigint id_cliente "Tomador -> fornecedores.id_local"
+        bigint id_origem "Remetente -> fornecedores.id_local"
+        bigint id_destino "Destinatário -> fornecedores.id_local"
+        bigint unidade "Unidade emissora -> unidades.id_unidade"
+        double base_comissionada_entrega "Unidade entrega -> unidades.id_unidade"
+        double entrega_resp_id "Unidade resp -> unidades.id_unidade"
+        double rota "FK lógica -> rotas.id"
+        text origem "FK lógica -> rotas.id_rota"
+        text destino "FK lógica -> rotas.id_rota"
+        text transf_origem "FK lógica -> aero.id_aero"
+        text transf_destino "FK lógica -> aero.id_aero"
+        date data "Data inclusão"
+        text prev_entrega "Previsão entrega"
+        text data_entrega "Data baixa entrega"
+        bigint total_volumes
+        double total_peso
+        double total_nf_valor
+        double frete_total
+    }
+
+    pre_minuta {
+        integer id PK
+        integer id_minuta "FK lógica -> minuta.id_minuta (idx)"
+        timestamp data_hora
+        varchar malote
+        numeric peso
+        integer base_atual
+        integer base_proxima
+    }
+
+    cte_substituicao {
+        bigint id PK
+        bigint id_minuta "FK lógica -> minuta.id_minuta"
+        text cte_chave "Indexado"
+        bigint numero
+        double valor
+    }
+
+    notas_fiscais {
+        bigint id_nf PK
+        bigint id_minuta "FK lógica -> minuta.id_minuta (idx)"
+        text nf "Número da NF (idx cover)"
+        text serie
+        text chave_nfe "Chave 44 dígitos NFe"
+        text nf_tipo "FK lógica -> nf_tipo.id_tipo"
+        bigint volumes
+        double peso
+        double nf_valor
+        text cnpj_destinatario
+        text processo "Indexado"
+    }
+
+    volumes {
+        bigint id_volume PK
+        double id_minuta "FK lógica -> minuta.id_minuta (idx)"
+        double id_nf "FK lógica -> notas_fiscais.id_nf (idx)"
+        double id_coleta "FK lógica -> coleta.id_coleta (idx)"
+        double id_cotacao "FK lógica -> cotacao.id_cotacao"
+        text barra "Código de barras etiqueta"
+        text barras "Código de barras lido"
+        bigint parcial "Nº do volume (ex: 1)"
+        bigint total "Total volumes da minuta"
+        double peso
+        double cubagem
+        bigint status
+    }
+
+    frete_hist {
+        integer id_log PK
+        integer frete "FK lógica -> minuta.id_minuta (idx)"
+        integer coleta "FK lógica -> coleta.id_coleta (idx)"
+        integer id_nf "FK lógica -> notas_fiscais.id_nf (idx)"
+        smallint status "FK lógica -> tipo_oco.id_oco (idx)"
+        smallint ocorrencia "FK lógica -> tipo_oco.id_oco"
+        date data "Data evento (idx)"
+        varchar hora
+        integer unidade "FK lógica -> unidades.id_unidade"
+        integer operador "FK lógica -> usuarios.id_usuario"
+        varchar obs
+        timestamp data_entrega
+        varchar entrega_nome "Nome recebedor"
+        varchar entrega_rg "Doc recebedor"
+    }
+
+    anexos {
+        integer id_anexo PK
+        integer id_minuta "FK lógica -> minuta.id_minuta (idx)"
+        integer id_coleta "FK lógica -> coleta.id_coleta (idx)"
+        integer id_manifesto "FK lógica -> manifesto.id_manifesto (idx)"
+        integer id_nota "FK lógica -> notas_fiscais.id_nf (idx)"
+        varchar imagem "URL / caminho do arquivo"
+        varchar chave
+        smallint tipo
+        date data
+    }
+
+    minuta_status {
+        bigint id_status PK
+        text descricao
+        text cor
+    }
+
+    tipo_minuta {
+        bigint id PK
+        text descricao
+        text prefixo
+    }
+
+    cte_status {
+        bigint id_status PK
+        text status
+        text descricao
+    }
+
+    cte_tipo {
+        bigint id PK
+        text tipo
+        text codigo
+    }
+
+    nf_tipo {
+        bigint id_tipo
+        text tipo
+    }
+
+    tipo_oco {
+        bigint id_oco
+        text descricao
+        text sigla
+        double status_minuta
+        bigint insucesso
+    }
+```
+
+---
+
+## 3. DER Módulo 2 — Manifestos, Viagens, MDF-e, Picking e Bipagem (`historico_volume`)
+
+```mermaid
+erDiagram
+    manifesto ||--o{ manifesto_list : "id_manifesto (idx)"
+    minuta ||--o{ manifesto_list : "minuta = id_minuta (idx)"
+
+    manifesto ||--o{ picking : "id_manifesto (idx)"
+    manifesto ||--o{ historico_volume : "manifesto = id_manifesto (idx)"
+    manifesto ||--o{ MDFe : "id_manifesto (lógica)"
+    manifesto ||--o{ motoristas_manifesto : "id_manifesto (lógica)"
+    manifesto ||--o{ anexos : "id_manifesto (idx)"
+
+    volumes ||--o{ historico_volume : "id_volume / barra (idx)"
+    picking ||--o{ historico_volume : "id_manifesto + tipo (lógica)"
+
+    manifesto_status ||--o{ manifesto : "status"
+    manifesto_tipo ||--o{ manifesto : "tipo / tipoManifesto"
+    unidades ||--o{ manifesto : "base / destino"
+    unidades ||--o{ picking : "unidade"
+    unidades ||--o{ historico_volume : "unidade / base"
+
+    manifesto {
+        bigint id_manifesto PK
+        bigint tipo "FK lógica -> manifesto_tipo.id_tipo"
+        bigint tipoManifesto
+        bigint status "FK lógica -> manifesto_status.id_status"
+        bigint modal
+        text base "Unidade origem -> unidades.id_unidade"
+        text destino "Unidade destino -> unidades.id_unidade"
+        text transf_origem "Aeroporto origem -> aero.id_aero"
+        text transf_destino "Aeroporto destino -> aero.id_aero"
+        double rota "FK lógica -> rotas.id"
+        double veiculo "FK lógica -> veiculos.id_veiculo (idx)"
+        double veiculo_terceiro "FK lógica -> terceiros.id_terceiro"
+        double veiculo_agente "FK lógica -> veiculos.id_veiculo"
+        bigint motorista "FK lógica -> funcionario.id_funcionario"
+        bigint motorista_agente "FK lógica -> motorista_terceiro.id"
+        date data_emissao
+        text prev_saida_data "Formato YYYY-MM-DD"
+        text prev_saida_hora
+        date saida_efetiva_data
+        text saida_efetiva_hora
+        text prev_chegada_data
+        text chegada_efetiva_data
+        text data_finalizado
+        text mdfe_num
+        text chaveMDFE
+        double total_nf_valor
+    }
+
+    manifesto_list {
+        bigint id PK
+        bigint id_manifesto "FK lógica -> manifesto.id_manifesto (idx)"
+        bigint minuta "FK lógica -> minuta.id_minuta (idx)"
+        bigint tipo
+        double custo
+        text ordem
+        text id_usuario
+        timestamp updated_at
+    }
+
+    picking {
+        bigint id PK
+        bigint id_manifesto "FK lógica -> manifesto.id_manifesto (idx)"
+        bigint tipo "1=Embarque / 2=Desembarque"
+        bigint unidade "FK lógica -> unidades.id_unidade"
+        timestamp iniciado
+        timestamp finalizado
+        bigint status
+        timestamp unblocked_at
+    }
+
+    historico_volume {
+        bigint id PK
+        bigint id_volume "FK lógica -> volumes.id_volume (idx)"
+        double manifesto "FK lógica -> manifesto.id_manifesto (idx)"
+        text barra "Código de barras bipado"
+        bigint tipo "Tipo de conferência/bipagem"
+        bigint unidade "FK lógica -> unidades.id_unidade"
+        bigint base "FK lógica -> unidades.id_unidade"
+        bigint operador "FK lógica -> usuarios.id_usuario"
+        timestamp data "Data/hora da bipagem"
+        time hora
+        double status
+    }
+
+    MDFe {
+        bigint id_mdfe
+        bigint id_manifesto "FK lógica -> manifesto.id_manifesto"
+        bigint numero
+        bigint serie
+        text chave
+        text protocolo
+        bigint status
+        date data_emissao
+        date data_encerramento
+        bigint base
+    }
+
+    motoristas_manifesto {
+        bigint id
+        bigint id_manifesto "FK lógica -> manifesto.id_manifesto"
+        bigint id_motorista
+        bigint principal
+        text prot_evento_mdfe
+    }
+
+    manifesto_status {
+        bigint id_status
+        text descricao
+        text cor_fundo
+    }
+
+    manifesto_tipo {
+        bigint id_tipo
+        text tipo
+    }
+
+    unidades {
+        bigint id_unidade PK
+        text fantasia
+        text sigla
+        text cnpj
+    }
+```
+
+---
+
+## 4. DER Módulo 3 — Processos de Avaria, Sinistros e Indenizações (Com FKs Físicas)
+
+```mermaid
+erDiagram
+    minuta ||--o{ processo : "FK id_minuta"
+    processo ||--o{ processo_anexos : "FK id_processo"
+    processo ||--o{ processo_empresa : "FK id_processo"
+    processo ||--o{ processo_notas : "FK processo = id_processo"
+    processo ||--o{ processo_notas_fiscais : "FK processo = id_processo"
+    processo ||--o{ processo_volumes : "FK id_processo"
+    processo ||--o{ processo_autorizacao : "id_processo (idx)"
+
+    tipo_oco ||--o{ processo : "id_oco"
+    unidades ||--o{ processo : "base = id_unidade"
+    status_processo ||--o{ processo : "status = id"
+    status_processos ||--o{ processo : "tipo / status = id"
+    notas_fiscais ||--o{ processo_notas : "nota = id_nf"
+    volumes ||--o{ processo_volumes : "barra_volume = barra"
+
+    processo {
+        integer id_processo PK
+        integer id_minuta FK "REFERENCES minuta(id_minuta)"
+        integer tipo
+        integer id_oco "FK lógica -> tipo_oco.id_oco"
+        integer base "FK lógica -> unidades.id_unidade"
+        integer operador "FK lógica -> usuarios.id_usuario"
+        smallint status "FK lógica -> status_processo.id"
+        numeric valor "Valor indenização/avaria"
+        date data_evento
+        date data_incluido
+        timestamp data_finalizado
+        varchar protocolo
+        integer processo_sac
+        integer categoria
+        text obs
+        text detalhes_itens
+    }
+
+    processo_anexos {
+        integer id_anexo PK
+        integer id_processo FK "REFERENCES processo(id_processo)"
+        varchar arquivo
+    }
+
+    processo_autorizacao {
+        integer id_autorizacao PK
+        integer id_processo "FK lógica -> processo.id_processo (idx)"
+        varchar logim
+        date data_autorizado
+        time hora_autorizado
+        integer id_lancamento
+        text obs
+    }
+
+    processo_empresa {
+        integer id_processo_empresa PK
+        integer id_processo FK "REFERENCES processo(id_processo)"
+        integer id_empresa "Unidade/Fornecedor responsável"
+        numeric valor
+        numeric percentual
+        smallint id_tipo_cadastro
+    }
+
+    processo_notas {
+        integer id_nota PK
+        integer processo FK "REFERENCES processo(id_processo)"
+        integer nota "FK lógica -> notas_fiscais.id_nf"
+    }
+
+    processo_notas_fiscais {
+        integer id_nota PK
+        integer processo FK "REFERENCES processo(id_processo)"
+        integer nota "FK lógica -> notas_fiscais.id_nf"
+    }
+
+    processo_volumes {
+        integer id_volume PK
+        integer id_processo FK "REFERENCES processo(id_processo)"
+        varchar barra_volume "Código de barras do volume"
+        integer id_proc_ocorrencia
+    }
+
+    status_processo {
+        integer id PK
+        varchar situacao
+        smallint status
+    }
+
+    status_processos {
+        integer id PK
+        varchar descricao
+        integer status
+    }
+```
+
+---
+
+## 5. DER Módulo 4 — Cadastros Mestres, Malha Logística, Frota e Tabelas Comerciais
+
+```mermaid
+erDiagram
+    unidades ||--o{ fornecedores : "unidade"
+    unidades ||--o{ usuarios : "unidade"
+    unidades ||--o{ veiculos : "unidade"
+    unidades ||--o{ terceiros : "unidade"
+    unidades ||--o{ funcionario : "base = id_unidade"
+    unidades ||--o{ roteiros : "unidade"
+    unidades ||--o{ rotas : "id_resp"
+    unidades ||--o{ aero : "base"
+    unidades ||--o{ tabela_frete : "unidade"
+
+    fornecedores ||--o{ veiculos : "proprietario = id_local"
+    fornecedores ||--o{ terceiros : "fornecedor / id_local"
+    fornecedores ||--o{ motorista_terceiro : "id_local"
+    fornecedores ||--o{ funcionario : "id_fornecedor = id_local"
+
+    terceiros ||--o{ motorista_terceiro : "id_terceiro"
+    rotas ||--o{ entrega_dias : "id_cidade = id"
+    tabela_frete ||--o{ tabela_padrao : "id_tabela"
+    tabela_frete ||--o{ fornecedores : "id_tabela"
+    tabela_frete ||--o{ veiculos : "id_tabela"
+
+    unidades {
+        bigint id_unidade PK
+        bigint id_local "FK lógica -> fornecedores.id_local"
+        text fantasia
+        text razao
+        text sigla
+        text cnpj
+        text cidade
+        bigint status
+    }
+
+    fornecedores {
+        numeric id_local PK
+        text cnpj "Indexado quando status=1"
+        text fantasia
+        text razao
+        text cidade
+        text cidade_s
+        text cep
+        text unidade "FK lógica -> unidades.id_unidade"
+        numeric id_tabela "FK lógica -> tabela_frete.id_tabela"
+        numeric cliente "Flag 1=Cliente"
+        numeric remetente "Flag 1=Remetente"
+        numeric destinatario "Flag 1=Destinatário"
+        numeric status
+    }
+
+    usuarios {
+        bigint id_usuario "Indexado"
+        text logim
+        text primeiro_nome
+        text nome_completo
+        text email
+        bigint unidade "FK lógica -> unidades.id_unidade"
+        bigint status
+    }
+
+    veiculos {
+        integer id_veiculo PK
+        varchar placa
+        varchar renavam
+        varchar marca
+        varchar modelo
+        numeric capacidade "Capacidade KG"
+        varchar aco_placa "Placa carreta/reboque"
+        integer unidade "FK lógica -> unidades.id_unidade"
+        bigint tipo_veiculo
+        integer tipo_proprietario
+        integer id_tabela "FK lógica -> tabela_frete.id_tabela"
+        integer status
+    }
+
+    terceiros {
+        integer id_terceiro PK
+        integer fornecedor "FK lógica -> fornecedores.id_local"
+        integer id_local "FK lógica -> fornecedores.id_local"
+        varchar nome
+        varchar motorista
+        varchar cpf
+        varchar ve_placa
+        varchar ve_modelo
+        numeric ve_capacidade
+        integer tipo_ve
+        integer unidade "FK lógica -> unidades.id_unidade"
+        integer status
+    }
+
+    motorista_terceiro {
+        bigint id
+        bigint id_terceiro "FK lógica -> terceiros.id_terceiro"
+        double id_local "FK lógica -> fornecedores.id_local"
+        text nome
+        text nome_completo
+        text cpf
+        text habilitacao
+        bigint status
+    }
+
+    funcionario {
+        bigint id_funcionario
+        bigint base "FK lógica -> unidades.id_unidade"
+        bigint id_fornecedor "FK lógica -> fornecedores.id_local"
+        text nome
+        text cpf
+        text matricula
+        text funcao
+        bigint status
+    }
+
+    rotas {
+        bigint id PK
+        text id_rota "Código texto da rota (idx)"
+        text rota "Nome da cidade/rota"
+        text uf
+        bigint uf_ibge
+        text cep_inicial
+        text cep_final
+        text praca
+        text sigla
+        text id_resp "Unidade responsável"
+        double latitude
+        double longitude
+        bigint status
+    }
+
+    entrega_dias {
+        bigint id
+        bigint id_cidade "FK lógica -> rotas.id (idx)"
+        text dias
+    }
+
+    roteiros {
+        integer id_roteiro PK
+        varchar roteiro
+        varchar prefixo
+        varchar origem
+        varchar destino
+        smallint km
+        time tempo
+        integer unidade "FK lógica -> unidades.id_unidade"
+        integer status
+    }
+
+    aero {
+        bigint id_aero
+        text sigla "Código IATA (ex: CWB, GRU)"
+        text icao
+        text aeroporto
+        text cidade
+        text uf
+        text base "Unidade vinculada"
+        double lat
+        double lng
+        bigint status
+    }
+
+    tabela_frete {
+        bigint id_tabela PK
+        text nome
+        text referencia
+        bigint tipo
+        bigint unidade
+        text data_vigencia
+        bigint status
+    }
+
+    tabela_padrao {
+        bigint id_padrao
+        bigint id_tabela "FK lógica -> tabela_frete.id_tabela"
+        bigint id_usuario
+        bigint status
+    }
+
+    equipamento {
+        bigint id_equipamento PK
+        text equipamento
+        text codigo
+        bigint modal
+        double valor
+        bigint status
+    }
+```
+
+---
+
+## 6. DER Módulo 5 — Protheus (Escalas Rodoviárias, RH/Ponto) & Telemetria (Life / Sascar / Viagens)
+
+```mermaid
+erDiagram
+    GI1010 ||--o{ escala_motoristas : "GI1_COD = G55_LOCORI / G55_LOCDES"
+    GI1010 ||--o{ escala_extraordinaria : "GI1_COD = GQK_LOCORI / GQK_LOCDES"
+    filiais_protheus ||--o{ escala_motoristas : "FILIAL_RH / codigo_filial = GQE_FILIAL"
+
+    funcionarios_sra ||--o{ escala_motoristas : "RA_MAT = COD_MOTORISTA"
+    funcionarios_sra ||--o{ cadastro_motoristas : "RA_FILIAL + RA_MAT"
+    funcionarios_sra ||--o{ apontamento_motoristas : "RA_FILIAL + RA_MAT"
+    funcionarios_sra ||--o{ banco_horas : "PI_FILIAL + PI_MAT"
+    funcionarios_sra ||--o{ ponto_horas : "FILIAL + MATRICULA"
+    funcionarios_sra ||--o{ marcacao_motoristas : "FILIAL + MATRICULA"
+    funcionarios_sra ||--o{ ferias_motoristas : "RH_FILIAL + RH_MAT"
+    turnos ||--o{ cadastro_motoristas : "FILIAL + TURNO"
+
+    escala_motoristas }o--o{ rastreamento_life : "COD_VEICULO::int = veiculo"
+    escala_motoristas }o--o{ LIFE : "COD_VEICULO = COD_VEICULO"
+    escala_motoristas }o--o{ ocorrencias : "COD_VEICULO = COD_VEICULO"
+
+    veiculos_sascar ||--o{ rastreamento_sascar : "idVeiculo = vehicleId"
+    veiculos_sascar }o--o| status_viagem : "placa"
+    status_viagem ||--o{ status_entrega : "FK v_carga"
+
+    escala_motoristas {
+        text GQE_FILIAL
+        text GYN_CODIGO "Código viagem/serviço"
+        text G55_CODVIA "Código viagem GTP"
+        text GYN_LINCOD "Código da linha"
+        text G55_SEQ "Sequência do trecho"
+        text G55_LOCORI "FK lógica -> GI1010.GI1_COD"
+        text ORIGEM "Nome localidade origem"
+        text G55_LOCDES "FK lógica -> GI1010.GI1_COD"
+        text DESTINO "Nome localidade destino"
+        text COD_MOTORISTA "Matrícula -> funcionarios_sra.RA_MAT"
+        text NOME_MOTORISTA
+        text COD_VEICULO "Prefixo frota -> rastreamento_life.veiculo"
+        text G55_DTPART "Data partida (YYYYMMDD)"
+        text G55_HRINI "Hora início (HHMM)"
+        text G55_DTCHEG "Data chegada (YYYYMMDD)"
+        text G55_HRFIM "Hora fim (HHMM)"
+        text DURACAO
+    }
+
+    escala_extraordinaria {
+        text GQK_FILIAL
+        text GQK_CODIGO
+        text GQK_RECURS "Matrícula motorista"
+        text GQK_DTREF
+        text GQK_LOCORI "FK lógica -> GI1010.GI1_COD"
+        text GQK_LOCDES "FK lógica -> GI1010.GI1_COD"
+        text GQK_DTINI
+        text GQK_HRINI
+        text GQK_DTFIM
+        text GQK_HRFIM
+        text GQK_CODVIA
+    }
+
+    GI1010 {
+        text GI1_COD "Código localidade GTP"
+        text GI1_DSMUNI "Nome município/ponto"
+        text GI1_UF
+        text GI1_CDMUNI
+        text GI1_IBGE
+        text GI1_SIGLA
+    }
+
+    filiais_protheus {
+        text codigo_filial
+        text descricao_filial
+        text FILIAL_RH
+        bigint agencia_sae
+        bigint cgc
+        text cidade
+        text COORDENADAS
+    }
+
+    funcionarios_sra {
+        text RA_FILIAL
+        text RA_MAT "Matrícula Protheus"
+        text RA_NOME
+        text RA_CC "Centro de custo"
+        text CTT_DESC01 "Descrição CC"
+        text RA_CODFUNC
+        text RJ_DESC "Função"
+        text RA_ADMISSA
+        text RA_DEMISSA
+    }
+
+    cadastro_motoristas {
+        text Filial
+        text Matrícula
+        text Nome
+        text TURNO
+        text ID_CentroCusto
+        text Desc_CentroCusto
+        double Horas_Semanais
+        double Horas_Turno
+    }
+
+    apontamento_motoristas {
+        text Filial
+        text Matricula
+        text NOME
+        text PI_DATA
+        text PI_PD
+        text TipoHoras
+        double PI_QUANT
+        text PI_STATUS
+    }
+
+    banco_horas {
+        text PI_FILIAL
+        text PI_MAT
+        text RA_NOME
+        text PI_DATA
+        text PI_PD
+        text P9_DESC
+        double PI_QUANT
+        text P9_TIPOCOD
+    }
+
+    ponto_horas {
+        text FILIAL
+        text MATRICULA
+        text DATA
+        double HORA
+        text CENTROCUSTO
+        text MARCACAO
+    }
+
+    marcacao_motoristas {
+        text FILIAL
+        text MATRICULA
+        text DATA
+        double HORA
+        text CENTROCUSTO
+        text DESC_CC
+        text MARCACAO
+        text MOTIVO
+    }
+
+    ferias_motoristas {
+        text RH_FILIAL
+        text RH_MAT
+        text RH_DATAINI
+        text RH_DATAFIM
+        text RH_DATABAS
+    }
+
+    turnos {
+        text FILIAL
+        text ANO
+        text MES
+        text TURNO
+        double DIAS_UTEIS
+        double HORAS_TRABALHADAS
+    }
+
+    rastreamento_life {
+        integer veiculo "FDW srv_remoto - Prefixo"
+        varchar placa
+        timestamp datahora
+        double latitude
+        double longitude
+        numeric odometroviacan
+        varchar perctanquecomb
+    }
+
+    LIFE {
+        integer ID "FDW srv_remoto"
+        text COD_VEICULO
+        text NOME_VEICULO
+        text FUNCMATRICULA
+        text NOME_FUNCIONARIO
+        text DATA_OCORRENCIA
+        text OCORRENCIA
+        text LATITUDE
+        text LONGITUDE
+        text LINHA
+        text GRAVIDADE
+    }
+
+    ocorrencias {
+        text COD_VEICULO "Tabela local espelho LIFE"
+        text FUNCMATRICULA
+        text OCORRENCIA
+        text NAO_CONFORMIDADE
+        text LATITUDE
+        text LONGITUDE
+        text LINHA
+        text ROTA
+        text GRAVIDADE
+        text DATA_ALTERACAO
+    }
+
+    veiculos_sascar {
+        bigint idVeiculo "FDW srv_remoto"
+        varchar placa
+        varchar descricao
+        bigint idEquipamento
+        boolean satelital
+        boolean telemetria
+    }
+
+    rastreamento_sascar {
+        bigint vehicleId "FDW srv_remoto -> veiculos_sascar.idVeiculo"
+        timestamp positionDateUtc
+        timestamp packetDateUtc
+        double latitude
+        double longitude
+        integer speed
+        integer ignition
+        integer odometer
+    }
+
+    status_viagem {
+        integer id PK
+        varchar v_carga UK "Código único da viagem"
+        varchar placa "Indexado"
+        date data_consulta "Indexado"
+        varchar v_veiculo
+        varchar v_motorista_cpf
+        text v_origem
+        text v_destino
+        varchar v_status "Indexado"
+        timestamp v_prev_inicio
+        timestamp v_inicio
+        timestamp v_prev_fim
+        timestamp v_fim
+    }
+
+    status_entrega {
+        integer id PK
+        varchar v_carga FK "REFERENCES status_viagem(v_carga)"
+        smallint e_seq "UK (v_carga, e_seq)"
+        varchar e_codigo
+        varchar e_cliente
+        timestamp e_prev_chegada
+        timestamp e_chegada
+        timestamp e_prev_saida
+        timestamp e_saida
+        numeric e_distancia
+    }
+```
+
+---
+
+## 7. DER Módulo 6 — Automação de E-mails (`automacao_email`) & Controle ETL
+
+```mermaid
+erDiagram
+    contact_uploads ||--o{ contacts : "FK upload_id"
+    batches ||--o{ outbox : "FK batch_id"
+    send_runs ||--o{ outbox : "FK run_id"
+    contacts }o--o{ outbox : "cnpj_key (lógica)"
+
+    contact_uploads {
+        bigint id PK
+        text file_name
+        timestamptz uploaded_at
+        integer total_rows
+        integer accepted_rows
+        integer rejected_rows
+    }
+
+    contacts {
+        text cnpj_key PK
+        text email PK
+        text cnpj_raw
+        text client_name
+        bigint upload_id FK "REFERENCES contact_uploads(id)"
+    }
+
+    batches {
+        bigint id PK
+        text status
+        text file_name
+        timestamptz created_at
+        timestamptz confirmed_at
+        integer total_rows
+        integer dropped_no_contact
+    }
+
+    send_runs {
+        bigint id PK
+        timestamptz started_at
+        timestamptz finished_at
+        integer sent
+        integer failed
+        text error
+    }
+
+    outbox {
+        bigint id PK
+        bigint batch_id FK "REFERENCES batches(id) ON DELETE CASCADE"
+        bigint run_id FK "REFERENCES send_runs(id)"
+        text cnpj_key "Indexado em outbox_sent_occ_idx"
+        text tomador
+        text cte_key "Número do CT-e"
+        text nf_key "Número da NF"
+        numeric valor
+        date data_pgto
+        text_array to_emails
+        text status "pending | sending | sent | failed"
+        timestamptz sent_at
+    }
+
+    etl_control {
+        text table_name PK
+        text mode "incremental_ts | incremental_pk | full_upsert | checksum_upsert"
+        text last_watermark
+        timestamptz last_run_at
+        boolean last_run_ok
+        bigint rows_read
+        bigint rows_upserted
+        bigint rows_deleted
+    }
+```
+
+
+---
+
+## 8. DER Total Completo & Mini-DERs de Vizinhança Direta
+
+### 8.1. DER Total Completo da Base `torre_controle`
+
+```mermaid
+erDiagram
+    contact_uploads ||--o{ contacts : "upload_id = id"
+    send_runs ||--o{ outbox : "run_id = id"
+    batches ||--o{ outbox : "batch_id = id"
+    minuta ||--o{ processo : "id_minuta = id_minuta"
+    processo ||--o{ processo_anexos : "id_processo = id_processo"
+    processo ||--o{ processo_empresa : "id_processo = id_processo"
+    processo ||--o{ processo_notas : "processo = id_processo"
+    processo ||--o{ processo_notas_fiscais : "processo = id_processo"
+    processo ||--o{ processo_volumes : "id_processo = id_processo"
+    status_viagem ||--o{ status_entrega : "v_carga = v_carga"
+    cotacao ||--o{ coleta : "cotacao = id_cotacao"
+    minuta ||--o{ coleta : "id_minuta = id_minuta"
+    fornecedores ||--o{ coleta : "id_cliente = id_local"
+    unidades ||--o{ coleta : "unidade = id_unidade"
+    coleta ||--o{ coleta_enderecos : "coleta = id_coleta"
+    coleta ||--o{ coleta_historico : "coleta = id_coleta"
+    coleta ||--o{ alteracoes_coleta : "coleta = id_coleta"
+    cotacao ||--o{ minuta : "cotacao = id_cotacao"
+    minuta_status ||--o{ minuta : "status = id_status"
+    tipo_minuta ||--o{ minuta : "tipo = id"
+    cte_status ||--o{ minuta : "cte_status = id_status"
+    cte_tipo ||--o{ minuta : "cte_tipo_cte = id"
+    fornecedores ||--o{ minuta : "id_cliente = id_local"
+    fornecedores ||--o{ minuta : "id_origem = id_local"
+    fornecedores ||--o{ minuta : "id_destino = id_local"
+    unidades ||--o{ minuta : "unidade = id_unidade"
+    rotas ||--o{ minuta : "rota = id"
+    rotas ||--o{ minuta : "origem = id_rota"
+    rotas ||--o{ minuta : "destino = id_rota"
+    aero ||--o{ minuta : "transf_origem = id_aero"
+    aero ||--o{ minuta : "transf_destino = id_aero"
+    tabela_frete ||--o{ minuta : "tabela = id_tabela"
+    minuta ||--o{ notas_fiscais : "id_minuta = id_minuta"
+    nf_tipo ||--o{ notas_fiscais : "nf_tipo = id_tipo"
+    minuta ||--o{ volumes : "id_minuta = id_minuta"
+    notas_fiscais ||--o{ volumes : "id_nf = id_nf"
+    coleta ||--o{ volumes : "id_coleta = id_coleta"
+    cotacao ||--o{ volumes : "id_cotacao = id_cotacao"
+    volumes ||--o{ historico_volume : "id_volume = id_volume"
+    manifesto ||--o{ historico_volume : "manifesto = id_manifesto"
+    unidades ||--o{ historico_volume : "unidade = id_unidade"
+    minuta ||--o{ frete_hist : "frete = id_minuta"
+    coleta ||--o{ frete_hist : "coleta = id_coleta"
+    notas_fiscais ||--o{ frete_hist : "id_nf = id_nf"
+    tipo_oco ||--o{ frete_hist : "status = id_oco"
+    unidades ||--o{ frete_hist : "unidade = id_unidade"
+    minuta ||--o{ anexos : "id_minuta = id_minuta"
+    coleta ||--o{ anexos : "id_coleta = id_coleta"
+    manifesto ||--o{ anexos : "id_manifesto = id_manifesto"
+    notas_fiscais ||--o{ anexos : "id_nota = id_nf"
+    minuta ||--o{ pre_minuta : "id_minuta = id_minuta"
+    minuta ||--o{ cte_substituicao : "id_minuta = id_minuta"
+    manifesto ||--o{ manifesto_list : "id_manifesto = id_manifesto"
+    minuta ||--o{ manifesto_list : "minuta = id_minuta"
+    manifesto ||--o{ picking : "id_manifesto = id_manifesto"
+    unidades ||--o{ picking : "unidade = id_unidade"
+    manifesto ||--o{ MDFe : "id_manifesto = id_manifesto"
+    manifesto ||--o{ motoristas_manifesto : "id_manifesto = id_manifesto"
+    veiculos ||--o{ manifesto : "veiculo = id_veiculo"
+    terceiros ||--o{ manifesto : "veiculo_terceiro = id_terceiro"
+    unidades ||--o{ manifesto : "base = id_unidade"
+    unidades ||--o{ manifesto : "destino = id_unidade"
+    manifesto_status ||--o{ manifesto : "status = id_status"
+    rastreamento_life ||--o{ escala_motoristas : "COD_VEICULO = veiculo"
+    GI1010 ||--o{ escala_motoristas : "G55_LOCORI = GI1_COD"
+    funcionarios_sra ||--o{ escala_motoristas : "COD_MOTORISTA = RA_MAT"
+    veiculos_sascar ||--o{ rastreamento_sascar : "vehicleId = idVeiculo"
+    batches {
+        bigint id PK
+    }
+    contact_uploads {
+        bigint id PK
+    }
+    contacts {
+        text cnpj_key PK
+        text email PK
+        bigint upload_id FK
+    }
+    outbox {
+        bigint id PK
+        bigint batch_id FK
+        text cnpj_key
+        text cte_key
+        text nf_key
+        timestamptz claimed_at
+        bigint run_id FK
+    }
+    send_runs {
+        bigint id PK
+    }
+    rastreamento_life {
+        timestamp datahora
+        integer veiculo
+        varchar codigoempresa
+        varchar placa
+        double latitude
+    }
+    rastreamento_sascar {
+        bigint vehicleId FK
+    }
+    veiculos_sascar {
+        varchar descricao
+        integer idAtuador1
+        integer idAtuador2
+        integer idAtuador3
+        integer idAtuador4
+    }
+    GI1010 {
+        text GI1_FILIAL
+        text GI1_COD
+        text GI1_PAIS
+        text GI1_UF
+        text GI1_CDMUNI
+    }
+    MDFe {
+        bigint id_manifesto FK
+    }
+    aero {
+        bigint id_aero
+        text sigla
+        text aeroporto
+        text end
+        text bairro
+    }
+    alteracoes_coleta {
+        bigint id PK
+        integer coleta FK
+    }
+    anexos {
+        integer id_anexo PK
+        integer id_minuta FK
+        integer id_coleta FK
+        integer id_nota FK
+        integer id_manifesto FK
+    }
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    coleta_enderecos {
+        integer id PK
+        integer coleta FK
+    }
+    coleta_historico {
+        integer id_log PK
+        integer coleta FK
+    }
+    cotacao {
+        integer id_cotacao PK
+    }
+    cte_status {
+        bigint id_status PK
+    }
+    cte_substituicao {
+        bigint id PK
+        bigint id_minuta FK
+        text cte_chave
+    }
+    cte_tipo {
+        bigint id PK
+    }
+    escala_motoristas {
+        text G55_LOCORI FK
+        text COD_MOTORISTA FK
+        text COD_VEICULO FK
+    }
+    fornecedores {
+        numeric id_local PK
+        text cnpj
+    }
+    frete_hist {
+        integer id_log PK
+        integer frete FK
+        date data
+        smallint status FK
+        integer coleta FK
+        integer unidade FK
+        timestamp created_at
+    }
+    funcionarios_sra {
+        text RA_FILIAL
+        text RA_MAT
+        text RA_NOME
+        text RA_CC
+        text CTT_DESC01
+    }
+    historico_volume {
+        bigint id PK
+        bigint id_volume FK
+        double manifesto FK
+        bigint unidade FK
+    }
+    manifesto {
+        bigint id_manifesto PK
+        text base FK
+        bigint status FK
+        double veiculo FK
+        text destino FK
+        double veiculo_terceiro FK
+    }
+    manifesto_list {
+        bigint id PK
+        bigint id_manifesto FK
+        bigint minuta FK
+    }
+    manifesto_status {
+        bigint id_status
+        text descricao
+        text cor_fundo
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+    }
+    minuta_status {
+        bigint id_status PK
+    }
+    motoristas_manifesto {
+        bigint id_manifesto FK
+    }
+    nf_tipo {
+        bigint id_tipo
+        text tipo
+    }
+    notas_fiscais {
+        bigint id_nf PK
+        bigint id_minuta FK
+        text nf
+        text nf_tipo FK
+        text processo
+    }
+    picking {
+        bigint id PK
+        bigint id_manifesto FK
+        bigint unidade FK
+    }
+    pre_minuta {
+        integer id PK
+        integer id_minuta FK
+    }
+    processo {
+        integer id_processo PK
+        integer id_minuta FK
+    }
+    processo_anexos {
+        integer id_anexo PK
+        integer id_processo FK
+    }
+    processo_empresa {
+        integer id_processo_empresa PK
+        integer id_processo FK
+    }
+    processo_notas {
+        integer id_nota PK
+        integer processo FK
+    }
+    processo_notas_fiscais {
+        integer id_nota PK
+        integer processo FK
+    }
+    processo_volumes {
+        integer id_volume PK
+        integer id_processo FK
+    }
+    rotas {
+        bigint id PK
+        text id_rota
+    }
+    status_entrega {
+        integer id PK
+        varchar v_carga FK
+        smallint e_seq
+    }
+    status_viagem {
+        integer id PK
+        varchar placa
+        date data_consulta
+        varchar v_carga
+        varchar v_status
+        timestamp atualizado_em
+    }
+    tabela_frete {
+        bigint id_tabela PK
+    }
+    terceiros {
+        integer id_terceiro PK
+    }
+    tipo_minuta {
+        bigint id PK
+    }
+    tipo_oco {
+        bigint id_oco
+        text descricao
+        text descricao_ingles
+        text sigla
+        bigint view_cliente
+    }
+    unidades {
+        bigint id_unidade PK
+    }
+    veiculos {
+        integer id_veiculo PK
+    }
+    volumes {
+        bigint id_volume PK
+        double id_minuta FK
+        double id_coleta FK
+        double id_cotacao FK
+        double id_nf FK
+    }
+```
+
+### 8.2. Mini-DERs de Vizinhança Direta por Tabela Central
+
+#### 📐 Mini-DER Focado em `minuta` (Vizinhança Direta: 19 tabelas)
+
+```mermaid
+erDiagram
+    minuta ||--o{ processo : "id_minuta = id_minuta"
+    minuta ||--o{ coleta : "id_minuta = id_minuta"
+    cotacao ||--o{ minuta : "cotacao = id_cotacao"
+    minuta_status ||--o{ minuta : "status = id_status"
+    tipo_minuta ||--o{ minuta : "tipo = id"
+    cte_status ||--o{ minuta : "cte_status = id_status"
+    cte_tipo ||--o{ minuta : "cte_tipo_cte = id"
+    fornecedores ||--o{ minuta : "id_cliente = id_local"
+    fornecedores ||--o{ minuta : "id_origem = id_local"
+    fornecedores ||--o{ minuta : "id_destino = id_local"
+    unidades ||--o{ minuta : "unidade = id_unidade"
+    rotas ||--o{ minuta : "rota = id"
+    rotas ||--o{ minuta : "origem = id_rota"
+    rotas ||--o{ minuta : "destino = id_rota"
+    aero ||--o{ minuta : "transf_origem = id_aero"
+    aero ||--o{ minuta : "transf_destino = id_aero"
+    tabela_frete ||--o{ minuta : "tabela = id_tabela"
+    minuta ||--o{ notas_fiscais : "id_minuta = id_minuta"
+    minuta ||--o{ volumes : "id_minuta = id_minuta"
+    minuta ||--o{ frete_hist : "frete = id_minuta"
+    minuta ||--o{ anexos : "id_minuta = id_minuta"
+    minuta ||--o{ pre_minuta : "id_minuta = id_minuta"
+    minuta ||--o{ cte_substituicao : "id_minuta = id_minuta"
+    minuta ||--o{ manifesto_list : "minuta = id_minuta"
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    processo {
+        integer id_processo PK
+        integer id_minuta FK
+    }
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    cotacao {
+        integer id_cotacao PK
+    }
+    minuta_status {
+        bigint id_status PK
+    }
+    tipo_minuta {
+        bigint id PK
+    }
+    cte_status {
+        bigint id_status PK
+    }
+    cte_tipo {
+        bigint id PK
+    }
+    fornecedores {
+        numeric id_local PK
+        text cnpj
+    }
+    unidades {
+        bigint id_unidade PK
+    }
+    rotas {
+        bigint id PK
+        text id_rota
+    }
+    aero {
+        bigint id_aero
+        text sigla
+        text aeroporto
+        text end
+        text bairro
+        text cidade
+    }
+    tabela_frete {
+        bigint id_tabela PK
+    }
+    notas_fiscais {
+        bigint id_nf PK
+        bigint id_minuta FK
+        text nf
+        text nf_tipo FK
+        text processo
+    }
+    volumes {
+        bigint id_volume PK
+        double id_minuta FK
+        double id_coleta FK
+        double id_cotacao FK
+        double id_nf FK
+    }
+    frete_hist {
+        integer id_log PK
+        integer frete FK
+        date data
+        smallint status FK
+        integer coleta FK
+        integer unidade FK
+        timestamp created_at
+        integer id_nf FK
+    }
+    anexos {
+        integer id_anexo PK
+        integer id_minuta FK
+        integer id_coleta FK
+        integer id_nota FK
+        integer id_manifesto FK
+    }
+    pre_minuta {
+        integer id PK
+        integer id_minuta FK
+    }
+    cte_substituicao {
+        bigint id PK
+        bigint id_minuta FK
+        text cte_chave
+    }
+    manifesto_list {
+        bigint id PK
+        bigint id_manifesto FK
+        bigint minuta FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `coleta` (Vizinhança Direta: 10 tabelas)
+
+```mermaid
+erDiagram
+    cotacao ||--o{ coleta : "cotacao = id_cotacao"
+    minuta ||--o{ coleta : "id_minuta = id_minuta"
+    fornecedores ||--o{ coleta : "id_cliente = id_local"
+    unidades ||--o{ coleta : "unidade = id_unidade"
+    coleta ||--o{ coleta_enderecos : "coleta = id_coleta"
+    coleta ||--o{ coleta_historico : "coleta = id_coleta"
+    coleta ||--o{ alteracoes_coleta : "coleta = id_coleta"
+    coleta ||--o{ volumes : "id_coleta = id_coleta"
+    coleta ||--o{ frete_hist : "coleta = id_coleta"
+    coleta ||--o{ anexos : "id_coleta = id_coleta"
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    cotacao {
+        integer id_cotacao PK
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    fornecedores {
+        numeric id_local PK
+        text cnpj
+    }
+    unidades {
+        bigint id_unidade PK
+    }
+    coleta_enderecos {
+        integer id PK
+        integer coleta FK
+    }
+    coleta_historico {
+        integer id_log PK
+        integer coleta FK
+    }
+    alteracoes_coleta {
+        bigint id PK
+        integer coleta FK
+    }
+    volumes {
+        bigint id_volume PK
+        double id_minuta FK
+        double id_coleta FK
+        double id_cotacao FK
+        double id_nf FK
+    }
+    frete_hist {
+        integer id_log PK
+        integer frete FK
+        date data
+        smallint status FK
+        integer coleta FK
+        integer unidade FK
+        timestamp created_at
+        integer id_nf FK
+    }
+    anexos {
+        integer id_anexo PK
+        integer id_minuta FK
+        integer id_coleta FK
+        integer id_nota FK
+        integer id_manifesto FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `notas_fiscais` (Vizinhança Direta: 5 tabelas)
+
+```mermaid
+erDiagram
+    minuta ||--o{ notas_fiscais : "id_minuta = id_minuta"
+    nf_tipo ||--o{ notas_fiscais : "nf_tipo = id_tipo"
+    notas_fiscais ||--o{ volumes : "id_nf = id_nf"
+    notas_fiscais ||--o{ frete_hist : "id_nf = id_nf"
+    notas_fiscais ||--o{ anexos : "id_nota = id_nf"
+    notas_fiscais {
+        bigint id_nf PK
+        bigint id_minuta FK
+        text nf
+        text nf_tipo FK
+        text processo
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    nf_tipo {
+        bigint id_tipo
+        text tipo
+    }
+    volumes {
+        bigint id_volume PK
+        double id_minuta FK
+        double id_coleta FK
+        double id_cotacao FK
+        double id_nf FK
+    }
+    frete_hist {
+        integer id_log PK
+        integer frete FK
+        date data
+        smallint status FK
+        integer coleta FK
+        integer unidade FK
+        timestamp created_at
+        integer id_nf FK
+    }
+    anexos {
+        integer id_anexo PK
+        integer id_minuta FK
+        integer id_coleta FK
+        integer id_nota FK
+        integer id_manifesto FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `volumes` (Vizinhança Direta: 5 tabelas)
+
+```mermaid
+erDiagram
+    minuta ||--o{ volumes : "id_minuta = id_minuta"
+    notas_fiscais ||--o{ volumes : "id_nf = id_nf"
+    coleta ||--o{ volumes : "id_coleta = id_coleta"
+    cotacao ||--o{ volumes : "id_cotacao = id_cotacao"
+    volumes ||--o{ historico_volume : "id_volume = id_volume"
+    volumes {
+        bigint id_volume PK
+        double id_minuta FK
+        double id_coleta FK
+        double id_cotacao FK
+        double id_nf FK
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    notas_fiscais {
+        bigint id_nf PK
+        bigint id_minuta FK
+        text nf
+        text nf_tipo FK
+        text processo
+    }
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    cotacao {
+        integer id_cotacao PK
+    }
+    historico_volume {
+        bigint id PK
+        bigint id_volume FK
+        double manifesto FK
+        bigint unidade FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `historico_volume` (Vizinhança Direta: 3 tabelas)
+
+```mermaid
+erDiagram
+    volumes ||--o{ historico_volume : "id_volume = id_volume"
+    manifesto ||--o{ historico_volume : "manifesto = id_manifesto"
+    unidades ||--o{ historico_volume : "unidade = id_unidade"
+    historico_volume {
+        bigint id PK
+        bigint id_volume FK
+        double manifesto FK
+        bigint unidade FK
+    }
+    volumes {
+        bigint id_volume PK
+        double id_minuta FK
+        double id_coleta FK
+        double id_cotacao FK
+        double id_nf FK
+    }
+    manifesto {
+        bigint id_manifesto PK
+        text base FK
+        bigint status FK
+        double veiculo FK
+        text destino FK
+        double veiculo_terceiro FK
+    }
+    unidades {
+        bigint id_unidade PK
+    }
+```
+
+#### 📐 Mini-DER Focado em `frete_hist` (Vizinhança Direta: 5 tabelas)
+
+```mermaid
+erDiagram
+    minuta ||--o{ frete_hist : "frete = id_minuta"
+    coleta ||--o{ frete_hist : "coleta = id_coleta"
+    notas_fiscais ||--o{ frete_hist : "id_nf = id_nf"
+    tipo_oco ||--o{ frete_hist : "status = id_oco"
+    unidades ||--o{ frete_hist : "unidade = id_unidade"
+    frete_hist {
+        integer id_log PK
+        integer frete FK
+        date data
+        smallint status FK
+        integer coleta FK
+        integer unidade FK
+        timestamp created_at
+        integer id_nf FK
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    notas_fiscais {
+        bigint id_nf PK
+        bigint id_minuta FK
+        text nf
+        text nf_tipo FK
+        text processo
+    }
+    tipo_oco {
+        bigint id_oco
+        text descricao
+        text descricao_ingles
+        text sigla
+        bigint view_cliente
+        double status_minuta
+    }
+    unidades {
+        bigint id_unidade PK
+    }
+```
+
+#### 📐 Mini-DER Focado em `manifesto` (Vizinhança Direta: 10 tabelas)
+
+```mermaid
+erDiagram
+    manifesto ||--o{ historico_volume : "manifesto = id_manifesto"
+    manifesto ||--o{ anexos : "id_manifesto = id_manifesto"
+    manifesto ||--o{ manifesto_list : "id_manifesto = id_manifesto"
+    manifesto ||--o{ picking : "id_manifesto = id_manifesto"
+    manifesto ||--o{ MDFe : "id_manifesto = id_manifesto"
+    manifesto ||--o{ motoristas_manifesto : "id_manifesto = id_manifesto"
+    veiculos ||--o{ manifesto : "veiculo = id_veiculo"
+    terceiros ||--o{ manifesto : "veiculo_terceiro = id_terceiro"
+    unidades ||--o{ manifesto : "base = id_unidade"
+    unidades ||--o{ manifesto : "destino = id_unidade"
+    manifesto_status ||--o{ manifesto : "status = id_status"
+    manifesto {
+        bigint id_manifesto PK
+        text base FK
+        bigint status FK
+        double veiculo FK
+        text destino FK
+        double veiculo_terceiro FK
+    }
+    historico_volume {
+        bigint id PK
+        bigint id_volume FK
+        double manifesto FK
+        bigint unidade FK
+    }
+    anexos {
+        integer id_anexo PK
+        integer id_minuta FK
+        integer id_coleta FK
+        integer id_nota FK
+        integer id_manifesto FK
+    }
+    manifesto_list {
+        bigint id PK
+        bigint id_manifesto FK
+        bigint minuta FK
+    }
+    picking {
+        bigint id PK
+        bigint id_manifesto FK
+        bigint unidade FK
+    }
+    MDFe {
+        bigint id_manifesto FK
+    }
+    motoristas_manifesto {
+        bigint id_manifesto FK
+    }
+    veiculos {
+        integer id_veiculo PK
+    }
+    terceiros {
+        integer id_terceiro PK
+    }
+    unidades {
+        bigint id_unidade PK
+    }
+    manifesto_status {
+        bigint id_status
+        text descricao
+        text cor_fundo
+    }
+```
+
+#### 📐 Mini-DER Focado em `processo` (Vizinhança Direta: 6 tabelas)
+
+```mermaid
+erDiagram
+    minuta ||--o{ processo : "id_minuta = id_minuta"
+    processo ||--o{ processo_anexos : "id_processo = id_processo"
+    processo ||--o{ processo_empresa : "id_processo = id_processo"
+    processo ||--o{ processo_notas : "processo = id_processo"
+    processo ||--o{ processo_notas_fiscais : "processo = id_processo"
+    processo ||--o{ processo_volumes : "id_processo = id_processo"
+    processo {
+        integer id_processo PK
+        integer id_minuta FK
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    processo_anexos {
+        integer id_anexo PK
+        integer id_processo FK
+    }
+    processo_empresa {
+        integer id_processo_empresa PK
+        integer id_processo FK
+    }
+    processo_notas {
+        integer id_nota PK
+        integer processo FK
+    }
+    processo_notas_fiscais {
+        integer id_nota PK
+        integer processo FK
+    }
+    processo_volumes {
+        integer id_volume PK
+        integer id_processo FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `fornecedores` (Vizinhança Direta: 2 tabelas)
+
+```mermaid
+erDiagram
+    fornecedores ||--o{ coleta : "id_cliente = id_local"
+    fornecedores ||--o{ minuta : "id_cliente = id_local"
+    fornecedores ||--o{ minuta : "id_origem = id_local"
+    fornecedores ||--o{ minuta : "id_destino = id_local"
+    fornecedores {
+        numeric id_local PK
+        text cnpj
+    }
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `unidades` (Vizinhança Direta: 6 tabelas)
+
+```mermaid
+erDiagram
+    unidades ||--o{ coleta : "unidade = id_unidade"
+    unidades ||--o{ minuta : "unidade = id_unidade"
+    unidades ||--o{ historico_volume : "unidade = id_unidade"
+    unidades ||--o{ frete_hist : "unidade = id_unidade"
+    unidades ||--o{ picking : "unidade = id_unidade"
+    unidades ||--o{ manifesto : "base = id_unidade"
+    unidades ||--o{ manifesto : "destino = id_unidade"
+    unidades {
+        bigint id_unidade PK
+    }
+    coleta {
+        bigint id_coleta PK
+        bigint id_cliente FK
+        bigint cotacao FK
+        bigint unidade FK
+        bigint id_minuta FK
+    }
+    minuta {
+        bigint id_minuta PK
+        bigint id_cliente FK
+        double tabela FK
+        double cotacao FK
+        bigint id_origem FK
+        bigint id_destino FK
+        text transf_origem FK
+        text transf_destino FK
+    }
+    historico_volume {
+        bigint id PK
+        bigint id_volume FK
+        double manifesto FK
+        bigint unidade FK
+    }
+    frete_hist {
+        integer id_log PK
+        integer frete FK
+        date data
+        smallint status FK
+        integer coleta FK
+        integer unidade FK
+        timestamp created_at
+        integer id_nf FK
+    }
+    picking {
+        bigint id PK
+        bigint id_manifesto FK
+        bigint unidade FK
+    }
+    manifesto {
+        bigint id_manifesto PK
+        text base FK
+        bigint status FK
+        double veiculo FK
+        text destino FK
+        double veiculo_terceiro FK
+    }
+```
+
+#### 📐 Mini-DER Focado em `escala_motoristas` (Vizinhança Direta: 3 tabelas)
+
+```mermaid
+erDiagram
+    rastreamento_life ||--o{ escala_motoristas : "COD_VEICULO = veiculo"
+    GI1010 ||--o{ escala_motoristas : "G55_LOCORI = GI1_COD"
+    funcionarios_sra ||--o{ escala_motoristas : "COD_MOTORISTA = RA_MAT"
+    escala_motoristas {
+        text G55_LOCORI FK
+        text COD_MOTORISTA FK
+        text COD_VEICULO FK
+    }
+    rastreamento_life {
+        timestamp datahora
+        integer veiculo
+        varchar codigoempresa
+        varchar placa
+        double latitude
+        double longitude
+    }
+    GI1010 {
+        text GI1_FILIAL
+        text GI1_COD
+        text GI1_PAIS
+        text GI1_UF
+        text GI1_CDMUNI
+        double GI1_KMROD
+    }
+    funcionarios_sra {
+        text RA_FILIAL
+        text RA_MAT
+        text RA_NOME
+        text RA_CC
+        text CTT_DESC01
+        text RA_SEXO
+    }
+```
+
+#### 📐 Mini-DER Focado em `status_viagem` (Vizinhança Direta: 1 tabelas)
+
+```mermaid
+erDiagram
+    status_viagem ||--o{ status_entrega : "v_carga = v_carga"
+    status_viagem {
+        integer id PK
+        varchar placa
+        date data_consulta
+        varchar v_carga
+        varchar v_status
+        timestamp atualizado_em
+    }
+    status_entrega {
+        integer id PK
+        varchar v_carga FK
+        smallint e_seq
+    }
+```

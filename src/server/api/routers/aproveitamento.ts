@@ -203,6 +203,25 @@ function inferirCapacidadeVeiculo(
     };
 }
 
+interface ColetaManifestoAggRow {
+    id_manifesto: string;
+    total_coletas: string;
+    total_minutas_coleta: string;
+    soma_peso_kg: string;
+    soma_peso_cubado_kg: string;
+    soma_peso_taxado_kg: string;
+    soma_cubo_m3: string;
+    soma_cubo_m3_bruto: string;
+    soma_volumes: string;
+    soma_nf_valor: string;
+    soma_frete_bruto: string;
+    soma_frete_rateado: string;
+    soma_custo_coleta: string;
+    soma_custo_entrega: string;
+    soma_custo_seguro: string;
+    soma_impostos: string;
+}
+
 export const aproveitamentoRouter = createTRPCRouter({
     obterAnaliseAproveitamento: protectedProcedure
         .input(z.object({
@@ -221,141 +240,275 @@ export const aproveitamentoRouter = createTRPCRouter({
         .query(async ({ input }) => {
             const rotasContratuais = obterRotasContratuais();
 
-            // 1. Query otimizada no Brudam
-            // - Filtra intervalo de datas
-            // - Pega transferências (tipo 1, 2, 4) e status não cancelado (status != 3)
-            // - Agrega totais de peso, cubagem, receita rateada e custos operacionais das pontas (coleta, entrega, seguro, impostos)
-            const queryResult = await telemetriaDb.query<ManifestoBrudamRow>(`
-                WITH manifestos_filtrados AS (
-                    SELECT id_manifesto
+            // 1. Queries otimizadas em paralelo no Brudam:
+            // - Query A: Manifestos + Minutas diretas (manifesto_list.tipo = 1)
+            // - Query B: Coletas vinculadas ao manifesto (manifesto_list.tipo = 2), consolidando tabela `coleta` + minutas geradas pela coleta (`minuta.coleta_numero`)
+            const [queryResult, coletasResult] = await Promise.all([
+                telemetriaDb.query<ManifestoBrudamRow>(`
+                    WITH manifestos_filtrados AS (
+                        SELECT id_manifesto
+                        FROM manifesto m
+                        WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                          AND LEFT(m.prev_saida_data::text, 10) >= $1
+                          AND LEFT(m.prev_saida_data::text, 10) <= $2
+                          AND m.status != 3
+                    ),
+                    minutas_envolvidas AS (
+                        SELECT DISTINCT ml.minuta
+                        FROM manifesto_list ml
+                        JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                        WHERE ml.tipo = 1
+                    ),
+                    rateio_minuta AS (
+                        SELECT 
+                            ml.minuta,
+                            COUNT(DISTINCT ml.id_manifesto) as total_trechos
+                        FROM manifesto_list ml
+                        JOIN minutas_envolvidas me ON me.minuta = ml.minuta
+                        JOIN manifesto m ON m.id_manifesto = ml.id_manifesto
+                        WHERE ml.tipo = 1 AND m.status != 3 AND m.tipo IN (1, 2, 4)
+                        GROUP BY ml.minuta
+                    ),
+                    manifesto_agregado AS (
+                        SELECT 
+                            ml.id_manifesto,
+                            COUNT(DISTINCT ml.minuta) as total_minutas,
+                            COALESCE(SUM(mn.total_peso), 0) as soma_peso_kg,
+                            COALESCE(SUM(mn.total_cubo), 0) as soma_peso_cubado_kg,
+                            COALESCE(SUM(mn.total_taxado), 0) as soma_peso_taxado_kg,
+                            COALESCE(SUM(
+                                CASE 
+                                    -- Proteção contra erros operacionais grotescos no Brudam (ex: milímetros ou cubagem > 120m³ em CTE)
+                                    WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
+                                        LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                    -- Proteção quando o operador digita a quantidade de volumes no campo metragem_cubica
+                                    WHEN (mn.metragem_cubica > 30 AND mn.total_cubo > 0 AND mn.metragem_cubica > (mn.total_cubo / 250.0) * 2.5) THEN
+                                        (mn.total_cubo / 250.0)
+                                    WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                                    WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN mn.total_cubo / 250.0 
+                                    WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                    ELSE 0 
+                                END
+                            ), 0) as soma_cubo_m3,
+                            COALESCE(SUM(
+                                CASE 
+                                    WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                                    WHEN mn.total_cubo > 0 THEN mn.total_cubo / 250.0 
+                                    ELSE 0 
+                                END
+                            ), 0) as soma_cubo_m3_bruto,
+                            COALESCE(SUM(mn.total_volumes), 0) as soma_volumes,
+                            COALESCE(SUM(mn.total_nf_valor), 0) as soma_nf_valor,
+                            COALESCE(SUM(mn.frete_total), 0) as soma_frete_bruto,
+                            COALESCE(SUM(mn.frete_total / GREATEST(rm.total_trechos, 1)), 0) as soma_frete_rateado,
+                            COALESCE(SUM(COALESCE(mn.coleta_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_coleta,
+                            COALESCE(SUM(COALESCE(mn.entrega_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_entrega,
+                            COALESCE(SUM((COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0)) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_seguro,
+                            COALESCE(SUM((COALESCE(mn.frete_total, 0) * 0.0925) / GREATEST(rm.total_trechos, 1)), 0) as soma_impostos
+                        FROM manifesto_list ml
+                        JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                        JOIN minuta mn ON mn.id_minuta = ml.minuta
+                        LEFT JOIN rateio_minuta rm ON rm.minuta = ml.minuta
+                        WHERE ml.tipo = 1
+                        GROUP BY ml.id_manifesto
+                    )
+                    SELECT 
+                        m.id_manifesto::text,
+                        LEFT(m.prev_saida_data::text, 10) as prev_saida_data,
+                        LEFT(m.saida_efetiva_data::text, 10) as saida_efetiva_data,
+                        m.status::text,
+                        ms.descricao as status_descricao,
+                        COALESCE(v.placa, t.ve_placa) as placa,
+                        COALESCE(v.modelo, t.ve_modelo) as modelo_veiculo,
+                        COALESCE(v.capacidade::text, t.ve_capacidade::text) as capacidade_veiculo_kg,
+                        COALESCE(v."capM3"::text, t."capM3"::text) as capacidade_veiculo_m3,
+                        COALESCE(fv.fantasia, fmt.fantasia, ft.fantasia) as fornecedor_nome,
+                        COALESCE(fv.cnpj, fmt.cnpj, ft.cnpj) as fornecedor_cnpj,
+                        ao.aeroporto as origem_aero,
+                        ad.aeroporto as destino_aero,
+                        uo.fantasia as origem_unidade,
+                        ud.fantasia as destino_unidade,
+                        m.custo_motorista::text,
+                        m.valor_total_km::text,
+                        m.pedagio::text,
+                        COALESCE(ma.total_minutas, 0)::text as total_minutas,
+                        ma.soma_peso_kg::text,
+                        ma.soma_peso_cubado_kg::text,
+                        ma.soma_peso_taxado_kg::text,
+                        ma.soma_cubo_m3::text,
+                        ma.soma_cubo_m3_bruto::text,
+                        ma.soma_volumes::text,
+                        ma.soma_nf_valor::text,
+                        ma.soma_frete_bruto::text,
+                        ma.soma_frete_rateado::text,
+                        ma.soma_custo_coleta::text,
+                        ma.soma_custo_entrega::text,
+                        ma.soma_custo_seguro::text,
+                        ma.soma_impostos::text,
+                        m.tipo::text as tipo_manifesto_id,
+                        COALESCE(mt.tipo, 'Outro') as tipo_manifesto_descricao,
+                        COALESCE(v.tipo_veiculo::text, t.tipo_ve::text) as tipo_veiculo_banco
                     FROM manifesto m
+                    LEFT JOIN manifesto_status ms ON ms.id_status = m.status
+                    LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text = m.tipo::text
+                    LEFT JOIN veiculos v ON v.id_veiculo = COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0))
+                    LEFT JOIN fornecedores fv ON v.proprietario::text = fv.id_local::text
+                    LEFT JOIN motorista_terceiro mt_mot ON mt_mot.id::text = COALESCE(NULLIF(m.motorista_agente::text, '0'), NULLIF(m.motorista::text, '0'))
+                    LEFT JOIN fornecedores fmt ON fmt.id_local::text = mt_mot.id_local::text
+                    LEFT JOIN terceiros t ON t.id_terceiro = m.veiculo_terceiro
+                    LEFT JOIN fornecedores ft ON t.fornecedor::text = ft.id_local::text
+                    LEFT JOIN aero ao ON ao.id_aero::text = m.transf_origem::text
+                    LEFT JOIN aero ad ON ad.id_aero::text = m.transf_destino::text
+                    LEFT JOIN unidades uo ON uo.id_unidade::text = m.base::text
+                    LEFT JOIN unidades ud ON ud.id_unidade::text = m.destino::text
+                    LEFT JOIN manifesto_agregado ma ON ma.id_manifesto = m.id_manifesto
                     WHERE m.prev_saida_data::text NOT LIKE '0000%'
                       AND LEFT(m.prev_saida_data::text, 10) >= $1
                       AND LEFT(m.prev_saida_data::text, 10) <= $2
                       AND m.status != 3
-                ),
-                minutas_envolvidas AS (
-                    SELECT DISTINCT ml.minuta
+                      AND (
+                          ma.total_minutas > 0
+                          OR EXISTS (SELECT 1 FROM manifesto_list mlc WHERE mlc.id_manifesto = m.id_manifesto AND mlc.tipo = 2)
+                          OR COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0)) IS NOT NULL
+                      )
+                    ORDER BY m.id_manifesto DESC;
+                `, [input.dataInicio, input.dataFim]),
+                telemetriaDb.query<ColetaManifestoAggRow>(`
+                    WITH manifestos_filtrados AS (
+                        SELECT id_manifesto
+                        FROM manifesto m
+                        WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                          AND LEFT(m.prev_saida_data::text, 10) >= $1
+                          AND LEFT(m.prev_saida_data::text, 10) <= $2
+                          AND m.status != 3
+                    ),
+                    coletas_filtradas AS (
+                        SELECT DISTINCT ml.minuta as id_coleta
+                        FROM manifesto_list ml
+                        JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                        WHERE ml.tipo = 2
+                    ),
+                    minutas_de_coletas AS (
+                        SELECT DISTINCT mn.coleta_numero::bigint as id_coleta, mn.id_minuta
+                        FROM minuta mn
+                        JOIN coletas_filtradas cf ON cf.id_coleta = mn.coleta_numero::bigint
+                        WHERE mn.cte_data >= ($1::date - interval '7 days')::date::text
+                          AND mn.cte_data <= ($2::date + interval '15 days')::date::text
+                          AND mn.coleta_numero > 0
+                          AND mn.status NOT IN (9, 13, 99)
+                    ),
+                    rateio_minuta_coleta AS (
+                        SELECT 
+                            ml.minuta,
+                            COUNT(DISTINCT ml.id_manifesto) as total_trechos
+                        FROM manifesto_list ml
+                        JOIN (SELECT DISTINCT id_minuta FROM minutas_de_coletas) me ON me.id_minuta = ml.minuta
+                        JOIN manifesto m ON m.id_manifesto = ml.id_manifesto
+                        WHERE ml.tipo = 1 AND m.status != 3 AND m.tipo IN (1, 2, 4)
+                        GROUP BY ml.minuta
+                    ),
+                    rateio_coleta AS (
+                        SELECT
+                            ml.minuta as id_coleta,
+                            COUNT(DISTINCT ml.id_manifesto) as total_manif_coleta
+                        FROM manifesto_list ml
+                        JOIN coletas_filtradas cf ON cf.id_coleta = ml.minuta
+                        JOIN manifesto m ON m.id_manifesto = ml.id_manifesto
+                        WHERE ml.tipo = 2 AND m.status != 3 AND m.tipo IN (1, 2, 4)
+                        GROUP BY ml.minuta
+                    ),
+                    coleta_minutas_agg AS (
+                        SELECT
+                            mc.id_coleta,
+                            COUNT(DISTINCT mn.id_minuta) as qtd_minutas,
+                            COALESCE(SUM(mn.total_peso), 0) as mds_peso_kg,
+                            COALESCE(SUM(mn.total_cubo), 0) as mds_peso_cubado_kg,
+                            COALESCE(SUM(mn.total_taxado), 0) as mds_peso_taxado_kg,
+                            COALESCE(SUM(
+                                CASE 
+                                    WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
+                                        LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                    WHEN (mn.metragem_cubica > 30 AND mn.total_cubo > 0 AND mn.metragem_cubica > (mn.total_cubo / 250.0) * 2.5) THEN
+                                        (mn.total_cubo / 250.0)
+                                    WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                                    WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN mn.total_cubo / 250.0 
+                                    WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
+                                    ELSE 0 
+                                END
+                            ), 0) as mds_cubo_m3,
+                            COALESCE(SUM(
+                                CASE 
+                                    WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
+                                    WHEN mn.total_cubo > 0 THEN mn.total_cubo / 250.0 
+                                    ELSE 0 
+                                END
+                            ), 0) as mds_cubo_m3_bruto,
+                            COALESCE(SUM(mn.total_volumes), 0) as mds_volumes,
+                            COALESCE(SUM(mn.total_nf_valor), 0) as mds_nf_valor,
+                            COALESCE(SUM(mn.frete_total), 0) as mds_frete_bruto,
+                            COALESCE(SUM(mn.frete_total / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_frete_rateado,
+                            COALESCE(SUM(COALESCE(mn.coleta_custo, 0) / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_custo_coleta,
+                            COALESCE(SUM(COALESCE(mn.entrega_custo, 0) / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_custo_entrega,
+                            COALESCE(SUM((COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0)) / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_custo_seguro,
+                            COALESCE(SUM((COALESCE(mn.frete_total, 0) * 0.0925) / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_impostos
+                        FROM minutas_de_coletas mc
+                        JOIN minuta mn ON mn.id_minuta = mc.id_minuta
+                        LEFT JOIN rateio_minuta_coleta rm ON rm.minuta = mn.id_minuta
+                        LEFT JOIN rateio_coleta rc ON rc.id_coleta = mc.id_coleta
+                        GROUP BY mc.id_coleta
+                    )
+                    SELECT
+                        ml.id_manifesto::text,
+                        COUNT(DISTINCT ml.minuta)::text as total_coletas,
+                        COALESCE(SUM(GREATEST(COALESCE(cma.qtd_minutas, 0), 1)), 0)::text as total_minutas_coleta,
+                        COALESCE(SUM(GREATEST(COALESCE(c.total_peso, 0), COALESCE(cma.mds_peso_kg, 0))), 0)::text as soma_peso_kg,
+                        COALESCE(SUM(GREATEST(COALESCE(c.total_cubo, 0), COALESCE(c.cubagem_rodoviario, 0), COALESCE(cma.mds_peso_cubado_kg, 0))), 0)::text as soma_peso_cubado_kg,
+                        COALESCE(SUM(GREATEST(COALESCE(c.total_taxado, 0), COALESCE(c.total_peso, 0), COALESCE(cma.mds_peso_taxado_kg, 0))), 0)::text as soma_peso_taxado_kg,
+                        COALESCE(SUM(GREATEST(
+                            CASE
+                                WHEN c.metragem_cubica > 0 AND c.metragem_cubica <= 120 THEN c.metragem_cubica
+                                WHEN COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) > 0 AND (COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) / 250.0) <= 120 THEN COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) / 250.0
+                                ELSE 0
+                            END,
+                            COALESCE(cma.mds_cubo_m3, 0)
+                        )), 0)::text as soma_cubo_m3,
+                        COALESCE(SUM(GREATEST(
+                            CASE
+                                WHEN c.metragem_cubica > 0 THEN c.metragem_cubica
+                                WHEN COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) > 0 THEN COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) / 250.0
+                                ELSE 0
+                            END,
+                            COALESCE(cma.mds_cubo_m3_bruto, 0)
+                        )), 0)::text as soma_cubo_m3_bruto,
+                        COALESCE(SUM(GREATEST(COALESCE(c.total_volumes, 0), COALESCE(cma.mds_volumes, 0))), 0)::text as soma_volumes,
+                        COALESCE(SUM(GREATEST(COALESCE(c.total_nf_valor, 0), COALESCE(c.valor_total_notas, 0), COALESCE(cma.mds_nf_valor, 0))), 0)::text as soma_nf_valor,
+                        COALESCE(SUM(COALESCE(cma.mds_frete_bruto, 0)), 0)::text as soma_frete_bruto,
+                        COALESCE(SUM(COALESCE(cma.mds_frete_rateado, 0)), 0)::text as soma_frete_rateado,
+                        COALESCE(SUM(COALESCE(cma.mds_custo_coleta, 0)), 0)::text as soma_custo_coleta,
+                        COALESCE(SUM(COALESCE(cma.mds_custo_entrega, 0)), 0)::text as soma_custo_entrega,
+                        COALESCE(SUM(COALESCE(cma.mds_custo_seguro, 0)), 0)::text as soma_custo_seguro,
+                        COALESCE(SUM(COALESCE(cma.mds_impostos, 0)), 0)::text as soma_impostos
                     FROM manifesto_list ml
                     JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
-                ),
-                rateio_minuta AS (
-                    SELECT 
-                        ml.minuta,
-                        COUNT(DISTINCT ml.id_manifesto) as total_trechos
-                    FROM manifesto_list ml
-                    JOIN minutas_envolvidas me ON me.minuta = ml.minuta
-                    JOIN manifesto m ON m.id_manifesto = ml.id_manifesto
-                    WHERE m.status != 3 AND m.tipo IN (1, 2, 4)
-                    GROUP BY ml.minuta
-                ),
-                manifesto_agregado AS (
-                    SELECT 
-                        ml.id_manifesto,
-                        COUNT(DISTINCT ml.minuta) as total_minutas,
-                        COALESCE(SUM(mn.total_peso), 0) as soma_peso_kg,
-                        COALESCE(SUM(mn.total_cubo), 0) as soma_peso_cubado_kg,
-                        COALESCE(SUM(mn.total_taxado), 0) as soma_peso_taxado_kg,
-                        COALESCE(SUM(
-                            CASE 
-                                -- Proteção contra erros operacionais grotescos no Brudam (ex: milímetros ou cubagem > 120m³ em CTE)
-                                WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
-                                    LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
-                                -- Proteção quando o operador digita a quantidade de volumes no campo metragem_cubica
-                                WHEN (mn.metragem_cubica > 30 AND mn.total_cubo > 0 AND mn.metragem_cubica > (mn.total_cubo / 250.0) * 2.5) THEN
-                                    (mn.total_cubo / 250.0)
-                                WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
-                                WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN mn.total_cubo / 250.0 
-                                WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)
-                                ELSE 0 
-                            END
-                        ), 0) as soma_cubo_m3,
-                        COALESCE(SUM(
-                            CASE 
-                                WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica 
-                                WHEN mn.total_cubo > 0 THEN mn.total_cubo / 250.0 
-                                ELSE 0 
-                            END
-                        ), 0) as soma_cubo_m3_bruto,
-                        COALESCE(SUM(mn.total_volumes), 0) as soma_volumes,
-                        COALESCE(SUM(mn.total_nf_valor), 0) as soma_nf_valor,
-                        COALESCE(SUM(mn.frete_total), 0) as soma_frete_bruto,
-                        COALESCE(SUM(mn.frete_total / GREATEST(rm.total_trechos, 1)), 0) as soma_frete_rateado,
-                        COALESCE(SUM(COALESCE(mn.coleta_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_coleta,
-                        COALESCE(SUM(COALESCE(mn.entrega_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_entrega,
-                        COALESCE(SUM((COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0)) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_seguro,
-                        COALESCE(SUM((COALESCE(mn.frete_total, 0) * 0.0925) / GREATEST(rm.total_trechos, 1)), 0) as soma_impostos
-                    FROM manifesto_list ml
-                    JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
-                    JOIN minuta mn ON mn.id_minuta = ml.minuta
-                    LEFT JOIN rateio_minuta rm ON rm.minuta = ml.minuta
-                    GROUP BY ml.id_manifesto
-                )
-                SELECT 
-                    m.id_manifesto::text,
-                    LEFT(m.prev_saida_data::text, 10) as prev_saida_data,
-                    LEFT(m.saida_efetiva_data::text, 10) as saida_efetiva_data,
-                    m.status::text,
-                    ms.descricao as status_descricao,
-                    COALESCE(v.placa, t.ve_placa) as placa,
-                    COALESCE(v.modelo, t.ve_modelo) as modelo_veiculo,
-                    COALESCE(v.capacidade::text, t.ve_capacidade::text) as capacidade_veiculo_kg,
-                    COALESCE(v."capM3"::text, t."capM3"::text) as capacidade_veiculo_m3,
-                    COALESCE(fv.fantasia, fmt.fantasia, ft.fantasia) as fornecedor_nome,
-                    COALESCE(fv.cnpj, fmt.cnpj, ft.cnpj) as fornecedor_cnpj,
-                    ao.aeroporto as origem_aero,
-                    ad.aeroporto as destino_aero,
-                    uo.fantasia as origem_unidade,
-                    ud.fantasia as destino_unidade,
-                    m.custo_motorista::text,
-                    m.valor_total_km::text,
-                    m.pedagio::text,
-                    COALESCE(ma.total_minutas, 0)::text as total_minutas,
-                    ma.soma_peso_kg::text,
-                    ma.soma_peso_cubado_kg::text,
-                    ma.soma_peso_taxado_kg::text,
-                    ma.soma_cubo_m3::text,
-                    ma.soma_cubo_m3_bruto::text,
-                    ma.soma_volumes::text,
-                    ma.soma_nf_valor::text,
-                    ma.soma_frete_bruto::text,
-                    ma.soma_frete_rateado::text,
-                    ma.soma_custo_coleta::text,
-                    ma.soma_custo_entrega::text,
-                    ma.soma_custo_seguro::text,
-                    ma.soma_impostos::text,
-                    m.tipo::text as tipo_manifesto_id,
-                    COALESCE(mt.tipo, 'Outro') as tipo_manifesto_descricao,
-                    COALESCE(v.tipo_veiculo::text, t.tipo_ve::text) as tipo_veiculo_banco
-                FROM manifesto m
-                LEFT JOIN manifesto_status ms ON ms.id_status = m.status
-                LEFT JOIN manifesto_tipo mt ON mt.id_tipo::text = m.tipo::text
-                LEFT JOIN veiculos v ON v.id_veiculo = COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0))
-                LEFT JOIN fornecedores fv ON v.proprietario::text = fv.id_local::text
-                LEFT JOIN motorista_terceiro mt_mot ON mt_mot.id::text = COALESCE(NULLIF(m.motorista_agente::text, '0'), NULLIF(m.motorista::text, '0'))
-                LEFT JOIN fornecedores fmt ON fmt.id_local::text = mt_mot.id_local::text
-                LEFT JOIN terceiros t ON t.id_terceiro = m.veiculo_terceiro
-                LEFT JOIN fornecedores ft ON t.fornecedor::text = ft.id_local::text
-                LEFT JOIN aero ao ON ao.id_aero::text = m.transf_origem::text
-                LEFT JOIN aero ad ON ad.id_aero::text = m.transf_destino::text
-                LEFT JOIN unidades uo ON uo.id_unidade::text = m.base::text
-                LEFT JOIN unidades ud ON ud.id_unidade::text = m.destino::text
-                LEFT JOIN manifesto_agregado ma ON ma.id_manifesto = m.id_manifesto
-                WHERE m.prev_saida_data::text NOT LIKE '0000%'
-                  AND LEFT(m.prev_saida_data::text, 10) >= $1
-                  AND LEFT(m.prev_saida_data::text, 10) <= $2
-                  AND m.status != 3
-                  AND (ma.total_minutas > 0 OR COALESCE(NULLIF(m.veiculo, 0), NULLIF(m.veiculo_terceiro, 0), NULLIF(m.veiculo_agente, 0)) IS NOT NULL)
-                ORDER BY m.id_manifesto DESC;
-            `, [input.dataInicio, input.dataFim]);
+                    JOIN coleta c ON c.id_coleta = ml.minuta
+                    LEFT JOIN coleta_minutas_agg cma ON cma.id_coleta = c.id_coleta
+                    WHERE ml.tipo = 2
+                    GROUP BY ml.id_manifesto;
+                `, [input.dataInicio, input.dataFim]),
+            ]);
 
             const rows = queryResult.rows;
+            const mapaColetasPorManifesto = new Map<string, ColetaManifestoAggRow>();
+            for (const cRow of coletasResult.rows) {
+                mapaColetasPorManifesto.set(cRow.id_manifesto, cRow);
+            }
 
             // 2. Processa cada viagem cruzando com as regras da planilha de capacidade
             const viagensProcessadas = rows.map((r) => {
+                const colAgg = mapaColetasPorManifesto.get(r.id_manifesto);
                 const parceiroIdentificado = identificarParceiroBrudam(r.fornecedor_nome) || "Outros / Próprio";
                 const origem = r.origem_aero || r.origem_unidade || "Origem não inf.";
-                const destino = r.destino_aero || r.destino_unidade || (r.tipo_manifesto_id === "4" ? "Coleta / Entrega Local" : "Destino não inf.");
+                const destino = r.destino_aero || r.destino_unidade || (r.tipo_manifesto_id === "4" || (Number(colAgg?.total_coletas) || 0) > 0 ? "Coleta / Entrega Local" : "Destino não inf.");
 
                 const rotaContratual = encontrarRotaCompativel(parceiroIdentificado, origem, destino, rotasContratuais);
 
@@ -372,20 +525,22 @@ export const aproveitamentoRouter = createTRPCRouter({
                 const custoBrudam = (Number(r.custo_motorista) || 0) + (Number(r.valor_total_km) || 0) + (Number(r.pedagio) || 0);
                 const custoViagem = (custoBrudam > 0) ? custoBrudam : (rotaContratual?.valorTotal || 0);
 
-                const pesoCarregadoKg = Number(r.soma_peso_kg) || 0;
-                const cuboCarregadoM3 = Number(r.soma_cubo_m3) || 0;
-                const cuboCarregadoM3Bruto = Number(r.soma_cubo_m3_bruto) || cuboCarregadoM3;
+                const pesoCarregadoKg = (Number(r.soma_peso_kg) || 0) + (Number(colAgg?.soma_peso_kg) || 0);
+                const cuboCarregadoM3 = (Number(r.soma_cubo_m3) || 0) + (Number(colAgg?.soma_cubo_m3) || 0);
+                const cuboCarregadoM3Bruto = ((Number(r.soma_cubo_m3_bruto) || 0) + (Number(colAgg?.soma_cubo_m3_bruto) || 0)) || cuboCarregadoM3;
                 const temAnomaliaVolume = cuboCarregadoM3Bruto > 150 || (cuboCarregadoM3Bruto > cuboCarregadoM3 * 2);
-                const totalVolumes = Number(r.soma_volumes) || 0;
-                const valorMercadoriaNf = Number(r.soma_nf_valor) || 0;
+                const totalVolumes = (Number(r.soma_volumes) || 0) + (Number(colAgg?.soma_volumes) || 0);
+                const totalMinutas = (Number(r.total_minutas) || 0) + (Number(colAgg?.total_minutas_coleta) || 0);
+                const totalColetas = Number(colAgg?.total_coletas) || 0;
+                const valorMercadoriaNf = (Number(r.soma_nf_valor) || 0) + (Number(colAgg?.soma_nf_valor) || 0);
                 
                 // Receitas e Custos Operacionais das Pontas
-                const receitaRateada = Number(r.soma_frete_rateado) || 0; // Frete bruto rateado
-                const receitaBrutaMinutas = Number(r.soma_frete_bruto) || 0;
-                const custoColetaRateado = Number(r.soma_custo_coleta) || 0;
-                const custoEntregaRateado = Number(r.soma_custo_entrega) || 0;
-                const custoSeguroRateado = Number(r.soma_custo_seguro) || 0;
-                const impostosRateados = Number(r.soma_impostos) || 0; // 9,25% PIS/COFINS
+                const receitaRateada = (Number(r.soma_frete_rateado) || 0) + (Number(colAgg?.soma_frete_rateado) || 0); // Frete bruto rateado
+                const receitaBrutaMinutas = (Number(r.soma_frete_bruto) || 0) + (Number(colAgg?.soma_frete_bruto) || 0);
+                const custoColetaRateado = (Number(r.soma_custo_coleta) || 0) + (Number(colAgg?.soma_custo_coleta) || 0);
+                const custoEntregaRateado = (Number(r.soma_custo_entrega) || 0) + (Number(colAgg?.soma_custo_entrega) || 0);
+                const custoSeguroRateado = (Number(r.soma_custo_seguro) || 0) + (Number(colAgg?.soma_custo_seguro) || 0);
+                const impostosRateados = (Number(r.soma_impostos) || 0) + (Number(colAgg?.soma_impostos) || 0); // 9,25% PIS/COFINS
                 const custoPontasRateado = custoColetaRateado + custoEntregaRateado + custoSeguroRateado + impostosRateados;
 
                 // Receita Líquida disponível para cobrir a transferência
@@ -435,7 +590,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     cuboCarregadoM3Bruto,
                     temAnomaliaVolume,
                     totalVolumes,
-                    totalMinutas: Number(r.total_minutas) || 0,
+                    totalMinutas,
+                    totalColetas,
                     valorMercadoriaNf,
                     ocupacaoPesoPct,
                     ocupacaoCuboPct,
@@ -656,98 +812,263 @@ export const aproveitamentoRouter = createTRPCRouter({
             idManifesto: z.string()
         }))
         .query(async ({ input }) => {
-            // 1. Busca os custos totais do manifesto para rateio de transferência por peso taxado
+            // 1. Busca os dados e custos totais do manifesto
             const manifestoRes = await telemetriaDb.query(`
                 SELECT 
                     m.id_manifesto,
+                    m.prev_saida_data,
                     COALESCE(m.custo_motorista, 0) as custo_motorista,
                     COALESCE(m.valor_total_km, 0) as valor_total_km,
-                    COALESCE(m.pedagio, 0) as pedagio,
-                    (SELECT COALESCE(SUM(mn2.total_taxado), 0) FROM manifesto_list ml2 JOIN minuta mn2 ON mn2.id_minuta = ml2.minuta WHERE ml2.id_manifesto = m.id_manifesto) as soma_taxado
+                    COALESCE(m.pedagio, 0) as pedagio
                 FROM manifesto m
                 WHERE m.id_manifesto = $1;
             `, [input.idManifesto]);
 
             const mRow = manifestoRes.rows[0];
             const custoTotalManifesto = mRow ? (Number(mRow.custo_motorista) + Number(mRow.valor_total_km) + Number(mRow.pedagio)) : 0;
-            const somaTaxadoManifesto = mRow ? Math.max(Number(mRow.soma_taxado), 1) : 1;
+            const prevSaidaData = mRow?.prev_saida_data || null;
 
-            // 2. Busca todas as minutas vinculadas com seus dados operacionais, fiscais e histórico completo de transferências
-            const minutasQuery = await telemetriaDb.query(`
-                WITH minutas_manif AS (
-                    SELECT DISTINCT ml.minuta
-                    FROM manifesto_list ml
-                    WHERE ml.id_manifesto = $1
-                ),
-                todos_manifestos_minuta AS (
+            // 2. Busca todas as minutas vinculadas (diretas tipo = 1 OU geradas por coletas tipo = 2)
+            const [minutasQuery, coletasQuery] = await Promise.all([
+                telemetriaDb.query(`
+                    WITH coletas_manif AS (
+                        SELECT DISTINCT
+                            c.id_coleta,
+                            COALESCE(NULLIF(TRIM(f.fantasia), ''), NULLIF(TRIM(f.razao), ''), 'Cliente #' || COALESCE(c.id_cliente::text, '')) as remetente_nome
+                        FROM manifesto_list ml
+                        JOIN coleta c ON c.id_coleta = ml.minuta
+                        LEFT JOIN fornecedores f ON f.id_local = c.id_cliente
+                        WHERE ml.id_manifesto = $1
+                          AND ml.tipo = 2
+                    ),
+                    minutas_via_coleta AS (
+                        SELECT 
+                            mn.id_minuta,
+                            cm.id_coleta,
+                            cm.remetente_nome
+                        FROM coletas_manif cm
+                        JOIN minuta mn ON mn.coleta_numero = cm.id_coleta
+                        WHERE COALESCE(mn.status, 0) NOT IN (9, 13, 99)
+                          AND (
+                              $2::text IS NULL
+                              OR (
+                                  mn.cte_data >= ($2::date - interval '7 days')::date::text
+                                  AND mn.cte_data <= ($2::date + interval '15 days')::date::text
+                              )
+                          )
+                        UNION
+                        SELECT 
+                            mn.id_minuta,
+                            cm.id_coleta,
+                            cm.remetente_nome
+                        FROM coletas_manif cm
+                        JOIN frete_hist fh ON fh.coleta = cm.id_coleta::int
+                        JOIN minuta mn ON mn.id_minuta = fh.frete
+                        WHERE COALESCE(mn.status, 0) NOT IN (9, 13, 99)
+                    ),
+                    minutas_diretas AS (
+                        SELECT DISTINCT
+                            ml.minuta as id_minuta,
+                            NULL::bigint as id_coleta,
+                            NULL::text as remetente_nome
+                        FROM manifesto_list ml
+                        WHERE ml.id_manifesto = $1
+                          AND ml.tipo = 1
+                    ),
+                    todas_minutas_manif AS (
+                        SELECT DISTINCT ON (id_minuta)
+                            id_minuta,
+                            id_coleta,
+                            remetente_nome
+                        FROM (
+                            SELECT id_minuta, id_coleta, remetente_nome, 1 as prioridade FROM minutas_via_coleta
+                            UNION ALL
+                            SELECT id_minuta, id_coleta, remetente_nome, 2 as prioridade FROM minutas_diretas
+                        ) u
+                        ORDER BY id_minuta, prioridade ASC
+                    ),
+                    todos_manifestos_minuta AS (
+                        SELECT 
+                            tmm.id_minuta as minuta,
+                            ml2.id_manifesto,
+                            COALESCE(m2.custo_motorista, 0) as custo_motorista,
+                            COALESCE(m2.valor_total_km, 0) as valor_total_km,
+                            COALESCE(m2.pedagio, 0) as pedagio,
+                            (SELECT COALESCE(SUM(COALESCE(mn3.total_taxado, mn3.total_peso)), 1) 
+                             FROM manifesto_list ml3 
+                             JOIN minuta mn3 ON mn3.id_minuta = ml3.minuta 
+                             WHERE ml3.id_manifesto = ml2.id_manifesto
+                               AND ml3.tipo = 1) as peso_manifesto
+                        FROM todas_minutas_manif tmm
+                        JOIN manifesto_list ml2 ON ml2.minuta = tmm.id_minuta AND ml2.tipo = 1
+                        JOIN manifesto m2 ON m2.id_manifesto = ml2.id_manifesto
+                        WHERE m2.status != 3 AND m2.tipo IN (1, 2, 4)
+                    ),
+                    resumo_transf_minuta AS (
+                        SELECT 
+                            tmm.minuta,
+                            COUNT(DISTINCT tmm.id_manifesto) as total_manifestos_real,
+                            SUM( (COALESCE(mn.total_taxado, mn.total_peso) / GREATEST(tmm.peso_manifesto, 1)) * (tmm.custo_motorista + tmm.valor_total_km + tmm.pedagio) ) as soma_custo_transferencias
+                        FROM todos_manifestos_minuta tmm
+                        JOIN minuta mn ON mn.id_minuta = tmm.minuta
+                        GROUP BY tmm.minuta
+                    )
                     SELECT 
-                        ml2.minuta,
-                        ml2.id_manifesto,
-                        COALESCE(m2.custo_motorista, 0) as custo_motorista,
-                        COALESCE(m2.valor_total_km, 0) as valor_total_km,
-                        COALESCE(m2.pedagio, 0) as pedagio,
-                        (SELECT COALESCE(SUM(COALESCE(mn3.total_taxado, mn3.total_peso)), 1) 
-                         FROM manifesto_list ml3 
-                         JOIN minuta mn3 ON mn3.id_minuta = ml3.minuta 
-                         WHERE ml3.id_manifesto = ml2.id_manifesto) as peso_manifesto
-                    FROM manifesto_list ml2
-                    JOIN minutas_manif mm ON mm.minuta = ml2.minuta
-                    JOIN manifesto m2 ON m2.id_manifesto = ml2.id_manifesto
-                    WHERE m2.status != 3 AND m2.tipo IN (1, 2, 4)
-                ),
-                resumo_transf_minuta AS (
+                        mn.id_minuta::text,
+                        tmm.id_coleta::text as id_coleta,
+                        tmm.remetente_nome,
+                        COALESCE(mn.total_volumes, 0)::int as total_volumes,
+                        COALESCE(mn.total_peso, 0)::float as total_peso,
+                        COALESCE(mn.total_cubo, 0)::float as total_cubo,
+                        COALESCE(mn.total_taxado, mn.total_peso, 0)::float as total_taxado,
+                        CASE 
+                            WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
+                                LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)::float
+                            WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
+                            WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN (mn.total_cubo / 250.0)::float 
+                            WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)::float
+                            ELSE 0 
+                        END as volume_m3,
+                        CASE 
+                            WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
+                            WHEN mn.total_cubo > 0 THEN (mn.total_cubo / 250.0)::float 
+                            ELSE 0 
+                        END as volume_m3_original,
+                        (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) as anomalia_volume,
+                        COALESCE(mn.total_nf_valor, 0)::float as total_nf_valor,
+                        COALESCE(mn.frete_total, 0)::float as frete_total,
+                        COALESCE(mn.coleta_custo, 0)::float as coleta_custo,
+                        COALESCE(mn.entrega_custo, 0)::float as entrega_custo,
+                        (COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0))::float as seguro,
+                        mn.origem,
+                        mn.destino,
+                        mn.chave,
+                        mn.cte_numero::text,
+                        (COALESCE(rtm.total_manifestos_real, 0) + CASE WHEN tmm.id_coleta IS NOT NULL THEN 1 ELSE 0 END)::int as total_manifestos,
+                        COALESCE(rtm.soma_custo_transferencias, 0)::float as soma_todas_transf
+                    FROM todas_minutas_manif tmm
+                    JOIN minuta mn ON mn.id_minuta = tmm.id_minuta
+                    LEFT JOIN resumo_transf_minuta rtm ON rtm.minuta = tmm.id_minuta
+                    ORDER BY mn.total_peso DESC;
+                `, [input.idManifesto, prevSaidaData]),
+                // 3. Busca as coletas (tipo = 2) da tabela coleta para cobrir coletas sem minuta emitida ou com diferença de peso
+                telemetriaDb.query(`
                     SELECT 
-                        tmm.minuta,
-                        COUNT(DISTINCT tmm.id_manifesto) as total_manifestos_real,
-                        SUM( (COALESCE(mn.total_taxado, mn.total_peso) / GREATEST(tmm.peso_manifesto, 1)) * (tmm.custo_motorista + tmm.valor_total_km + tmm.pedagio) ) as soma_custo_transferencias
-                    FROM todos_manifestos_minuta tmm
-                    JOIN minuta mn ON mn.id_minuta = tmm.minuta
-                    GROUP BY tmm.minuta
-                )
-                SELECT 
-                    mn.id_minuta::text,
-                    mn.total_volumes::int,
-                    mn.total_peso::float,
-                    mn.total_cubo::float,
-                    COALESCE(mn.total_taxado, mn.total_peso)::float as total_taxado,
-                    CASE 
-                        WHEN (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) THEN
-                            LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)::float
-                        WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
-                        WHEN mn.total_cubo > 0 AND (mn.total_cubo / 250.0) <= 120 THEN (mn.total_cubo / 250.0)::float 
-                        WHEN mn.total_cubo > 0 THEN LEAST(GREATEST(mn.total_peso / 250.0, 0.5), 30.0)::float
-                        ELSE 0 
-                    END as volume_m3,
-                    CASE 
-                        WHEN mn.metragem_cubica > 0 THEN mn.metragem_cubica::float 
-                        WHEN mn.total_cubo > 0 THEN (mn.total_cubo / 250.0)::float 
-                        ELSE 0 
-                    END as volume_m3_original,
-                    (mn.metragem_cubica > 120 OR (mn.metragem_cubica > 30 AND mn.total_peso > 50 AND (mn.metragem_cubica / GREATEST(mn.total_peso, 1)) > 0.2)) as anomalia_volume,
-                    mn.total_nf_valor::float,
-                    mn.frete_total::float,
-                    COALESCE(mn.coleta_custo, 0)::float as coleta_custo,
-                    COALESCE(mn.entrega_custo, 0)::float as entrega_custo,
-                    (COALESCE(mn.seguro_rcfdc, 0) + COALESCE(mn.seguro_rctrc, 0))::float as seguro,
-                    mn.origem,
-                    mn.destino,
-                    mn.chave,
-                    mn.cte_numero::text,
-                    COALESCE(rtm.total_manifestos_real, 1)::int as total_manifestos,
-                    COALESCE(rtm.soma_custo_transferencias, 0)::float as soma_todas_transf
-                FROM manifesto_list ml
-                JOIN minuta mn ON mn.id_minuta = ml.minuta
-                LEFT JOIN resumo_transf_minuta rtm ON rtm.minuta = ml.minuta
-                WHERE ml.id_manifesto = $1
-                ORDER BY mn.total_peso DESC;
-            `, [input.idManifesto]);
+                        c.id_coleta::text as id_coleta,
+                        COALESCE(NULLIF(TRIM(f.fantasia), ''), NULLIF(TRIM(f.razao), ''), 'Cliente #' || COALESCE(c.id_cliente::text, '')) as remetente_nome,
+                        COALESCE(c.total_volumes, 0)::int as total_volumes,
+                        COALESCE(c.total_peso, 0)::float as total_peso,
+                        COALESCE(c.total_cubo, c.cubagem_rodoviario, 0)::float as total_cubo,
+                        GREATEST(COALESCE(c.total_peso, 0), COALESCE(c.total_cubo, 0))::float as total_taxado,
+                        CASE 
+                            WHEN c.metragem_cubica > 0 AND c.metragem_cubica <= 120 THEN c.metragem_cubica::float
+                            WHEN COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) > 0 AND (COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) / 250.0) <= 120 THEN (COALESCE(c.total_cubo, c.cubagem_rodoviario, 0) / 250.0)::float
+                            ELSE 0
+                        END as volume_m3,
+                        GREATEST(COALESCE(c.total_nf_valor, 0), COALESCE(c.valor_total_notas, 0))::float as total_nf_valor,
+                        COALESCE(c.coleta_custo, 0)::float as coleta_custo,
+                        COALESCE(u.Sigla, u.Unidade, 'COLETA') as origem_unidade
+                    FROM (
+                        SELECT DISTINCT ml.minuta
+                        FROM manifesto_list ml
+                        WHERE ml.id_manifesto = $1
+                          AND ml.tipo = 2
+                    ) ml_col
+                    JOIN coleta c ON c.id_coleta = ml_col.minuta
+                    LEFT JOIN fornecedores f ON f.id_local = c.id_cliente
+                    LEFT JOIN unidades u ON u.id = c.id_unidade
+                    ORDER BY c.total_peso DESC;
+                `, [input.idManifesto])
+            ]);
 
-            return minutasQuery.rows.map(m => {
+            // Verifica se alguma coleta não possui minutas geradas (ou possui peso na coleta maior que a soma das minutas geradas)
+            const pesoMinutasPorColeta = new Map<string, { qtd: number; somaPeso: number; somaTaxado: number }>();
+            for (const m of minutasQuery.rows) {
+                if (m.id_coleta) {
+                    const atual = pesoMinutasPorColeta.get(m.id_coleta) || { qtd: 0, somaPeso: 0, somaTaxado: 0 };
+                    atual.qtd += 1;
+                    atual.somaPeso += Number(m.total_peso) || 0;
+                    atual.somaTaxado += Number(m.total_taxado) || 0;
+                    pesoMinutasPorColeta.set(m.id_coleta, atual);
+                }
+            }
+
+            const coletasComplementares: Array<Record<string, unknown>> = [];
+            for (const c of coletasQuery.rows) {
+                const statsMinutas = pesoMinutasPorColeta.get(c.id_coleta);
+                const pesoColeta = Number(c.total_peso) || 0;
+                if (!statsMinutas || statsMinutas.qtd === 0) {
+                    // Coleta ainda sem minutas emitidas: exibe a Coleta diretamente com seu peso real
+                    coletasComplementares.push({
+                        id_minuta: `COL-${c.id_coleta}`,
+                        id_coleta: c.id_coleta,
+                        remetente_nome: c.remetente_nome,
+                        tipo_registro: "COLETA",
+                        total_volumes: Number(c.total_volumes) || 0,
+                        total_peso: pesoColeta,
+                        total_cubo: Number(c.total_cubo) || 0,
+                        total_taxado: Math.max( Number(c.total_taxado) || 0, pesoColeta ),
+                        volume_m3: Number(c.volume_m3) || 0,
+                        volume_m3_original: Number(c.volume_m3) || 0,
+                        anomalia_volume: false,
+                        total_nf_valor: Number(c.total_nf_valor) || 0,
+                        frete_total: 0,
+                        coleta_custo: Number(c.coleta_custo) || 0,
+                        entrega_custo: 0,
+                        seguro: 0,
+                        origem: c.remetente_nome || c.origem_unidade,
+                        destino: c.origem_unidade || "Base",
+                        chave: null,
+                        cte_numero: `Coleta #${c.id_coleta}`,
+                        total_manifestos: 1,
+                        soma_todas_transf: 0,
+                    });
+                } else if (pesoColeta > statsMinutas.somaPeso + 0.5) {
+                    // Coleta com minutas parciais (peso na coleta supera a soma das minutas emitidas)
+                    const diffPeso = Number((pesoColeta - statsMinutas.somaPeso).toFixed(2));
+                    coletasComplementares.push({
+                        id_minuta: `COL-${c.id_coleta}`,
+                        id_coleta: c.id_coleta,
+                        remetente_nome: c.remetente_nome,
+                        tipo_registro: "COLETA",
+                        total_volumes: 0,
+                        total_peso: diffPeso,
+                        total_cubo: 0,
+                        total_taxado: diffPeso,
+                        volume_m3: 0,
+                        volume_m3_original: 0,
+                        anomalia_volume: false,
+                        total_nf_valor: 0,
+                        frete_total: 0,
+                        coleta_custo: 0,
+                        entrega_custo: 0,
+                        seguro: 0,
+                        origem: c.remetente_nome || c.origem_unidade,
+                        destino: c.origem_unidade || "Base",
+                        chave: null,
+                        cte_numero: `Saldo Coleta #${c.id_coleta}`,
+                        total_manifestos: 1,
+                        soma_todas_transf: 0,
+                    });
+                }
+            }
+
+            const todosRegistros = [
+                ...minutasQuery.rows.map(r => ({ ...r, tipo_registro: "MINUTA" })),
+                ...coletasComplementares,
+            ];
+
+            const somaTaxadoManifesto = Math.max(
+                todosRegistros.reduce((acc, m) => acc + (Number(m.total_taxado) || Number(m.total_peso) || 0), 0),
+                1
+            );
+
+            return todosRegistros.map(m => {
                 const freteTotal = Number(m.frete_total) || 0;
                 const coletaCusto = Number(m.coleta_custo) || 0;
                 const entregaCusto = Number(m.entrega_custo) || 0;
                 const seguro = Number(m.seguro) || 0;
-                const pesoTaxado = Number(m.total_taxado) || 0;
+                const pesoTaxado = Number(m.total_taxado) || Number(m.total_peso) || 0;
                 const totalManifestos = Math.max(Number(m.total_manifestos) || 1, 1);
                 const somaTodasTransf = Number(m.soma_todas_transf) || 0;
 
@@ -755,7 +1076,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                 const custoTransfTrecho = (pesoTaxado / somaTaxadoManifesto) * custoTotalManifesto;
 
                 // 2. Lucro Real Global da Minuta (conforme cálculo exato do Brudam)
-                const custoTotalOperacionalMinuta = somaTodasTransf + coletaCusto + entregaCusto + seguro;
+                const custoTotalOperacionalMinuta = somaTodasTransf + (m.id_coleta ? custoTransfTrecho : 0) + coletaCusto + entregaCusto + seguro;
                 const impostoTotal = freteTotal * 0.0925;
                 const lucroGlobalMinuta = freteTotal - custoTotalOperacionalMinuta - impostoTotal;
                 const margemGlobalMinutaPct = freteTotal > 0 ? (lucroGlobalMinuta / freteTotal) * 100 : 0;
@@ -772,15 +1093,18 @@ export const aproveitamentoRouter = createTRPCRouter({
                 const custoOperacionalTrecho = custoTransfTrecho + custoPontasTrecho;
 
                 return {
-                    idMinuta: m.id_minuta,
-                    volumes: m.total_volumes,
-                    pesoKg: m.total_peso,
-                    pesoCubadoKg: m.total_cubo,
+                    idMinuta: String(m.id_minuta),
+                    idColeta: m.id_coleta ? String(m.id_coleta) : null,
+                    remetenteColeta: m.remetente_nome ? String(m.remetente_nome) : null,
+                    tipoRegistro: (m.tipo_registro as "MINUTA" | "COLETA") || "MINUTA",
+                    volumes: Number(m.total_volumes) || 0,
+                    pesoKg: Number(m.total_peso) || 0,
+                    pesoCubadoKg: Number(m.total_cubo) || 0,
                     pesoTaxadoKg: pesoTaxado,
                     cuboM3: Number(m.volume_m3) || 0,
                     cuboM3Original: Number(m.volume_m3_original) || 0,
                     anomaliaVolume: Boolean(m.anomalia_volume),
-                    valorNf: m.total_nf_valor,
+                    valorNf: Number(m.total_nf_valor) || 0,
                     freteTotal,
                     freteRateado: freteRateadoTrecho,
                     receitaLiquida: receitaLiquidaTrecho,
@@ -796,10 +1120,10 @@ export const aproveitamentoRouter = createTRPCRouter({
                     margemGlobalMinutaPct,
                     somaTodasTransf,
                     totalManifestos,
-                    origem: m.origem,
-                    destino: m.destino,
-                    chave: m.chave,
-                    cteNumero: m.cte_numero,
+                    origem: m.origem ? String(m.origem) : null,
+                    destino: m.destino ? String(m.destino) : null,
+                    chave: m.chave ? String(m.chave) : null,
+                    cteNumero: m.cte_numero ? String(m.cte_numero) : null,
                 };
             });
         }),
