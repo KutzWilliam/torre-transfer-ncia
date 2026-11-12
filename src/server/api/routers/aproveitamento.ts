@@ -967,7 +967,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                         END as volume_m3,
                         GREATEST(COALESCE(c.total_nf_valor, 0), COALESCE(c.valor_total_notas, 0))::float as total_nf_valor,
                         COALESCE(c.coleta_custo, 0)::float as coleta_custo,
-                        COALESCE(u.Sigla, u.Unidade, 'COLETA') as origem_unidade
+                        COALESCE(u.sigla, u.fantasia, 'COLETA') as origem_unidade
                     FROM (
                         SELECT DISTINCT ml.minuta
                         FROM manifesto_list ml
@@ -976,7 +976,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                     ) ml_col
                     JOIN coleta c ON c.id_coleta = ml_col.minuta
                     LEFT JOIN fornecedores f ON f.id_local = c.id_cliente
-                    LEFT JOIN unidades u ON u.id = c.id_unidade
+                    LEFT JOIN unidades u ON u.id_unidade = c.unidade
                     ORDER BY c.total_peso DESC;
                 `, [input.idManifesto])
             ]);
