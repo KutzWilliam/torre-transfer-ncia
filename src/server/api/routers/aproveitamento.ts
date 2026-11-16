@@ -228,6 +228,8 @@ export const aproveitamentoRouter = createTRPCRouter({
             dataInicio: z.string(), // "yyyy-MM-dd"
             dataFim: z.string(),    // "yyyy-MM-dd"
             parceiro: z.string().optional(),
+            origem: z.string().optional(),
+            destino: z.string().optional(),
             tipoVeiculo: z.string().optional(),
             modalidade: z.enum(["TODAS", "CAMINHAO", "ONIBUS"]).optional().default("TODAS"),
             tipoOperacao: z.enum(["TODAS", "TRANSFERENCIA", "COLETA_ENTREGA"]).optional().default("TODAS"),
@@ -622,6 +624,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                 if (input.modalidade && input.modalidade !== "TODAS" && v.modalidade !== input.modalidade) return false;
                 if (input.tipoOperacao && input.tipoOperacao !== "TODAS" && v.tipoOperacao !== input.tipoOperacao) return false;
                 if (input.parceiro && v.parceiro.toLowerCase() !== input.parceiro.toLowerCase()) return false;
+                if (input.origem && v.origem.toLowerCase() !== input.origem.toLowerCase()) return false;
+                if (input.destino && v.destino.toLowerCase() !== input.destino.toLowerCase()) return false;
                 if (input.tipoVeiculo && v.tipoVeiculo !== input.tipoVeiculo) return false;
                 if (input.statusManifesto && v.statusDescricao.toLowerCase() !== input.statusManifesto.toLowerCase()) return false;
                 if (input.tipoManifesto && v.tipoManifestoDescricao.toLowerCase() !== input.tipoManifesto.toLowerCase() && v.tipoManifestoId !== input.tipoManifesto) return false;
@@ -629,11 +633,14 @@ export const aproveitamentoRouter = createTRPCRouter({
                 if (input.statusMargem !== "TODAS" && v.resultadoFinanceiro !== input.statusMargem) return false;
 
                 if (input.search) {
-                    const q = input.search.toLowerCase();
+                    const q = input.search.toLowerCase().trim();
+                    const qNormalized = q.replace(/\s*->\s*/g, " ➔ ");
                     const match = v.idManifesto.includes(q) ||
                         v.placa.toLowerCase().includes(q) ||
                         v.origem.toLowerCase().includes(q) ||
                         v.destino.toLowerCase().includes(q) ||
+                        v.rotaDescricao.toLowerCase().includes(q) ||
+                        v.rotaDescricao.toLowerCase().includes(qNormalized) ||
                         v.parceiro.toLowerCase().includes(q) ||
                         v.fornecedorRazao.toLowerCase().includes(q) ||
                         v.statusDescricao.toLowerCase().includes(q) ||
@@ -802,6 +809,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                 distribuicaoGargalo,
                 viagens: viagensFiltradas,
                 parceirosDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.parceiro))).sort(),
+                origensDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.origem))).filter(Boolean).sort(),
+                destinosDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.destino))).filter(Boolean).sort(),
                 statusDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.statusDescricao))).filter(Boolean).sort(),
                 tiposManifestoDisponiveis: Array.from(new Set(viagensProcessadas.map(v => v.tipoManifestoDescricao))).filter(Boolean).sort(),
             };

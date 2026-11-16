@@ -89,6 +89,8 @@ export default function AproveitamentoFrotaPage() {
     const [mesCustom, setMesCustom] = useState(format(hoje, "yyyy-MM"));
 
     const [parceiroFiltro, setParceiroFiltro] = useState<string>("");
+    const [origemFiltro, setOrigemFiltro] = useState<string>("");
+    const [destinoFiltro, setDestinoFiltro] = useState<string>("");
     const [tipoVeiculoFiltro, setTipoVeiculoFiltro] = useState<string>("");
     const [modalidadeFiltro, setModalidadeFiltro] = useState<"TODAS" | "CAMINHAO" | "ONIBUS">("TODAS");
     const [tipoOperacaoFiltro, setTipoOperacaoFiltro] = useState<"TODAS" | "TRANSFERENCIA" | "COLETA_ENTREGA">("TODAS");
@@ -145,6 +147,8 @@ export default function AproveitamentoFrotaPage() {
             dataInicio,
             dataFim,
             parceiro: parceiroFiltro || undefined,
+            origem: origemFiltro || undefined,
+            destino: destinoFiltro || undefined,
             tipoVeiculo: tipoVeiculoFiltro || undefined,
             modalidade: modalidadeFiltro,
             tipoOperacao: tipoOperacaoFiltro,
@@ -246,6 +250,8 @@ export default function AproveitamentoFrotaPage() {
                 "Status do Manifesto": v.statusDescricao,
                 "Parceiro": v.parceiro,
                 "Transportadora": v.fornecedorRazao,
+                "Origem": v.origem,
+                "Destino": v.destino,
                 "Rota": v.rotaDescricao,
                 "Modalidade": v.modalidade === "ONIBUS" ? "Ônibus" : "Caminhão",
                 "Placa": v.placa,
@@ -389,6 +395,36 @@ export default function AproveitamentoFrotaPage() {
                             <option value="">Todos os Parceiros</option>
                             {data?.parceirosDisponiveis.map((p) => (
                                 <option key={p} value={p}>{p}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Filtro Origem */}
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Origem</p>
+                        <select
+                            value={origemFiltro}
+                            onChange={(e) => setOrigemFiltro(e.target.value)}
+                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 min-w-[160px]"
+                        >
+                            <option value="">Todas as Origens</option>
+                            {data?.origensDisponiveis?.map((o) => (
+                                <option key={o} value={o}>{o}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Filtro Destino */}
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Destino</p>
+                        <select
+                            value={destinoFiltro}
+                            onChange={(e) => setDestinoFiltro(e.target.value)}
+                            className="text-sm bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 min-w-[160px]"
+                        >
+                            <option value="">Todos os Destinos</option>
+                            {data?.destinosDisponiveis?.map((d) => (
+                                <option key={d} value={d}>{d}</option>
                             ))}
                         </select>
                     </div>
