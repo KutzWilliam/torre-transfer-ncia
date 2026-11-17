@@ -300,7 +300,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                                 END
                             ), 0) as soma_cubo_m3_bruto,
                             COALESCE(SUM(mn.total_volumes), 0) as soma_volumes,
-                            COALESCE(SUM(mn.total_nf_valor), 0) as soma_nf_valor,
+                            COALESCE(SUM(CASE WHEN mn.total_nf_valor > 100000000 THEN 0 ELSE mn.total_nf_valor END), 0) as soma_nf_valor,
                             COALESCE(SUM(mn.frete_total), 0) as soma_frete_bruto,
                             COALESCE(SUM(mn.frete_total / GREATEST(rm.total_trechos, 1)), 0) as soma_frete_rateado,
                             COALESCE(SUM(COALESCE(mn.coleta_custo, 0) / GREATEST(rm.total_trechos, 1)), 0) as soma_custo_coleta,
@@ -446,7 +446,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                                 END
                             ), 0) as mds_cubo_m3_bruto,
                             COALESCE(SUM(mn.total_volumes), 0) as mds_volumes,
-                            COALESCE(SUM(mn.total_nf_valor), 0) as mds_nf_valor,
+                            COALESCE(SUM(CASE WHEN mn.total_nf_valor > 100000000 THEN 0 ELSE mn.total_nf_valor END), 0) as mds_nf_valor,
                             COALESCE(SUM(mn.frete_total), 0) as mds_frete_bruto,
                             COALESCE(SUM(mn.frete_total / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_frete_rateado,
                             COALESCE(SUM(COALESCE(mn.coleta_custo, 0) / GREATEST(COALESCE(rm.total_trechos, 0) + COALESCE(rc.total_manif_coleta, 1), 1)), 0) as mds_custo_coleta,
@@ -523,8 +523,30 @@ export const aproveitamentoRouter = createTRPCRouter({
                     r.tipo_veiculo_banco
                 );
 
-                // Custo: Planilha ou Lançado no Brudam
-                const custoBrudam = (Number(r.custo_motorista) || 0) + (Number(r.valor_total_km) || 0) + (Number(r.pedagio) || 0);
+                const isTransferencia = (
+                    (Boolean(r.destino_aero) && r.destino_aero !== r.origem_aero) ||
+                    (Boolean(r.destino_unidade) && r.destino_unidade !== r.origem_unidade)
+                );
+                const tipoOperacao: "TRANSFERENCIA" | "COLETA_ENTREGA" = isTransferencia ? "TRANSFERENCIA" : "COLETA_ENTREGA";
+                const tipoOperacaoDescricao = isTransferencia ? "Transferência" : "Coleta / Entrega";
+
+                // Custo: Planilha ou Lançado no Brudam (Saneado contra duplicidade motorista+km, filiais internas EPC e outliers > R$ 10k)
+                const cMotRaw = Number(r.custo_motorista) || 0;
+                const vKmRaw = Number(r.valor_total_km) || 0;
+                const pedRaw = Number(r.pedagio) || 0;
+                const vKmValido = (vKmRaw > 0 && vKmRaw <= 200000) ? vKmRaw : 0;
+                const baseFreteBrudam = cMotRaw > 0 ? cMotRaw : vKmValido;
+                const pedagioValido = (pedRaw > 0 && pedRaw <= 5000) ? pedRaw : 0;
+                const fornNorm = (r.fornecedor_nome || "").toUpperCase().trim();
+                const isFilialEpc = fornNorm.startsWith("EPC-") || fornNorm.startsWith("EPC ") || fornNorm.includes("EXPRESSO PRINCESA DOS CAMPOS");
+                const isClienteInvalido = fornNorm.includes("FERRAMENTAS KENNEDY") || fornNorm.includes("BIHOUSE RACKS");
+
+                let custoBrudam = baseFreteBrudam + pedagioValido;
+                if (isTransferencia && (isFilialEpc || baseFreteBrudam >= 10000)) {
+                    custoBrudam = 0;
+                } else if (!isTransferencia && ((isFilialEpc && baseFreteBrudam > 2000) || isClienteInvalido || baseFreteBrudam >= 10000)) {
+                    custoBrudam = 0;
+                }
                 const custoViagem = (custoBrudam > 0) ? custoBrudam : (rotaContratual?.valorTotal || 0);
 
                 const pesoCarregadoKg = (Number(r.soma_peso_kg) || 0) + (Number(colAgg?.soma_peso_kg) || 0);
@@ -561,13 +583,6 @@ export const aproveitamentoRouter = createTRPCRouter({
                 const margemFinanceira = receitaLiquidaRateada - custoViagem;
                 const margemPercentual = receitaLiquidaRateada > 0 ? Math.round((margemFinanceira / receitaLiquidaRateada) * 100) : (custoViagem > 0 ? -100 : 0);
                 const resultadoFinanceiro: "LUCRO" | "PREJUIZO" = margemFinanceira >= 0 ? "LUCRO" : "PREJUIZO";
-
-                const isTransferencia = (
-                    (Boolean(r.destino_aero) && r.destino_aero !== r.origem_aero) ||
-                    (Boolean(r.destino_unidade) && r.destino_unidade !== r.origem_unidade)
-                );
-                const tipoOperacao: "TRANSFERENCIA" | "COLETA_ENTREGA" = isTransferencia ? "TRANSFERENCIA" : "COLETA_ENTREGA";
-                const tipoOperacaoDescricao = isTransferencia ? "Transferência" : "Coleta / Entrega";
 
                 return {
                     idManifesto: r.id_manifesto,
@@ -618,6 +633,32 @@ export const aproveitamentoRouter = createTRPCRouter({
                     distanciaKm: rotaContratual?.totalKm || 0,
                 };
             });
+
+            // 2.1. Deduplicação / Rateio de custo quando a mesma placa abre múltiplos manifestos no mesmo dia (evita cobrar a viagem cheia 2x a 6x)
+            const gruposPlacaDia = new Map<string, typeof viagensProcessadas>();
+            for (const v of viagensProcessadas) {
+                const placaLimpa = (v.placa || "").trim().toUpperCase();
+                if (!placaLimpa || placaLimpa === "—" || placaLimpa.length < 5) continue;
+                const chave = `${v.tipoOperacao}__${placaLimpa}__${v.data}`;
+                const lista = gruposPlacaDia.get(chave) || [];
+                lista.push(v);
+                gruposPlacaDia.set(chave, lista);
+            }
+            for (const [, lista] of gruposPlacaDia.entries()) {
+                if (lista.length <= 1) continue;
+                const custoMaximoViagem = Math.max(...lista.map(x => x.custoViagem), 0);
+                const somaCustosBrutos = lista.reduce((acc, x) => acc + x.custoViagem, 0);
+                if (somaCustosBrutos > custoMaximoViagem && somaCustosBrutos > 0) {
+                    for (const x of lista) {
+                        x.custoViagem = Number(((x.custoViagem / somaCustosBrutos) * custoMaximoViagem).toFixed(2));
+                        x.margemFinanceira = x.receitaLiquidaRateada - x.custoViagem;
+                        x.margemPercentual = x.receitaLiquidaRateada > 0
+                            ? Math.round((x.margemFinanceira / x.receitaLiquidaRateada) * 100)
+                            : (x.custoViagem > 0 ? -100 : 0);
+                        x.resultadoFinanceiro = x.margemFinanceira >= 0 ? "LUCRO" : "PREJUIZO";
+                    }
+                }
+            }
 
             // 3. Aplicação dos filtros do usuário
             const viagensFiltradas = viagensProcessadas.filter((v) => {
@@ -834,7 +875,10 @@ export const aproveitamentoRouter = createTRPCRouter({
             `, [input.idManifesto]);
 
             const mRow = manifestoRes.rows[0];
-            const custoTotalManifesto = mRow ? (Number(mRow.custo_motorista) + Number(mRow.valor_total_km) + Number(mRow.pedagio)) : 0;
+            const cMotManif = Number(mRow?.custo_motorista) || 0;
+            const vKmManif = Number(mRow?.valor_total_km) || 0;
+            const pedManif = Number(mRow?.pedagio) || 0;
+            const custoTotalManifesto = mRow ? ((cMotManif > 0 ? cMotManif : (vKmManif <= 200000 ? vKmManif : 0)) + (pedManif <= 5000 ? pedManif : 0)) : 0;
             const prevSaidaData = mRow?.prev_saida_data || null;
 
             // 2. Busca todas as minutas vinculadas (diretas tipo = 1 OU geradas por coletas tipo = 2)
@@ -917,7 +961,7 @@ export const aproveitamentoRouter = createTRPCRouter({
                         SELECT 
                             tmm.minuta,
                             COUNT(DISTINCT tmm.id_manifesto) as total_manifestos_real,
-                            SUM( (COALESCE(mn.total_taxado, mn.total_peso) / GREATEST(tmm.peso_manifesto, 1)) * (tmm.custo_motorista + tmm.valor_total_km + tmm.pedagio) ) as soma_custo_transferencias
+                            SUM( (COALESCE(mn.total_taxado, mn.total_peso) / GREATEST(tmm.peso_manifesto, 1)) * ((CASE WHEN tmm.custo_motorista > 0 THEN tmm.custo_motorista ELSE tmm.valor_total_km END) + tmm.pedagio) ) as soma_custo_transferencias
                         FROM todos_manifestos_minuta tmm
                         JOIN minuta mn ON mn.id_minuta = tmm.minuta
                         GROUP BY tmm.minuta
