@@ -12,6 +12,7 @@ import { getBrudamManifestoUrl, getBrudamMinutaUrl } from "@/utils/brudam";
 type PeriodoFiltro = "HOJE" | "SEMANA" | "MES" | "DIA_CUSTOM" | "MES_CUSTOM";
 type NivelOcupacaoFiltro = "TODAS" | "CRITICA" | "ATENCAO" | "IDEAL";
 type MargemFiltro = "TODAS" | "LUCRO" | "PREJUIZO";
+type CampoBuscaFiltro = "TODOS" | "PLACA" | "MANIFESTO" | "PARCEIRO" | "REMETENTE" | "DESTINATARIO";
 
 function fmtMoeda(val: number): string {
     return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -98,6 +99,7 @@ export default function AproveitamentoFrotaPage() {
     const [tipoManifestoFiltro, setTipoManifestoFiltro] = useState<string>("");
     const [ocupacaoFiltro, setOcupacaoFiltro] = useState<NivelOcupacaoFiltro>("TODAS");
     const [margemFiltro, setMargemFiltro] = useState<MargemFiltro>("TODAS");
+    const [campoBusca, setCampoBusca] = useState<CampoBuscaFiltro>("TODOS");
     const [searchInput, setSearchInput] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
 
@@ -112,6 +114,7 @@ export default function AproveitamentoFrotaPage() {
     // Modal de detalhes
     const [manifestoModalId, setManifestoModalId] = useState<string | null>(null);
     const [manifestoSelecionado, setManifestoSelecionado] = useState<any>(null);
+    const [buscaMinutaModal, setBuscaMinutaModal] = useState("");
 
     // Ordenação da tabela
     const [ordenacao, setOrdenacao] = useState<"data" | "menorOcupacao" | "maiorPrejuizo" | "maiorCarga">("data");
@@ -157,6 +160,7 @@ export default function AproveitamentoFrotaPage() {
             statusOcupacao: ocupacaoFiltro,
             statusMargem: margemFiltro,
             search: searchQuery || undefined,
+            searchField: campoBusca,
         },
         {
             refetchOnWindowFocus: false,
@@ -170,6 +174,19 @@ export default function AproveitamentoFrotaPage() {
         { idManifesto: manifestoModalId ?? "" },
         { enabled: !!manifestoModalId }
     );
+
+    // Minutas do modal filtradas por nº da minuta, remetente ou destinatário
+    const minutasModalFiltradas = useMemo(() => {
+        if (!minutasManifesto) return [];
+        const q = buscaMinutaModal.toLowerCase().trim().replace(/^#/, "");
+        if (!q) return minutasManifesto;
+        return minutasManifesto.filter((m) => {
+            const matchMinuta = m.idMinuta.toLowerCase().includes(q) || (m.cteNumero && m.cteNumero.toLowerCase().includes(q)) || (m.idColeta && m.idColeta.toLowerCase().includes(q));
+            const matchRemetente = (m.clienteRemetente && m.clienteRemetente.toLowerCase().includes(q)) || (m.remetenteColeta && m.remetenteColeta.toLowerCase().includes(q));
+            const matchDestinatario = m.clienteDestinatario && m.clienteDestinatario.toLowerCase().includes(q);
+            return Boolean(matchMinuta || matchRemetente || matchDestinatario);
+        });
+    }, [minutasManifesto, buscaMinutaModal]);
 
     // Viagens ordenadas
     const viagensOrdenadas = useMemo(() => {
@@ -538,22 +555,58 @@ export default function AproveitamentoFrotaPage() {
                         </select>
                     </div>
 
-                    {/* Busca */}
-                    <div className="space-y-1.5 flex-1 min-w-[200px]">
+                    {/* Busca com seletor de campo */}
+                    <div className="space-y-1.5 flex-1 min-w-[300px]">
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Busca</p>
-                        <div className="relative">
-                            <input
-                                type="text"
-                                placeholder="Manifesto, placa, rota, parceiro..."
-                                value={searchInput}
-                                onChange={(e) => setSearchInput(e.target.value)}
-                                className="w-full text-sm px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 pr-8"
-                            />
-                            {searchInput !== searchQuery && (
-                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-orange-500 text-xs animate-spin font-bold">
-                                    ↻
-                                </span>
-                            )}
+                        <div className="flex items-stretch">
+                            <select
+                                value={campoBusca}
+                                onChange={(e) => setCampoBusca(e.target.value as CampoBuscaFiltro)}
+                                className="text-xs font-semibold bg-slate-100 border border-r-0 border-slate-200 rounded-l-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                            >
+                                <option value="TODOS">Todos</option>
+                                <option value="PLACA">Placa</option>
+                                <option value="MANIFESTO">Manifesto</option>
+                                <option value="PARCEIRO">Parceiro</option>
+                                <option value="REMETENTE">Remetente</option>
+                                <option value="DESTINATARIO">Destinatário</option>
+                            </select>
+                            <div className="relative flex-1">
+                                <input
+                                    type="text"
+                                    placeholder={
+                                        {
+                                            TODOS: "Manifesto, placa, rota, parceiro...",
+                                            PLACA: "Digite a placa (ex: ABC1D23)...",
+                                            MANIFESTO: "Digite o nº do manifesto...",
+                                            PARCEIRO: "Digite o nome do parceiro...",
+                                            REMETENTE: "Nome ou CNPJ do remetente da minuta...",
+                                            DESTINATARIO: "Nome ou CNPJ do destinatário da minuta...",
+                                        }[campoBusca]
+                                    }
+                                    value={searchInput}
+                                    onChange={(e) => setSearchInput(e.target.value)}
+                                    className="w-full text-sm px-3 py-1.5 bg-white border border-slate-200 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-orange-400 pr-8"
+                                />
+                                {searchInput && searchInput === searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSearchInput("");
+                                            setSearchQuery("");
+                                        }}
+                                        title="Limpar busca"
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                                {searchInput !== searchQuery && (
+                                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-orange-500 text-xs animate-spin font-bold">
+                                        ↻
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -1038,6 +1091,11 @@ export default function AproveitamentoFrotaPage() {
                                                                                                         onClick={() => {
                                                                                                             setManifestoModalId(v.idManifesto);
                                                                                                             setManifestoSelecionado(v);
+                                                                                                            setBuscaMinutaModal(
+                                                                                                                (campoBusca === "REMETENTE" || campoBusca === "DESTINATARIO") && searchQuery
+                                                                                                                    ? searchQuery
+                                                                                                                    : ""
+                                                                                                            );
                                                                                                         }}
                                                                                                         className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all active:scale-95"
                                                                                                     >
@@ -1164,6 +1222,7 @@ export default function AproveitamentoFrotaPage() {
                                 onClick={() => {
                                     setManifestoModalId(null);
                                     setManifestoSelecionado(null);
+                                    setBuscaMinutaModal("");
                                 }}
                                 className="h-8 w-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center font-bold text-sm transition-colors"
                             >
@@ -1183,35 +1242,63 @@ export default function AproveitamentoFrotaPage() {
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                         <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
                                             <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Receita Líquida (Viagem)</p>
-                                            <p className="text-base font-black text-blue-900 mt-0.5">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + (m.receitaLiquida || 0), 0))}</p>
+                                            <p className="text-base font-black text-blue-900 mt-0.5">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + (m.receitaLiquida || 0), 0))}</p>
                                             <p className="text-[10px] text-blue-600 mt-0.5">
-                                                Bruto: {fmtMoeda(minutasManifesto.reduce((acc, m) => acc + (m.freteRateado || 0), 0))}
+                                                Bruto: {fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + (m.freteRateado || 0), 0))}
                                             </p>
                                         </div>
                                         <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                                             <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Custo Desta Viagem</p>
-                                            <p className="text-base font-black text-slate-800 mt-0.5">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + (m.custoTransf || 0), 0))}</p>
+                                            <p className="text-base font-black text-slate-800 mt-0.5">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + (m.custoTransf || 0), 0))}</p>
                                             <p className="text-[10px] text-slate-500 mt-0.5">Motorista / parceiro rateado</p>
                                         </div>
                                         <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
                                             <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Lucro Líquido Desta Viagem</p>
-                                            <p className={`text-base font-black mt-0.5 ${minutasManifesto.reduce((acc, m) => acc + (m.resultadoLucro || 0), 0) >= 0 ? "text-emerald-800" : "text-rose-700"}`}>
-                                                {fmtMoeda(minutasManifesto.reduce((acc, m) => acc + (m.resultadoLucro || 0), 0))}
+                                            <p className={`text-base font-black mt-0.5 ${minutasModalFiltradas.reduce((acc, m) => acc + (m.resultadoLucro || 0), 0) >= 0 ? "text-emerald-800" : "text-rose-700"}`}>
+                                                {fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + (m.resultadoLucro || 0), 0))}
                                             </p>
                                             <p className="text-[10px] text-emerald-600 mt-0.5">Resultado isolado desta perna</p>
                                         </div>
                                         <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
                                             <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Lucro Global Minutas (Brudam)</p>
-                                            <p className="text-base font-black text-amber-900 mt-0.5">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + (m.lucroGlobalMinuta || 0), 0))}</p>
+                                            <p className="text-base font-black text-amber-900 mt-0.5">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + (m.lucroGlobalMinuta || 0), 0))}</p>
                                             <p className="text-[10px] text-amber-700 mt-0.5">Resultado completo das cargas</p>
                                         </div>
                                     </div>
 
-                                    <div className="overflow-auto max-h-[52vh] border border-slate-200 rounded-xl">
+                                    {/* Barra de Pesquisa de Minutas do Manifesto */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                        <div className="relative flex-1 min-w-[260px]">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+                                            <input
+                                                type="text"
+                                                placeholder="Pesquisar por número da minuta, remetente ou destinatário..."
+                                                value={buscaMinutaModal}
+                                                onChange={(e) => setBuscaMinutaModal(e.target.value)}
+                                                className="w-full text-xs pl-8 pr-8 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 text-slate-700"
+                                            />
+                                            {buscaMinutaModal && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setBuscaMinutaModal("")}
+                                                    title="Limpar pesquisa"
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+                                        <span className="text-xs font-semibold text-slate-500">
+                                            Exibindo <strong className="text-slate-800">{minutasModalFiltradas.length}</strong> de <strong className="text-slate-800">{minutasManifesto.length}</strong> minuta(s)
+                                        </span>
+                                    </div>
+
+                                    <div className="overflow-auto max-h-[46vh] border border-slate-200 rounded-xl">
                                         <table className="min-w-full divide-y divide-slate-100 text-xs border-separate border-spacing-0">
                                             <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase sticky top-0 z-20 shadow-sm">
                                                 <tr>
                                                     <th className="px-2.5 py-2.5 text-left bg-slate-50 border-b border-slate-200 sticky left-0 z-30 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">Minuta / CTE</th>
+                                                    <th className="px-2.5 py-2.5 text-left bg-slate-50 border-b border-slate-200">Remetente ➔ Destinatário</th>
                                                     <th className="px-2.5 py-2.5 text-left bg-slate-50 border-b border-slate-200">Origem ➔ Destino</th>
                                                     <th className="px-2 py-2.5 text-right bg-slate-50 border-b border-slate-200">Pacotes</th>
                                                     <th className="px-2 py-2.5 text-right bg-slate-50 border-b border-slate-200">Peso Taxado</th>
@@ -1225,7 +1312,13 @@ export default function AproveitamentoFrotaPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-50">
-                                                {minutasManifesto.map((m) => {
+                                                {minutasModalFiltradas.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={12} className="px-4 py-8 text-center text-slate-400">
+                                                            Nenhuma minuta encontrada para &ldquo;{buscaMinutaModal}&rdquo;.
+                                                        </td>
+                                                    </tr>
+                                                ) : minutasModalFiltradas.map((m) => {
                                                     const corRes = m.resultadoLucro >= 0 ? "text-emerald-700 font-bold" : "text-red-600 font-bold";
 
                                                     return (
@@ -1270,7 +1363,7 @@ export default function AproveitamentoFrotaPage() {
                                                                 ) : (
                                                                     m.cteNumero && (
                                                                         <span className="block text-[10px] text-gray-400 font-normal">
-                                                                            CTE: {m.cteNumero}{m.remetenteColeta ? ` • ${m.remetenteColeta}` : ""}
+                                                                            CTE: {m.cteNumero}
                                                                         </span>
                                                                     )
                                                                 )}
@@ -1282,6 +1375,16 @@ export default function AproveitamentoFrotaPage() {
                                                                         ⚠️ Volume ERP Aberrante ({fmtNum(m.cuboM3Original)} m³)
                                                                     </span>
                                                                 )}
+                                                            </td>
+                                                            <td className="px-2.5 py-2 text-slate-700 max-w-[240px]">
+                                                                <p className="text-[11px] font-semibold text-slate-800 truncate" title={m.clienteRemetente || undefined}>
+                                                                    <span className="text-slate-400 font-normal">Rem: </span>
+                                                                    {m.clienteRemetente || "—"}
+                                                                </p>
+                                                                <p className="text-[10px] text-slate-500 truncate mt-0.5" title={m.clienteDestinatario || undefined}>
+                                                                    <span className="text-slate-400 font-normal">Dest: </span>
+                                                                    {m.clienteDestinatario || "—"}
+                                                                </p>
                                                             </td>
                                                             <td className="px-2.5 py-2 whitespace-nowrap text-slate-700">{m.origem} ➔ {m.destino}</td>
                                                             <td className="px-2 py-2 whitespace-nowrap text-right text-slate-800">{m.volumes}</td>
@@ -1317,19 +1420,21 @@ export default function AproveitamentoFrotaPage() {
                                             </tbody>
                                             <tfoot className="bg-slate-50 font-bold text-slate-800 sticky bottom-0 z-20 shadow-[0_-2px_6px_rgba(0,0,0,0.05)]">
                                                 <tr>
-                                                    <td colSpan={2} className="px-2.5 py-2.5 text-left bg-slate-50 border-t border-r border-slate-200 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">Total Manifesto ({minutasManifesto.length} minutas)</td>
-                                                    <td className="px-2 py-2.5 text-right bg-slate-50 border-t border-slate-200">{minutasManifesto.reduce((acc, m) => acc + m.volumes, 0)}</td>
-                                                    <td className="px-2 py-2.5 text-right bg-slate-50 border-t border-slate-200">{fmtNum(minutasManifesto.reduce((acc, m) => acc + m.pesoTaxadoKg, 0))} kg</td>
-                                                    <td className="px-2.5 py-2.5 text-right text-slate-700 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.freteTotal, 0))}</td>
-                                                    <td className="px-2.5 py-2.5 text-right text-blue-700 bg-blue-50/70 border-t border-slate-200">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.freteRateado, 0))}</td>
-                                                    <td className="px-2 py-2.5 text-right text-slate-800 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.custoTransf, 0))}</td>
-                                                    <td className="px-2 py-2.5 text-right text-slate-500 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.seguro + m.coletaCusto + m.entregaCusto, 0))}</td>
-                                                    <td className="px-2 py-2.5 text-right text-slate-500 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.imposto, 0))}</td>
+                                                    <td colSpan={3} className="px-2.5 py-2.5 text-left bg-slate-50 border-t border-r border-slate-200 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">
+                                                        Total {buscaMinutaModal ? `Filtrado (${minutasModalFiltradas.length} de ${minutasManifesto.length} minutas)` : `Manifesto (${minutasManifesto.length} minutas)`}
+                                                    </td>
+                                                    <td className="px-2 py-2.5 text-right bg-slate-50 border-t border-slate-200">{minutasModalFiltradas.reduce((acc, m) => acc + m.volumes, 0)}</td>
+                                                    <td className="px-2 py-2.5 text-right bg-slate-50 border-t border-slate-200">{fmtNum(minutasModalFiltradas.reduce((acc, m) => acc + m.pesoTaxadoKg, 0))} kg</td>
+                                                    <td className="px-2.5 py-2.5 text-right text-slate-700 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.freteTotal, 0))}</td>
+                                                    <td className="px-2.5 py-2.5 text-right text-blue-700 bg-blue-50/70 border-t border-slate-200">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.freteRateado, 0))}</td>
+                                                    <td className="px-2 py-2.5 text-right text-slate-800 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.custoTransf, 0))}</td>
+                                                    <td className="px-2 py-2.5 text-right text-slate-500 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.seguro + m.coletaCusto + m.entregaCusto, 0))}</td>
+                                                    <td className="px-2 py-2.5 text-right text-slate-500 bg-slate-50 border-t border-slate-200">{fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.imposto, 0))}</td>
                                                     <td className="px-2.5 py-2.5 text-right text-emerald-700 text-sm bg-slate-50 border-t border-slate-200">
-                                                        {fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.resultadoLucro, 0))}
+                                                        {fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.resultadoLucro, 0))}
                                                     </td>
                                                     <td className="px-2.5 py-2.5 text-right text-amber-800 text-sm bg-amber-50/50 border-t border-slate-200">
-                                                        {fmtMoeda(minutasManifesto.reduce((acc, m) => acc + m.lucroGlobalMinuta, 0))}
+                                                        {fmtMoeda(minutasModalFiltradas.reduce((acc, m) => acc + m.lucroGlobalMinuta, 0))}
                                                     </td>
                                                 </tr>
                                             </tfoot>
@@ -1347,7 +1452,11 @@ export default function AproveitamentoFrotaPage() {
                                 ℹ️ Cargas multitrecho têm receita e impostos rateados proporcionalmente entre suas transferências, garantindo que o lucro somado das viagens coincida exatamente com o Lucro da Operação do ERP Brudam.
                             </span>
                             <button
-                                onClick={() => setManifestoModalId(null)}
+                                onClick={() => {
+                                    setManifestoModalId(null);
+                                    setManifestoSelecionado(null);
+                                    setBuscaMinutaModal("");
+                                }}
                                 className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all shadow-sm active:scale-95"
                             >
                                 Fechar

@@ -238,14 +238,20 @@ export const aproveitamentoRouter = createTRPCRouter({
             statusOcupacao: z.enum(["TODAS", "CRITICA", "ATENCAO", "IDEAL"]).optional().default("TODAS"),
             statusMargem: z.enum(["TODAS", "LUCRO", "PREJUIZO"]).optional().default("TODAS"),
             search: z.string().optional(),
+            searchField: z.enum(["TODOS", "PLACA", "MANIFESTO", "PARCEIRO", "REMETENTE", "DESTINATARIO"]).optional().default("TODOS"),
         }))
         .query(async ({ input }) => {
             const rotasContratuais = obterRotasContratuais();
+            const searchQueryTrimmed = (input.search || "").trim();
+            const isRemetenteOrDestinatarioSearch =
+                Boolean(searchQueryTrimmed) &&
+                (input.searchField === "REMETENTE" || input.searchField === "DESTINATARIO");
 
             // 1. Queries otimizadas em paralelo no Brudam:
             // - Query A: Manifestos + Minutas diretas (manifesto_list.tipo = 1)
             // - Query B: Coletas vinculadas ao manifesto (manifesto_list.tipo = 2), consolidando tabela `coleta` + minutas geradas pela coleta (`minuta.coleta_numero`)
-            const [queryResult, coletasResult] = await Promise.all([
+            // - Query C (opcional): Manifestos que contêm minutas/coletas com o Remetente ou Destinatário pesquisado
+            const [queryResult, coletasResult, manifestosClienteResult] = await Promise.all([
                 telemetriaDb.query<ManifestoBrudamRow>(`
                     WITH manifestos_filtrados AS (
                         SELECT id_manifesto
@@ -497,7 +503,47 @@ export const aproveitamentoRouter = createTRPCRouter({
                     WHERE ml.tipo = 2
                     GROUP BY ml.id_manifesto;
                 `, [input.dataInicio, input.dataFim]),
+                isRemetenteOrDestinatarioSearch
+                    ? telemetriaDb.query<{ id_manifesto: string }>(`
+                        WITH manifestos_filtrados AS (
+                            SELECT id_manifesto
+                            FROM manifesto m
+                            WHERE m.prev_saida_data::text NOT LIKE '0000%'
+                              AND LEFT(m.prev_saida_data::text, 10) >= $1
+                              AND LEFT(m.prev_saida_data::text, 10) <= $2
+                              AND m.status != 3
+                        ),
+                        forn_match AS MATERIALIZED (
+                            SELECT id_local::bigint as id_local
+                            FROM fornecedores
+                            WHERE fantasia ILIKE $3
+                               OR razao ILIKE $3
+                               OR cnpj ILIKE $3
+                        )
+                        SELECT DISTINCT ml.id_manifesto::text as id_manifesto
+                        FROM manifesto_list ml
+                        JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                        JOIN minuta mn ON mn.id_minuta = ml.minuta
+                        WHERE ml.tipo = 1
+                          AND ${input.searchField === "REMETENTE" ? "mn.id_origem" : "mn.id_destino"} IN (SELECT id_local FROM forn_match)
+                        UNION
+                        SELECT DISTINCT ml.id_manifesto::text as id_manifesto
+                        FROM manifesto_list ml
+                        JOIN manifestos_filtrados mf ON mf.id_manifesto = ml.id_manifesto
+                        JOIN coleta c ON c.id_coleta = ml.minuta
+                        LEFT JOIN minuta mn ON mn.coleta_numero = c.id_coleta AND COALESCE(mn.status, 0) NOT IN (9, 13, 99)
+                        WHERE ml.tipo = 2
+                          AND (
+                              ${input.searchField === "REMETENTE" ? "COALESCE(NULLIF(c.id_origem, 0), c.id_cliente)" : "c.id_destino"} IN (SELECT id_local FROM forn_match)
+                              OR ${input.searchField === "REMETENTE" ? "mn.id_origem" : "mn.id_destino"} IN (SELECT id_local FROM forn_match)
+                          );
+                    `, [input.dataInicio, input.dataFim, `%${searchQueryTrimmed}%`])
+                    : Promise.resolve({ rows: [] as { id_manifesto: string }[] }),
             ]);
+
+            const manifestosComClienteSet = isRemetenteOrDestinatarioSearch
+                ? new Set(manifestosClienteResult.rows.map((r) => r.id_manifesto))
+                : null;
 
             const rows = queryResult.rows;
             const mapaColetasPorManifesto = new Map<string, ColetaManifestoAggRow>();
@@ -675,8 +721,27 @@ export const aproveitamentoRouter = createTRPCRouter({
 
                 if (input.search) {
                     const q = input.search.toLowerCase().trim();
+                    if (!q) return true;
+                    const campo = input.searchField || "TODOS";
+
+                    if (campo === "PLACA") {
+                        return v.placa.toLowerCase().includes(q);
+                    }
+                    if (campo === "MANIFESTO") {
+                        return v.idManifesto.toLowerCase().includes(q.replace(/^#/, ""));
+                    }
+                    if (campo === "PARCEIRO") {
+                        return (
+                            v.parceiro.toLowerCase().includes(q) ||
+                            v.fornecedorRazao.toLowerCase().includes(q)
+                        );
+                    }
+                    if (campo === "REMETENTE" || campo === "DESTINATARIO") {
+                        return manifestosComClienteSet ? manifestosComClienteSet.has(v.idManifesto) : false;
+                    }
+
                     const qNormalized = q.replace(/\s*->\s*/g, " ➔ ");
-                    const match = v.idManifesto.includes(q) ||
+                    const match = v.idManifesto.includes(q.replace(/^#/, "")) ||
                         v.placa.toLowerCase().includes(q) ||
                         v.origem.toLowerCase().includes(q) ||
                         v.destino.toLowerCase().includes(q) ||
@@ -970,6 +1035,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                         mn.id_minuta::text,
                         tmm.id_coleta::text as id_coleta,
                         tmm.remetente_nome,
+                        COALESCE(NULLIF(TRIM(fo.fantasia), ''), NULLIF(TRIM(fo.razao), ''), tmm.remetente_nome) as cliente_remetente,
+                        COALESCE(NULLIF(TRIM(fd.fantasia), ''), NULLIF(TRIM(fd.razao), '')) as cliente_destinatario,
                         COALESCE(mn.total_volumes, 0)::int as total_volumes,
                         COALESCE(mn.total_peso, 0)::float as total_peso,
                         COALESCE(mn.total_cubo, 0)::float as total_cubo,
@@ -1002,6 +1069,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     FROM todas_minutas_manif tmm
                     JOIN minuta mn ON mn.id_minuta = tmm.id_minuta
                     LEFT JOIN resumo_transf_minuta rtm ON rtm.minuta = tmm.id_minuta
+                    LEFT JOIN fornecedores fo ON fo.id_local = mn.id_origem
+                    LEFT JOIN fornecedores fd ON fd.id_local = mn.id_destino
                     ORDER BY mn.total_peso DESC;
                 `, [input.idManifesto, prevSaidaData]),
                 // 3. Busca as coletas (tipo = 2) da tabela coleta para cobrir coletas sem minuta emitida ou com diferença de peso
@@ -1009,6 +1078,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     SELECT 
                         c.id_coleta::text as id_coleta,
                         COALESCE(NULLIF(TRIM(f.fantasia), ''), NULLIF(TRIM(f.razao), ''), 'Cliente #' || COALESCE(c.id_cliente::text, '')) as remetente_nome,
+                        COALESCE(NULLIF(TRIM(fo.fantasia), ''), NULLIF(TRIM(fo.razao), ''), NULLIF(TRIM(f.fantasia), ''), NULLIF(TRIM(f.razao), ''), 'Cliente #' || COALESCE(c.id_cliente::text, '')) as cliente_remetente,
+                        COALESCE(NULLIF(TRIM(fd.fantasia), ''), NULLIF(TRIM(fd.razao), '')) as cliente_destinatario,
                         COALESCE(c.total_volumes, 0)::int as total_volumes,
                         COALESCE(c.total_peso, 0)::float as total_peso,
                         COALESCE(c.total_cubo, c.cubagem_rodoviario, 0)::float as total_cubo,
@@ -1029,6 +1100,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     ) ml_col
                     JOIN coleta c ON c.id_coleta = ml_col.minuta
                     LEFT JOIN fornecedores f ON f.id_local = c.id_cliente
+                    LEFT JOIN fornecedores fo ON fo.id_local = c.id_origem
+                    LEFT JOIN fornecedores fd ON fd.id_local = c.id_destino
                     LEFT JOIN unidades u ON u.id_unidade = c.unidade
                     ORDER BY c.total_peso DESC;
                 `, [input.idManifesto])
@@ -1056,6 +1129,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                         id_minuta: `COL-${c.id_coleta}`,
                         id_coleta: c.id_coleta,
                         remetente_nome: c.remetente_nome,
+                        cliente_remetente: c.cliente_remetente || c.remetente_nome,
+                        cliente_destinatario: c.cliente_destinatario || null,
                         tipo_registro: "COLETA",
                         total_volumes: Number(c.total_volumes) || 0,
                         total_peso: pesoColeta,
@@ -1083,6 +1158,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                         id_minuta: `COL-${c.id_coleta}`,
                         id_coleta: c.id_coleta,
                         remetente_nome: c.remetente_nome,
+                        cliente_remetente: c.cliente_remetente || c.remetente_nome,
+                        cliente_destinatario: c.cliente_destinatario || null,
                         tipo_registro: "COLETA",
                         total_volumes: 0,
                         total_peso: diffPeso,
@@ -1149,6 +1226,8 @@ export const aproveitamentoRouter = createTRPCRouter({
                     idMinuta: String(m.id_minuta),
                     idColeta: m.id_coleta ? String(m.id_coleta) : null,
                     remetenteColeta: m.remetente_nome ? String(m.remetente_nome) : null,
+                    clienteRemetente: m.cliente_remetente ? String(m.cliente_remetente) : (m.remetente_nome ? String(m.remetente_nome) : null),
+                    clienteDestinatario: m.cliente_destinatario ? String(m.cliente_destinatario) : null,
                     tipoRegistro: (m.tipo_registro as "MINUTA" | "COLETA") || "MINUTA",
                     volumes: Number(m.total_volumes) || 0,
                     pesoKg: Number(m.total_peso) || 0,
